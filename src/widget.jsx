@@ -257,7 +257,7 @@ function useModel(st, settings) {
     dayIcon: dayPct >= 0 ? 'ph ph-trend-up' : 'ph ph-trend-down',
     cashStr: fmt(d.cash, 0),
     divStr: d.dividendsYTD == null ? '—' : fmt(d.dividendsYTD, 0),
-    divTitle: st.divForbidden ? 'Needs the History permission on the API key' : '',
+    divTitle: st.divError ? `Dividends: ${st.divError.message}` : '',
     allTimeStr: fmt.signed(d.allTimePL, 0),
     allTimePctStr: fmt.signed(d.allTimePct, 2),
     allTimeColor: d.allTimePL >= 0 ? UP : DOWN
@@ -637,7 +637,7 @@ function errorCopy(err) {
     title: { auth: 'API key expired or revoked', forbidden: 'Missing API permission', rate: 'Rate limited', server: 'Trading 212 is unavailable', network: 'Can’t reach Trading 212' }[k] || 'Sync failed',
     code: label,
     network: k === 'network',
-    hint: k === 'forbidden' ? `The API key is missing the \u201c${(err && err.scope) || 'Account data'}\u201d permission \u2014 create a new key with Account data, Portfolio and History.` : ''
+    hint: k === 'forbidden' ? `The API key is missing the \u201c${(err && err.scope) || 'Account data'}\u201d permission \u2014 create a new key with Account data, Portfolio and History – Dividends.` : ''
   };
 }
 
@@ -741,7 +741,7 @@ function Connect({ st, settings }) {
         </div>
       </div>
       <p style={`position:relative;font:400 12.5px/1.55 ${F};color:var(--color-neutral-400);margin:0;max-width:62ch`}>
-        Trading 212 → Settings → API (Beta) → Generate API key. Tick <span style="color:var(--color-accent-300)">Account data</span>, <span style="color:var(--color-accent-300)">Portfolio</span> and <span style="color:var(--color-accent-300)">History</span> (dividends) — nothing else is needed. {st.encrypted ? 'Encrypted on this PC with Windows DPAPI.' : 'Stored locally on this PC.'}</p>
+        Trading 212 → Settings → API (Beta) → Generate API key. Tick <span style="color:var(--color-accent-300)">Account data</span>, <span style="color:var(--color-accent-300)">Portfolio</span> and <span style="color:var(--color-accent-300)">History – Dividends</span> — nothing else is needed. {st.encrypted ? 'Encrypted on this PC with Windows DPAPI.' : 'Stored locally on this PC.'}</p>
       <form class="ia" onSubmit={e => { e.preventDefault(); go(); }} style="position:relative;display:flex;flex-direction:column;gap:13px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:520px">
           <div style="display:flex;flex-direction:column;gap:5px">

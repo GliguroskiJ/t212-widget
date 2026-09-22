@@ -186,6 +186,7 @@ function registerIpc() {
   ipcMain.handle('init', () => ({ settings: store.all(), state: poller.payload(), version: app.getVersion(), dataDir: app.getPath('userData') }));
   ipcMain.handle('set-settings', (_e, patch) => applySettings(patch || {}));
   ipcMain.handle('refresh', () => { poller.refreshNow(); return true; });
+  ipcMain.handle('recheck-dividends', () => { poller.recheckDividends(); return true; });
   ipcMain.handle('open-settings', (_e, tab) => { openSettings(tab); return true; });
   ipcMain.handle('hide-widget', () => { hideWidget(); return true; });
   ipcMain.handle('show-widget', () => { showWidget(); return true; });
@@ -236,6 +237,7 @@ function registerIpc() {
       store.setCreds({ key, secret });
       store.set({ env: useEnv });
       if (!sameAccount) poller.resetForNewAccount();
+      else poller.recheckDividends();
       poller.status = 'loading';
       applyWidgetSize();
       poller.cycle();

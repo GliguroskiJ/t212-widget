@@ -108,6 +108,7 @@ class Poller extends EventEmitter {
     this.raw = null;
     this.lastSync = null;
     this.divFetchedAt = 0;
+    this.divError = null;
     this.store.history = { points: [], dayBase: null, posHist: {}, last: null };
     this.store.saveHistory();
     this.status = 'loading';
@@ -207,7 +208,13 @@ class Poller extends EventEmitter {
       let next = '/equity/history/dividends?limit=50';
       for (let page = 0; next && page < 12; page++) {
         if (page) await new Promise(r => setTimeout(r, 10500)); // 6 req / 60 s
-        const res = await apiGet(this.fetch, env, creds, next);
+        let res;
+        try { res = await apiGet(this.fetch, env, creds, next); }
+        catch (e) {
+          if (e.status !== 429) throw e;                         // rate limited: wait once, then retry
+          await new Promise(r => setTimeout(r, Math.max(2000, (e.retryAt || Date.now() + 12e3) - Date.now())));
+          res = await apiGet(this.fetch, env, creds, next);
+        }
         const items = (res && res.items) || [];
         let older = false;
         for (const it of items) {
@@ -219,14 +226,24 @@ class Poller extends EventEmitter {
       }
       if (this.raw) { this.raw.dividendsYTD = total; this.store.history.last = this.raw; this.store.saveHistorySoon(); }
       this.divFetchedAt = Date.now();
-      this.divForbidden = false;
-      this.emitState();
+      this.divError = null;
     } catch (e) {
-      if (e && (e.status === 403 || e.status === 401)) { this.divForbidden = true; this.emitState(); }
-      this.divFetchedAt = Date.now() - 20 * 60e3; // try again in ~10 min
+      // keep the real answer from Trading 212 so the UI can show it instead of guessing
+      this.divError = { code: e.status || 0, message: e.message || String(e), at: Date.now() };
+      this.divFetchedAt = Date.now() - 27 * 60e3; // try again in ~3 min
     } finally {
       this.divRunning = false;
+      this.emitState();
     }
+  }
+
+  // new key / manual recheck: forget the old dividend result and ask again now
+  recheckDividends() {
+    this.divError = null;
+    this.divFetchedAt = 0;
+    const creds = this.creds();
+    if (creds) this.fetchDividends(this.store.get('env'), creds);
+    else this.emitState();
   }
 
   async updateFx(from, display) {
@@ -274,7 +291,8 @@ class Poller extends EventEmitter {
       env: s.env,
       encrypted: this.store.encrypted(),
       connected: !!this.creds(),
-      divForbidden: !!this.divForbidden
+      divError: this.divError || null,
+      divForbidden: !!(this.divError && (this.divError.code === 401 || this.divError.code === 403))
     };
     if (!this.raw || !this.raw.summary) return { ...base, data: null };
     const { summary, positions, dividendsYTD } = this.raw;

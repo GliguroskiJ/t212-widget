@@ -46,7 +46,7 @@ with sync_playwright() as p:
     # settings window
     for tab in (['account', 'appearance'] if not only or 'settings' in only else []):
         pg = b.new_page(viewport={'width': 760, 'height': 680}, device_scale_factor=1.5)
-        pg.add_init_script('window.__MOCK=' + json.dumps({'settings': {'accent': '#6f8fe8', 'tint': 0.3, 'theme': 'acrylic'}, 'state': {'divForbidden': True}}) + ';' + mock)
+        pg.add_init_script('window.__MOCK=' + json.dumps({'settings': {'accent': '#6f8fe8', 'tint': 0.3, 'theme': 'acrylic'}, 'state': {'divError': {'code': 403, 'message': '403 Forbidden'}}}) + ';' + mock)
         pg.goto('file://' + ROOT + '/app/settings.html?tab=' + tab)
         pg.add_style_tag(content=':root:root{background:%s!important}' % WALL)
         pg.wait_for_timeout(1300)

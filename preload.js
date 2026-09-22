@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('api', {
   init: () => ipcRenderer.invoke('init'),
   setSettings: patch => ipcRenderer.invoke('set-settings', patch),
   refresh: () => ipcRenderer.invoke('refresh'),
+  recheckDividends: () => ipcRenderer.invoke('recheck-dividends'),
   openSettings: tab => ipcRenderer.invoke('open-settings', tab),
   hideWidget: () => ipcRenderer.invoke('hide-widget'),
   showWidget: () => ipcRenderer.invoke('show-widget'),

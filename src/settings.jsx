@@ -51,15 +51,22 @@ const Section = ({ label, children }) => (
 
 const Dot = ({ color, breathe }) => <span class={breathe ? 'breathe' : ''} style={`width:6px;height:6px;border-radius:50%;flex:none;background:${color}`}></span>;
 
-const Perm = ({ on, name, why, warn }) => (
-  <div style="display:flex;align-items:flex-start;gap:8px">
-    <i class={'ph ' + (warn ? 'ph-warning-circle' : on ? 'ph-check-circle' : 'ph-minus-circle')} style={`font-size:15px;margin-top:1px;color:${warn ? DOWN : on ? UP : 'var(--color-neutral-600)'}`}></i>
-    <div style="display:flex;flex-direction:column;gap:2px">
-      <span style={`font:500 12px/1.3 ${F};color:${on ? 'var(--color-neutral-200)' : 'var(--color-neutral-500)'}`}>{name}</span>
-      <span style={`font:400 11px/1.3 ${F};color:${warn ? DOWN : 'var(--color-neutral-500)'}`}>{warn ? 'missing on your key — dividends can\u2019t be read' : why}</span>
+const Perm = ({ on, name, why, warn, err }) => {
+  const [busy, setBusy] = useState(false);
+  const msg = err ? (err.code === 401 || err.code === 403
+    ? `Trading 212 refused it (${err.code}) — tick “History – Dividends” on the key`
+    : `couldn’t load (${err.code ? err.code : 'network'}) — will retry`) : why;
+  return (
+    <div style="display:flex;align-items:flex-start;gap:8px">
+      <i class={'ph ' + (warn ? 'ph-warning-circle' : on ? 'ph-check-circle' : 'ph-minus-circle')} style={`font-size:15px;margin-top:1px;color:${warn ? DOWN : on ? UP : 'var(--color-neutral-600)'}`}></i>
+      <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
+        <span style={`font:500 12px/1.3 ${F};color:${on ? 'var(--color-neutral-200)' : 'var(--color-neutral-500)'}`}>{name}</span>
+        <span title={err ? err.message : ''} style={`font:400 11px/1.3 ${F};color:${warn ? DOWN : 'var(--color-neutral-500)'}`}>{msg}</span>
+        {err && <a href="#" style="font-size:11px;margin-top:2px" onClick={async e => { e.preventDefault(); setBusy(true); await api.recheckDividends(); setTimeout(() => setBusy(false), 1500); }}>{busy ? 'Checking…' : 'Check again'}</a>}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // ── tabs ─────────────────────────────────────────────────────
 function AccountTab({ s, st, set }) {
@@ -97,8 +104,8 @@ function AccountTab({ s, st, set }) {
           <div class="perm-grid">
             <Perm on name="Account data" why="total value, cash, P/L" />
             <Perm on name="Portfolio" why="positions and allocation" />
-            <Perm on name="History" why="Dividends YTD (optional)" warn={st && st.divForbidden} />
-            <Perm name="Orders, Pies, Metadata, Transactions" why="not needed — leave off" />
+            <Perm on name="History – Dividends" why="Dividends YTD (optional)" warn={st && st.divError} err={st && st.divError} />
+            <Perm name="Everything else" why="Orders, Pies, Metadata, other History — leave off" />
           </div>
           <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>
             {st && st.encrypted ? 'Keys are encrypted on this PC with Windows DPAPI.' : 'Keys are stored locally on this PC.'}

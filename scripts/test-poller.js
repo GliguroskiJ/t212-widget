@@ -10,6 +10,7 @@ const srv = http.createServer((req, res) => {
   if (req.url === '/api/v0/equity/positions') return res.end(JSON.stringify([
     { instrument: { ticker: 'AAPL_US_EQ', name: 'Apple', isin: 'US0378331005', currency: 'USD' }, quantity: 10, currentPrice: 230, averagePricePaid: 180, walletImpact: { currency: 'CZK', totalCost: 40000, currentValue: 52000, unrealizedProfitLoss: 12000 } },
     { instrument: { ticker: 'VWCEd_EQ', name: 'Vanguard FTSE All-World', isin: 'IE00BK5BQT80', currency: 'EUR' }, quantity: 100, currentPrice: 130, averagePricePaid: 110, walletImpact: { currency: 'CZK', totalCost: 280000, currentValue: 330000, unrealizedProfitLoss: 50000 } }]));
+  if (req.url.startsWith('/api/v0/equity/history/dividends') && mode === 'div403') { res.writeHead(403); return res.end('{"code":"Forbidden"}'); }
   if (req.url.startsWith('/api/v0/equity/history/dividends')) return res.end(JSON.stringify({ items: [
     { amount: 120.5, paidOn: new Date().toISOString(), ticker: 'AAPL_US_EQ' },
     { amount: 99, paidOn: '2020-01-01T00:00:00Z', ticker: 'AAPL_US_EQ' }], nextPagePath: '/api/v0/equity/history/dividends?cursor=1' }));
@@ -38,6 +39,11 @@ srv.listen(0, async () => {
   console.log('live ok', { value: st.data.value, dayAbs: st.data.dayAbs, allTimePct: st.data.allTimePct.toFixed(2), weights: st.data.positions.map(x => x.weight.toFixed(1)) });
   await new Promise(r => setTimeout(r, 300));
   assert.ok(Math.abs(p.raw.dividendsYTD - 120.5) < 1e-9, 'dividends ' + p.raw.dividendsYTD); console.log('dividends YTD ok', p.raw.dividendsYTD);
+  // 3b) dividends forbidden → real error kept; recheck after fixing the key clears it
+  mode = 'div403'; p.recheckDividends(); await new Promise(r => setTimeout(r, 300));
+  st = p.payload(); assert.equal(st.divError.code, 403); assert.equal(st.divForbidden, true); console.log('dividends 403 ok', st.divError.message);
+  mode = 'ok'; p.recheckDividends(); await new Promise(r => setTimeout(r, 300));
+  st = p.payload(); assert.equal(st.divError, null); assert.equal(st.divForbidden, false); console.log('dividends recheck ok');
   // 4) 429 keeps last-known data + retryAt from header
   mode = '429'; await p.cycle(); p.stop(); st = p.payload();
   assert.equal(st.status, 'error'); assert.equal(st.error.kind, 'rate'); assert.ok(st.data && st.data.value === 1284640.5);
