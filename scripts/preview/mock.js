@@ -31,7 +31,7 @@
   window.__emit = (k, v) => ls[k].forEach(f => f(v));
   const noop = () => Promise.resolve(true);
   window.api = {
-    init: () => Promise.resolve({ settings, state, version: '1.0.0', dataDir: 'C:\\Users\\jovan\\AppData\\Roaming\\T212 Widget' }),
+    init: () => Promise.resolve({ settings, state, version: '1.3.0', platform: cfg.platform || 'win32', dataDir: 'C:\\Users\\jovan\\AppData\\Roaming\\T212 Widget' }),
     setSettings: p => { Object.assign(settings, p); window.__emit('settings', { ...settings }); return Promise.resolve(settings); },
     refresh: noop, openSettings: noop, hideWidget: noop, showWidget: noop, quit: noop, closeSettings: noop, minimizeSettings: noop,
     clearHistory: noop, openDataFolder: noop, openExternal: noop, resetPosition: noop,

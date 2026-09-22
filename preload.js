@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   recheckDividends: () => ipcRenderer.invoke('recheck-dividends'),
   openSettings: tab => ipcRenderer.invoke('open-settings', tab),
   hideWidget: () => ipcRenderer.invoke('hide-widget'),
+  hidePopover: () => ipcRenderer.invoke('hide-popover'),
   showWidget: () => ipcRenderer.invoke('show-widget'),
   quit: () => ipcRenderer.invoke('quit'),
   closeSettings: () => ipcRenderer.invoke('close-settings'),

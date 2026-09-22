@@ -16,11 +16,14 @@ const SETTINGS_W = 760, SETTINGS_H = 680;
 app.setAppUserModelId('cz.jovan.t212widget');
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
-let store, poller, widget, settingsWin, tray;
+let store, poller, widget, settingsWin, tray, popover;
+const IS_MAC = process.platform === 'darwin';
+let lastState = null;
 let quitting = false;
 const ROOT = path.join(__dirname, '..');
 const ICON = path.join(ROOT, 'app', 'icon.ico');
 const ICON_PNG = path.join(ROOT, 'app', 'icon-32.png');
+const TRAY_TEMPLATE = path.join(ROOT, 'app', 'trayTemplate.png');
 
 function effectiveSize() {
   const st = poller ? poller.status : 'loading';
@@ -47,7 +50,7 @@ function defaultPos(w, h) {
 }
 
 function broadcast(ch, payload) {
-  for (const w of [widget, settingsWin]) if (w && !w.isDestroyed()) w.webContents.send(ch, payload);
+  for (const w of [widget, settingsWin, popover]) if (w && !w.isDestroyed()) w.webContents.send(ch, payload);
 }
 
 // ── widget window ────────────────────────────────────────────
@@ -69,7 +72,7 @@ function createWidget() {
   widget.__size = size;
   widget.setOpacity(Math.min(1, Math.max(0.4, store.get('opacity') || 1)));
   widget.loadFile(path.join(ROOT, 'app', 'widget.html'));
-  widget.once('ready-to-show', () => { if (store.get('showWidget')) widget.showInactive(); });
+  widget.once('ready-to-show', () => { if (desktopWanted()) widget.showInactive(); });
   let moveT;
   widget.on('moved', () => {
     clearTimeout(moveT);
@@ -94,8 +97,12 @@ function applyWidgetSize() {
   widget.setBounds({ x: p.x, y: p.y, width, height });
 }
 
+function desktopWanted() {
+  return store.get('showWidget') && (!IS_MAC || store.get('macMode') !== 'menubar');
+}
 function showWidget() {
   store.set({ showWidget: true });
+  if (IS_MAC && store.get('macMode') === 'menubar') store.set({ macMode: 'both' });
   if (!widget) createWidget(); else { widget.showInactive(); }
   broadcast('settings', store.all());
   rebuildTrayMenu();
@@ -105,6 +112,72 @@ function hideWidget() {
   if (widget) widget.hide();
   broadcast('settings', store.all());
   rebuildTrayMenu();
+}
+
+// ── macOS menu-bar panel ─────────────────────────────────────
+function popoverSizeKey() {
+  const st = poller ? poller.status : 'loading';
+  if (st === 'first-run') return 'medium';
+  return SIZES[store.get('popoverSize')] ? store.get('popoverSize') : 'medium';
+}
+function createPopover() {
+  const size = popoverSizeKey();
+  const { width, height } = winSize(size);
+  popover = new BrowserWindow({
+    width, height, show: false, frame: false, transparent: true, resizable: false, movable: false,
+    minimizable: false, maximizable: false, fullscreenable: false, skipTaskbar: true, hasShadow: false,
+    alwaysOnTop: true, backgroundColor: '#00000000', title: 'T212 Widget',
+    webPreferences: { preload: path.join(ROOT, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false }
+  });
+  popover.__size = size;
+  popover.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  popover.loadFile(path.join(ROOT, 'app', 'widget.html'), { query: { mode: 'popover' } });
+  popover.on('blur', () => { if (popover && !popover.webContents.isDevToolsOpened()) popover.hide(); });
+  popover.on('closed', () => { popover = null; });
+}
+function positionPopover() {
+  if (!popover || !tray) return;
+  const tb = tray.getBounds();
+  const [w, h] = popover.getSize();
+  const d = screen.getDisplayNearestPoint({ x: tb.x, y: tb.y });
+  const a = d.workArea;
+  let x = Math.round(tb.x + tb.width / 2 - w / 2);
+  x = Math.min(Math.max(x, a.x - MARGIN + 6), a.x + a.width - w + MARGIN - 6);
+  const y = Math.round(a.y - MARGIN + 6);
+  popover.setPosition(x, y, false);
+}
+function togglePopover() {
+  if (!popover) createPopover();
+  if (popover.isVisible()) { popover.hide(); return; }
+  positionPopover();
+  popover.show();
+  popover.focus();
+}
+function applyPopoverSize() {
+  if (!popover) return;
+  const size = popoverSizeKey();
+  if (popover.__size === size) return;
+  popover.__size = size;
+  const { width, height } = winSize(size);
+  popover.setSize(width, height);
+  if (popover.isVisible()) positionPopover();
+}
+
+// menu-bar title: portfolio value or day change next to the icon
+function fmtNum(n, d) {
+  const loc = store.get('numberFormat') === 'cs' ? 'cs-CZ' : 'en-US';
+  return new Intl.NumberFormat(loc, { minimumFractionDigits: d, maximumFractionDigits: d }).format(n);
+}
+function updateTrayTitle() {
+  if (!tray || !IS_MAC) return;
+  const mode = store.get('menuBarText');
+  const d = lastState && lastState.data;
+  if (!d || mode === 'none') { tray.setTitle(''); return; }
+  const arrow = d.dayAbs >= 0 ? '▲' : '▼';
+  const txt = mode === 'change'
+    ? `${arrow} ${fmtNum(Math.abs(d.dayPct), 2)} %`
+    : `${fmtNum(d.value, 0)} ${d.currency}  ${arrow}${fmtNum(Math.abs(d.dayPct), 2)}%`;
+  tray.setTitle(' ' + txt, { fontType: 'monospacedDigit' });
 }
 
 // ── settings window ──────────────────────────────────────────
@@ -124,7 +197,7 @@ function openSettings(tab) {
     webPreferences: { preload: path.join(ROOT, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   settingsWin.loadFile(path.join(ROOT, 'app', 'settings.html'), { query: { tab: tab || '' } });
-  settingsWin.once('ready-to-show', () => settingsWin.show());
+  settingsWin.once('ready-to-show', () => { settingsWin.show(); if (IS_MAC) app.focus({ steal: true }); });
   settingsWin.on('closed', () => { settingsWin = null; });
 }
 
@@ -138,6 +211,12 @@ function applySettings(patch) {
     if ('opacity' in patch) widget.setOpacity(Math.min(1, Math.max(0.4, next.opacity)));
   }
   if ('size' in patch) applyWidgetSize();
+  if ('popoverSize' in patch) applyPopoverSize();
+  if ('menuBarText' in patch || 'numberFormat' in patch) updateTrayTitle();
+  if (IS_MAC && 'macMode' in patch) {
+    if (next.macMode === 'menubar') { if (widget) widget.hide(); }
+    else { if (!next.showWidget) store.set({ showWidget: true }); if (!widget) createWidget(); else widget.showInactive(); }
+  }
   if ('showWidget' in patch && patch.showWidget !== prev.showWidget) { next.showWidget ? showWidget() : hideWidget(); }
   if ('env' in patch && patch.env !== prev.env) { poller.resetForNewAccount(); poller.cycle(); }
   if ('refreshSeconds' in patch || 'pauseWhenClosed' in patch || 'displayCurrency' in patch) poller.refreshNow();
@@ -157,7 +236,8 @@ const TRAY_CS = {
   'Hide widget': 'Skrýt widget', 'Show widget': 'Zobrazit widget', 'Refresh now': 'Obnovit', 'Size': 'Velikost',
   'Small  1×1': 'Malý  1×1', 'Medium  2×1': 'Střední  2×1', 'Large  2×2': 'Velký  2×2', 'Rail': 'Panel',
   'Always on top': 'Vždy navrchu', 'Lock position': 'Zamknout pozici', 'Start with Windows': 'Spouštět s Windows',
-  'Settings…': 'Nastavení…', 'Quit': 'Ukončit',
+  'Settings…': 'Nastavení…', 'Quit': 'Ukončit', 'Open at login': 'Spouštět po přihlášení',
+  'Show panel': 'Zobrazit panel', 'Desktop widget': 'Widget na ploše',
   'Both the API key and the secret are required.': 'Je potřeba API klíč i tajný klíč.',
   'Trading 212 returned 401 Unauthorized — check the key and secret.': 'Trading 212 vrátil 401 Unauthorized — zkontrolujte klíč a tajný klíč.',
   'Trading 212 returned 403 Forbidden — the key needs the Account data and Portfolio permissions.': 'Trading 212 vrátil 403 Forbidden — klíč potřebuje oprávnění Account data a Portfolio.',
@@ -168,33 +248,45 @@ function rebuildTrayMenu() {
   if (!tray) return;
   const s = store.all();
   const sizeItem = (k, label) => ({ label, type: 'radio', checked: s.size === k, click: () => applySettings({ size: k }) });
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: s.showWidget ? tr('Hide widget') : tr('Show widget'), click: () => (s.showWidget ? hideWidget() : showWidget()) },
+  const menu = Menu.buildFromTemplate([
+    ...(IS_MAC ? [{ label: tr('Show panel'), click: () => togglePopover() },
+      { label: tr('Desktop widget'), type: 'checkbox', checked: desktopWanted(), click: m => applySettings({ macMode: m.checked ? 'both' : 'menubar' }) }]
+      : [{ label: s.showWidget ? tr('Hide widget') : tr('Show widget'), click: () => (s.showWidget ? hideWidget() : showWidget()) }]),
     { label: tr('Refresh now'), click: () => poller.refreshNow() },
     { type: 'separator' },
     { label: tr('Size'), submenu: [sizeItem('small', tr('Small  1×1')), sizeItem('medium', tr('Medium  2×1')), sizeItem('large', tr('Large  2×2')), sizeItem('rail', tr('Rail'))] },
     { label: tr('Always on top'), type: 'checkbox', checked: !!s.alwaysOnTop, click: m => applySettings({ alwaysOnTop: m.checked }) },
     { label: tr('Lock position'), type: 'checkbox', checked: !!s.lockPosition, click: m => applySettings({ lockPosition: m.checked }) },
-    { label: tr('Start with Windows'), type: 'checkbox', checked: !!s.startWithWindows, click: m => applySettings({ startWithWindows: m.checked }) },
+    { label: IS_MAC ? tr('Open at login') : tr('Start with Windows'), type: 'checkbox', checked: !!s.startWithWindows, click: m => applySettings({ startWithWindows: m.checked }) },
     { type: 'separator' },
     { label: tr('Settings…'), click: () => openSettings() },
     { label: tr('Quit'), click: () => { quitting = true; app.quit(); } }
-  ]));
+  ]);
+  tray.__menu = menu;
+  if (!IS_MAC) tray.setContextMenu(menu);   // on macOS left-click opens the panel, right-click the menu
 }
 
 function createTray() {
-  let img = nativeImage.createFromPath(process.platform === 'win32' ? ICON : ICON_PNG);
+  let img;
+  if (IS_MAC) { img = nativeImage.createFromPath(TRAY_TEMPLATE); img.setTemplateImage(true); }
+  else img = nativeImage.createFromPath(process.platform === 'win32' ? ICON : ICON_PNG);
   if (img.isEmpty()) img = nativeImage.createFromPath(ICON_PNG);
   tray = new Tray(img);
   tray.setToolTip('T212 Widget');
-  tray.on('click', () => ((widget && widget.isVisible()) ? hideWidget() : showWidget()));
-  tray.on('double-click', () => openSettings());
+  if (IS_MAC) {
+    tray.on('click', () => togglePopover());
+    tray.on('right-click', () => tray.popUpContextMenu(tray.__menu));
+  } else {
+    tray.on('click', () => ((widget && widget.isVisible()) ? hideWidget() : showWidget()));
+    tray.on('double-click', () => openSettings());
+  }
   rebuildTrayMenu();
 }
 
 // ── IPC ──────────────────────────────────────────────────────
 function registerIpc() {
-  ipcMain.handle('init', () => ({ settings: store.all(), state: poller.payload(), version: app.getVersion(), dataDir: app.getPath('userData') }));
+  ipcMain.handle('init', () => ({ settings: store.all(), state: poller.payload(), version: app.getVersion(), dataDir: app.getPath('userData'), platform: process.platform }));
+  ipcMain.handle('hide-popover', () => { if (popover) popover.hide(); return true; });
   ipcMain.handle('set-settings', (_e, patch) => applySettings(patch || {}));
   ipcMain.handle('refresh', () => { poller.refreshNow(); return true; });
   ipcMain.handle('recheck-dividends', () => { poller.recheckDividends(); return true; });
@@ -251,6 +343,7 @@ function registerIpc() {
       else poller.recheckDividends();
       poller.status = 'loading';
       applyWidgetSize();
+      applyPopoverSize();
       poller.cycle();
       broadcast('settings', store.all());
       return { ok: true, ...info };
@@ -283,6 +376,7 @@ app.on('before-quit', () => { quitting = true; try { store.saveHistory(); } catc
 
 app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark';
+  if (IS_MAC && app.dock) app.dock.hide();          // menu-bar app: no Dock icon
   store = new Store(app.getPath('userData'), safeStorage);
   poller = new Poller({ store, fetchImpl: (u, o) => net.fetch(u, o) });
   if (!store.get('firstLaunchDone')) {
@@ -290,9 +384,10 @@ app.whenReady().then(() => {
     applyAutostart(store.get('startWithWindows'));
   }
   registerIpc();
-  poller.on('state', st => { broadcast('state', st); applyWidgetSize(); });
+  poller.on('state', st => { lastState = st; broadcast('state', st); applyWidgetSize(); applyPopoverSize(); updateTrayTitle(); });
   createTray();
-  createWidget();
+  if (!IS_MAC || store.get('macMode') !== 'menubar') createWidget();
+  if (IS_MAC) { createPopover(); if (!store.getCreds()) setTimeout(() => togglePopover(), 800); }
   poller.start();
   // market open/closed flips & "opens in" countdown refresh
   setInterval(() => poller.tick(), 30e3);

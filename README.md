@@ -21,3 +21,11 @@ npm test            # test API klienta proti falešnému T212 serveru
 - `/api/v0/equity/account/summary` (hodnota, cash, P/L), `/api/v0/equity/positions`, `/api/v0/equity/history/dividends`
 - Nastavení, historie grafu a šifrované klíče: `%APPDATA%\T212 Widget\`
 - API nemá historii hodnoty portfolia → graf se nahrává lokálně od první synchronizace; denní P/L se počítá od poslední hodnoty před půlnocí.
+
+## macOS
+Stejná aplikace běží i na Macu: ikona v horní liště (klik = panel s widgetem, pravý klik = menu),
+volitelně i plovoucí widget na ploše. `npm run dist:mac` (na Linuxu vznikne .app, podepsat ad-hoc přes `rcodesign sign`).
+
+## GitHub build
+`.github/workflows/build.yml` — po pushnutí tagu `vX.Y.Z` GitHub sestaví Windows instalátor i macOS aplikace
+(arm64 + x64, .zip a .dmg) a přiloží je k Release.

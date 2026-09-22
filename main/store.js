@@ -26,6 +26,9 @@ const DEFAULTS = {
   lockPosition: false,
   showWidget: true,
   widgetPos: null,             // {x, y} top-left of the window
+  macMode: 'menubar',          // macOS: 'menubar' | 'desktop' | 'both'
+  popoverSize: 'medium',       // size of the menu-bar panel
+  menuBarText: 'value',        // macOS menu-bar title: 'value' | 'change' | 'none'
   firstLaunchDone: false
 };
 

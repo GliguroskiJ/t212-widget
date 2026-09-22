@@ -8,6 +8,8 @@ import { t, setLang, locale } from './i18n.js';
 import { marketStatus } from '../main/market.js';
 
 const api = window.api;
+const POPOVER = new URLSearchParams(location.search).get('mode') === 'popover';
+const SIZE_KEY = POPOVER ? 'popoverSize' : 'size';
 const F = "'Inter',sans-serif";
 
 // ── hooks ────────────────────────────────────────────────────
@@ -197,16 +199,18 @@ function CornerMenu({ settings }) {
           <div class="mlabel">{t('Widget size')}</div>
           <div class="msizes">
             {sizes.map(([k, s, tt]) => (
-              <button class={'msz' + (settings.size === k ? ' on' : '')} title={t(tt)} onClick={() => api.setSettings({ size: k })}>{s}</button>
+              <button class={'msz' + (settings[SIZE_KEY] === k ? ' on' : '')} title={t(tt)} onClick={() => api.setSettings({ [SIZE_KEY]: k })}>{s}</button>
             ))}
           </div>
+          {!POPOVER && <>
           <button class="mi" onClick={act(() => api.setSettings({ lockPosition: !settings.lockPosition }))}>
             <i class={'ph ' + (settings.lockPosition ? 'ph-lock-simple-open' : 'ph-lock-simple')}></i>{settings.lockPosition ? t('Unlock position') : t('Lock position')}</button>
           <button class="mi" onClick={act(() => api.setSettings({ alwaysOnTop: !settings.alwaysOnTop }))}>
             <i class="ph ph-push-pin"></i>{settings.alwaysOnTop ? t('Don\u2019t keep on top') : t('Keep on top')}</button>
+          </>}
           <button class="mi" onClick={act(() => api.openSettings())}><i class="ph ph-gear-six"></i>{t('Settings…')}</button>
           <div class="msep"></div>
-          <button class="mi" onClick={act(() => api.hideWidget())}><i class="ph ph-eye-slash"></i>{t('Hide widget')}</button>
+          {!POPOVER && <button class="mi" onClick={act(() => api.hideWidget())}><i class="ph ph-eye-slash"></i>{t('Hide widget')}</button>}
           <button class="mi danger" onClick={act(() => api.quit())}><i class="ph ph-power"></i>{t('Quit')}</button>
         </div>
       )}
@@ -744,7 +748,7 @@ function Connect({ st, settings }) {
         </div>
       </div>
       <p style={`position:relative;font:400 12.5px/1.55 ${F};color:var(--color-neutral-400);margin:0;max-width:62ch`}>
-        {t('Trading 212 → Settings → API (Beta) → Generate API key. Tick')} <span style="color:var(--color-accent-300)">Account data</span>, <span style="color:var(--color-accent-300)">Portfolio</span> {t('and')} <span style="color:var(--color-accent-300)">History – Dividends</span> {t('— nothing else is needed.')} {st.encrypted ? t('Encrypted on this PC with Windows DPAPI.') : t('Stored locally on this PC.')}</p>
+        {t('Trading 212 → Settings → API (Beta) → Generate API key. Tick')} <span style="color:var(--color-accent-300)">Account data</span>, <span style="color:var(--color-accent-300)">Portfolio</span> {t('and')} <span style="color:var(--color-accent-300)">History – Dividends</span> {t('— nothing else is needed.')} {st.encrypted ? (st.platform === 'darwin' ? t('Encrypted in the macOS Keychain.') : t('Encrypted on this PC with Windows DPAPI.')) : t('Stored locally on this PC.')}</p>
       <form class="ia" onSubmit={e => { e.preventDefault(); go(); }} style="position:relative;display:flex;flex-direction:column;gap:13px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:520px">
           <div style="display:flex;flex-direction:column;gap:5px">
@@ -801,16 +805,17 @@ function App({ init }) {
   useEffect(() => {
     let inside = null;
     const mv = e => {
+      if (POPOVER) return;
       const i = !!(e.target && e.target.closest && e.target.closest('.wg'));
       if (i !== inside) { inside = i; api.setIgnoreMouse(!i); }
     };
     window.addEventListener('mousemove', mv);
-    api.setIgnoreMouse(true);
+    if (!POPOVER) api.setIgnoreMouse(true);
     return () => window.removeEventListener('mousemove', mv);
   }, []);
   const dragging = useRef(false);
   const onDown = useCallback(e => {
-    if (e.button !== 0 || settings.lockPosition) return;
+    if (POPOVER || e.button !== 0 || settings.lockPosition) return;
     if (e.target.closest('.ia, button, input, a, label, form, .menu')) return;
     dragging.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -826,10 +831,16 @@ function App({ init }) {
 
   // market clock runs locally so "Opens in" counts down live and flips exactly on time
   const market = useMemo(() => marketStatus(new Date(now), st.marketCodes), [Math.floor(now / 1000), (st.marketCodes || []).join()]);
+  useEffect(() => {
+    if (!POPOVER) return;
+    const k = e => { if (e.key === 'Escape') api.hidePopover(); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, []);
   const m = useModel(st, settings);
   const status = (st.status === 'live' || st.status === 'closed') && st.data
     ? (market.open || !settings.pauseWhenClosed ? 'live' : 'closed') : st.status;
-  let size = settings.size;
+  let size = settings[SIZE_KEY] || 'medium';
   let body;
   if (status === 'first-run') { size = 'medium'; body = <Connect st={st} settings={settings} />; }
   else if (!st.data && status !== 'error') body = <Loading size={size} />;
@@ -845,7 +856,7 @@ function App({ init }) {
     [settings.theme, settings.accent, settings.tint, w, h, ov[0], ov[1]]);
   return (
     <div class="stage">
-      <div key={size + (status === 'first-run' ? '-fr' : '')} class={'wg' + (settings.lockPosition ? '' : ' draggable')} style={`width:${w}px;height:${h}px;background:url(${bg}) 0 0/100% 100% no-repeat`}
+      <div key={size + (status === 'first-run' ? '-fr' : '')} class={'wg' + (settings.lockPosition || POPOVER ? '' : ' draggable')} style={`width:${w}px;height:${h}px;background:url(${bg}) 0 0/100% 100% no-repeat`}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
         {body}
         {status !== 'first-run' && <CornerMenu settings={settings} />}

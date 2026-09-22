@@ -5,6 +5,7 @@ import { t, setLang } from './i18n.js';
 import { marketStatus } from '../main/market.js';
 
 const api = window.api;
+let MAC = false;
 const F = "'Inter',sans-serif";
 const TABS = () => [['account', t('Account')], ['widget', t('Widget')], ['appearance', t('Appearance')], ['data', t('Data')], ['system', t('System')]];
 
@@ -110,7 +111,7 @@ function AccountTab({ s, st, set }) {
             <Perm name={t('Everything else')} why={t('Orders, Pies, Metadata, other History — leave off')} />
           </div>
           <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>
-            {st && st.encrypted ? t('Keys are encrypted on this PC with Windows DPAPI.') : t('Keys are stored locally on this PC.')}
+            {st && st.encrypted ? (MAC ? t('Keys are encrypted in the macOS Keychain.') : t('Keys are encrypted on this PC with Windows DPAPI.')) : t('Keys are stored locally on this PC.')}
             {' '}<a href="#" onClick={e => { e.preventDefault(); api.openExternal('https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key'); }}>{t('How to create a key')}</a></span>
         </div>
         <form onSubmit={e => { e.preventDefault(); connect(); }} style="display:flex;flex-direction:column;gap:14px">
@@ -280,7 +281,6 @@ function AppearanceTab({ s, set }) {
         <TextColour s={s} set={set} />
       </Section>
       <Section label={t('Display')}>
-        <Row title={t('Language')}><Seg value={s.language || 'cs'} onChange={v => set({ language: v })} options={[['cs', 'Čeština'], ['en', 'English']]} /></Row>
         <Row title={t('Motion')} desc={t('Subtle keeps number roll-ups but stops breathing and pulsing; Off shows final values immediately.')}>
           <Seg value={s.motion} onChange={v => set({ motion: v })} options={[['full', t('Full')], ['subtle', t('Subtle')], ['off', t('Off')]]} /></Row>
         <Row title={t('Widget opacity')} desc={t('Lets the desktop show through the whole widget.')}>
@@ -321,8 +321,19 @@ function DataTab({ s, set, st }) {
 function SystemTab({ s, set, info }) {
   return (
     <>
-      <Section label={t('Windows')}>
-        <Row title={t('Start with Windows')} desc={t('Launch the widget when you sign in. Settings and position are remembered.')}><Switch on={s.startWithWindows} onChange={v => set({ startWithWindows: v })} /></Row>
+      <Section label={t('Language')}>
+        <Row title={t('Language')} desc={t('Widget, menus and this window.')}><Seg value={s.language || 'cs'} onChange={v => set({ language: v })} options={[['cs', 'Čeština'], ['en', 'English']]} /></Row>
+      </Section>
+      {MAC && <Section label={t('Menu bar')}>
+        <Row title={t('Show portfolio in')} desc={t('Menu bar = click the icon at the top of the screen. Desktop = floating widget like on Windows.')}>
+          <Seg value={s.macMode || 'menubar'} onChange={v => set({ macMode: v })} options={[['menubar', t('Menu bar')], ['desktop', t('Desktop')], ['both', t('Both')]]} /></Row>
+        <Row title={t('Text next to the icon')}>
+          <Seg value={s.menuBarText || 'value'} onChange={v => set({ menuBarText: v })} options={[['value', t('Value')], ['change', t('Day change')], ['none', t('Icon only')]]} /></Row>
+        <Row title={t('Panel size')} desc={t('Size of the panel that opens from the menu bar.')}>
+          <Seg value={s.popoverSize || 'medium'} onChange={v => set({ popoverSize: v })} options={[['small', t('Small')], ['medium', t('Medium')], ['large', t('Large')], ['rail', t('Rail')]]} /></Row>
+      </Section>}
+      <Section label={MAC ? 'macOS' : t('Windows')}>
+        <Row title={MAC ? t('Open at login') : t('Start with Windows')} desc={t('Launch the widget when you sign in. Settings and position are remembered.')}><Switch on={s.startWithWindows} onChange={v => set({ startWithWindows: v })} /></Row>
         <Row title={t('Keep on top')} desc={t('Float above other windows instead of sitting on the desktop.')}><Switch on={s.alwaysOnTop} onChange={v => set({ alwaysOnTop: v })} /></Row>
         <Row title={t('Lock position')} desc={t('Stops the widget from being dragged by accident.')}><Switch on={s.lockPosition} onChange={v => set({ lockPosition: v })} /></Row>
         <Row title={t('Widget position')} desc={t('Move it back to the top-right corner of the main screen.')}>
@@ -393,6 +404,7 @@ function App({ init }) {
 api.init().then(init => {
   applyTheme(init.settings.theme, init.settings.accent, init.settings.tint, init.settings.textColor);
   setLang(init.settings.language || 'cs');
+  MAC = init.platform === 'darwin';
   applyMotion(init.settings.motion);
   render(<App init={init} />, document.getElementById('root'));
 });

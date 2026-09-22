@@ -341,6 +341,7 @@ class Poller extends EventEmitter {
       marketCodes: this.marketCodes(),
       env: s.env,
       encrypted: this.store.encrypted(),
+      platform: process.platform,
       connected: !!this.creds(),
       divError: this.divError || null,
       divForbidden: !!(this.divError && (this.divError.code === 401 || this.divError.code === 403))
