@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'preact/hooks';
 import {
-  UP, DOWN, accentRamp, applyTheme, applyMotion, makeFmt, agoStr, hhmm,
+  UP, DOWN, accentRamp, applyTheme, ditheredBg, applyMotion, makeFmt, agoStr, hhmm,
   linePath, areaPath, lastPt, tint, glow
 } from './shared.js';
 
@@ -78,10 +78,36 @@ const Eyebrow = ({ children, size = 9.5, mb = 0 }) => (
   <span style={`font:400 ${size}px/1 ${F};letter-spacing:.13em;text-transform:uppercase;color:var(--color-neutral-600);${mb ? `margin-bottom:${mb}px` : ''}`}>{children}</span>
 );
 
+function useSize() {
+  const ref = useRef(null);
+  const [size, setSize] = useState(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver(([e]) => {
+      const r = e.contentRect;
+      setSize(p => (p && Math.abs(p.w - r.width) < 0.5 && Math.abs(p.h - r.height) < 0.5 ? p : { w: Math.round(r.width), h: Math.round(r.height) }));
+    });
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, size];
+}
+
+// A chart that fills its flex container (measured, so dots stay round)
+function FillChart(props) {
+  const [ref, size] = useSize();
+  return (
+    <div ref={ref} style={`flex:1;min-height:40px;position:relative;${props.wrapStyle || ''}`}>
+      {size && size.w > 10 && size.h > 10 && <div style="position:absolute;inset:0"><Chart {...props} w={size.w} h={size.h} style="" /></div>}
+    </div>
+  );
+}
+
 function Chart({ values, w, h, pad, sw = 1.5, color, gid, gop = .24, glowPx = 0, marker, mr = 2.6, pr = 4.5, draw = 1.1, fade = 1.2, fadeDelay = .3, grid, closed, animKey, style = '' }) {
   const line = linePath(values, w, h, pad);
   const area = areaPath(values, w, h, pad);
   const lp = lastPt(values, w, h, pad);
+  const g = typeof grid === 'function' ? grid(w, h) : grid;
   if (closed) {
     return (
       <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" style={`display:block;opacity:.4;${style}`}>
@@ -94,13 +120,39 @@ function Chart({ values, w, h, pad, sw = 1.5, color, gid, gop = .24, glowPx = 0,
       <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color={color} stop-opacity={gop}></stop>
         <stop offset="100%" stop-color={color} stop-opacity="0"></stop></linearGradient></defs>
-      {grid}
+      {g}
       <path d={area} fill={`url(#${gid})`} style={`animation:nfade ${fade}s ease ${fadeDelay}s both;transition:fill .7s ease`}></path>
       <path d={line} fill="none" stroke={color} stroke-width={sw} stroke-linejoin="round" stroke-linecap="round" pathLength="1" stroke-dasharray="1"
         style={`animation:ndraw ${draw}s cubic-bezier(.4,0,.2,1) both;transition:stroke .7s ease;${glowPx ? `filter:drop-shadow(0 0 ${glowPx}px ${glow(color)})` : ''}`}></path>
       {marker && <circle class="pulse-dot" cx={lp[0].toFixed(1)} cy={lp[1].toFixed(1)} r={pr} fill={color} opacity=".5"></circle>}
       {marker && <circle cx={lp[0].toFixed(1)} cy={lp[1].toFixed(1)} r={mr} fill={color}></circle>}
     </svg>
+  );
+}
+
+// Low–high of the visible range with a marker at the current value
+function RangeBar({ m, range, closed }) {
+  const vals = m.values;
+  const lo = Math.min(...vals, m.val), hi = Math.max(...vals, m.val);
+  const pos = hi > lo ? (m.val - lo) / (hi - lo) : 0.5;
+  const [on, setOn] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setOn(true), 120); return () => clearTimeout(t); }, []);
+  const pct = (on ? pos : 0) * 100;
+  return (
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div style="display:flex;align-items:baseline">
+        <Eyebrow>{range === 'ALL' ? 'All-time' : range} range</Eyebrow>
+        <span style="flex:1"></span>
+        <span style={`font:400 10px/1 ${F};color:var(--color-neutral-600);font-variant-numeric:tabular-nums`}>{m.fmt.signed(hi > lo ? ((hi - lo) / lo) * 100 : 0, 2)}% spread</span>
+      </div>
+      <div style="position:relative;height:4px;border-radius:2px;background:rgba(233,233,237,.06)">
+        <div style={`position:absolute;left:0;top:0;bottom:0;border-radius:2px;width:${pct}%;background:${closed ? 'var(--color-neutral-700)' : 'linear-gradient(to right,var(--color-accent-800),var(--color-accent-500))'};transition:width 1.1s cubic-bezier(.3,1,.3,1)`}></div>
+        <div style={`position:absolute;top:50%;left:${pct}%;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-radius:50%;background:${closed ? 'var(--color-neutral-500)' : 'var(--color-accent-300)'};box-shadow:0 0 0 2px rgba(0,0,0,.25)${closed ? '' : ',0 0 10px rgba(var(--acc-rgb),.6)'};transition:left 1.1s cubic-bezier(.3,1,.3,1)`}></div>
+      </div>
+      <div style={`display:flex;justify-content:space-between;font:400 10.5px/1 ${F};color:var(--color-neutral-500);font-variant-numeric:tabular-nums`}>
+        <span>{m.fmt(lo, 0)}</span><span>{m.fmt(hi, 0)}</span>
+      </div>
+    </div>
   );
 }
 
@@ -205,6 +257,7 @@ function useModel(st, settings) {
     dayIcon: dayPct >= 0 ? 'ph ph-trend-up' : 'ph ph-trend-down',
     cashStr: fmt(d.cash, 0),
     divStr: d.dividendsYTD == null ? '—' : fmt(d.dividendsYTD, 0),
+    divTitle: st.divForbidden ? 'Needs the History permission on the API key' : '',
     allTimeStr: fmt.signed(d.allTimePL, 0),
     allTimePctStr: fmt.signed(d.allTimePct, 2),
     allTimeColor: d.allTimePL >= 0 ? UP : DOWN
@@ -225,7 +278,7 @@ function Pill({ m, closed, size = 11.5, icon = 10, pad = '3px 7px 3px 5px', extr
 function Small({ m, st, now, closed }) {
   return (
     <div style="width:300px;height:304px;padding:20px;display:flex;flex-direction:column;box-sizing:border-box">
-      <div style="display:flex;align-items:center;gap:7px;margin-bottom:auto">
+      <div style="display:flex;align-items:center;gap:7px;margin-bottom:20px">
         <Tile px={20} muted={closed} />
         <span style={`font:500 11px/1 ${F};color:var(--color-neutral-${closed ? 500 : 400})`}>Portfolio</span>
         <span style="flex:1"></span>
@@ -237,7 +290,7 @@ function Small({ m, st, now, closed }) {
         <span style={`font:400 11px/1 ${F};color:var(--color-neutral-${closed ? 600 : 500})`}>{m.cur}</span>
       </div>
       <div style="display:flex;margin-top:10px"><Pill m={m} closed={closed} /></div>
-      <Chart values={m.values} w={260} h={46} pad={5} color={m.trend} gid="gS" closed={closed} style="margin-top:16px" animKey={st.range} />
+      <FillChart values={m.values} pad={5} color={m.trend} gid="gS" closed={closed} animKey={st.range} marker glowPx={5} mr={2.3} wrapStyle="margin-top:16px" />
       <span style={`font:400 10px/1 ${F};color:var(--color-neutral-600);margin-top:12px`}>
         {closed ? `Opens in ${st.market.opensIn || '—'} · ${st.market.names}` : `Updated ${agoStr(st.lastSync, now)}`}</span>
     </div>
@@ -248,7 +301,6 @@ function Medium({ m, st, now, closed, settings }) {
   const setRange = r => api.setSettings({ range: r });
   return (
     <div style="width:620px;height:304px;padding:22px 24px;display:grid;grid-template-columns:250px 1fr;gap:26px;box-sizing:border-box;position:relative">
-      <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(var(--acc-rgb),.09),transparent 45%)"></div>
       <div style="position:relative;display:flex;flex-direction:column;min-width:0">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:22px">
           <Tile px={22} muted={closed} />
@@ -265,9 +317,12 @@ function Medium({ m, st, now, closed, settings }) {
           {!closed && <span style={`font:400 12px/1 ${F};color:var(--color-neutral-400);font-variant-numeric:tabular-nums;white-space:nowrap`}>{m.dayAbsStr} today</span>}
         </div>
         <span style="flex:1"></span>
-        <div style="display:flex;gap:18px;padding-top:14px;border-top:1px solid rgba(233,233,237,.08)">
+        <RangeBar m={m} range={settings.range} closed={closed} />
+        <span style="flex:1"></span>
+        <div style="display:flex;gap:16px;padding-top:14px;border-top:1px solid rgba(233,233,237,.08)">
           <Stat label="Free cash" value={`${m.cashStr} ${m.cur}`} />
           <Stat label="All-time" value={m.allTimeStr} color={m.allTimeColor} />
+          <Stat label="Dividends" value={m.divStr} title={m.divTitle} />
         </div>
       </div>
       <div style="position:relative;display:flex;flex-direction:column;min-width:0">
@@ -276,11 +331,9 @@ function Medium({ m, st, now, closed, settings }) {
             {closed ? <ClosedChip /> : <><Dot color={m.trend} />live · {agoStr(st.lastSync, now)}</>}</span>
           <RangeChips range={settings.range} onPick={setRange} list={['1D', '1W', '1M', '1Y']} />
         </div>
-        <div style="flex:1;position:relative;margin-top:10px">
-          <Chart values={m.values} w={296} h={126} pad={8} sw={1.7} color={m.trend} gid="gM" gop={.28} glowPx={7} marker
-            draw={1.2} fade={1.3} fadeDelay={.35} closed={closed} animKey={settings.range}
-            grid={<line x1="0" y1="63" x2="296" y2="63" stroke="rgba(233,233,237,.07)" stroke-width="1" stroke-dasharray="2 4"></line>} />
-        </div>
+        <FillChart values={m.values} pad={8} sw={1.7} color={m.trend} gid="gM" gop={.28} glowPx={7} marker
+          draw={1.2} fade={1.3} fadeDelay={.35} closed={closed} animKey={settings.range} wrapStyle="margin-top:10px"
+          grid={(w, h) => <line x1="0" y1={h / 2} x2={w} y2={h / 2} stroke="rgba(233,233,237,.07)" stroke-width="1" stroke-dasharray="2 4"></line>} />
         <div style="display:flex;gap:8px;margin-top:8px">
           {m.positions.slice(0, 3).map(p => (
             <div class="hov-chip" title={p.name} style="flex:1;min-width:0;padding:8px 9px;border-radius:6px;background:rgba(233,233,237,.035);box-shadow:inset 0 0 0 1px rgba(233,233,237,.05);display:flex;flex-direction:column;gap:5px">
@@ -295,8 +348,8 @@ function Medium({ m, st, now, closed, settings }) {
   );
 }
 
-const Stat = ({ label, value, color }) => (
-  <div style="display:flex;flex-direction:column;gap:3px">
+const Stat = ({ label, value, color, title }) => (
+  <div style="display:flex;flex-direction:column;gap:3px;min-width:0" title={title || ''}>
     <span style={`font:400 9.5px/1 ${F};letter-spacing:.12em;text-transform:uppercase;color:var(--color-neutral-600)`}>{label}</span>
     <span style={`font:400 12.5px/1 ${F};color:${color || 'var(--color-neutral-300)'};font-variant-numeric:tabular-nums;white-space:nowrap`}>{value}</span>
   </div>
@@ -348,7 +401,7 @@ function Rail({ m, st, now, closed, settings }) {
       </div>
       <div style="display:flex;justify-content:space-between;padding-top:14px;border-top:1px solid rgba(233,233,237,.08)">
         <Stat label="Cash" value={m.cashStr} />
-        <div style="text-align:right"><Stat label="Dividends YTD" value={m.divStr} /></div>
+        <div style="text-align:right"><Stat label="Dividends YTD" value={m.divStr} title={m.divTitle} /></div>
       </div>
       {closed && <span style={`font:400 10px/1 ${F};color:var(--color-neutral-600);margin-top:-8px`}>Opens in {st.market.opensIn || '—'} · {st.market.names}</span>}
     </div>
@@ -387,7 +440,6 @@ function Large({ m, st, now, closed, settings }) {
   const [openRow, setOpenRow] = useState(null);
   return (
     <div style="width:620px;height:620px;padding:24px;display:flex;flex-direction:column;gap:18px;box-sizing:border-box;position:relative">
-      <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(var(--acc-rgb),.08),transparent 40%)"></div>
       <div style="position:relative;display:flex;align-items:center;gap:9px;padding-right:14px">
         <Tile px={24} muted={closed} />
         <span style={`font:500 13px/1 ${F};color:var(--color-neutral-${closed ? 500 : 200})`}>Trading 212 · Invest</span>
@@ -422,16 +474,12 @@ function Large({ m, st, now, closed, settings }) {
           <div style="display:flex;gap:6px;justify-content:flex-end">
             <RangeChips range={settings.range} onPick={r => api.setSettings({ range: r })} list={['1D', '1W', '1M', '1Y', 'ALL']} size={10.5} padX={8} />
           </div>
-          <Chart values={m.values} w={572} h={226} pad={12} sw={1.9} color={m.trend} gid="gL" gop={.3} glowPx={8} marker mr={2.8} pr={5}
-            draw={1.35} fade={1.3} fadeDelay={.35} closed={closed} animKey={settings.range} style="margin-top:10px"
-            grid={<>
-              <line x1="0" y1="56" x2="572" y2="56" stroke="rgba(233,233,237,.055)" stroke-dasharray="2 5"></line>
-              <line x1="0" y1="113" x2="572" y2="113" stroke="rgba(233,233,237,.07)" stroke-dasharray="2 5"></line>
-              <line x1="0" y1="170" x2="572" y2="170" stroke="rgba(233,233,237,.055)" stroke-dasharray="2 5"></line></>} />
+          <FillChart values={m.values} pad={12} sw={1.9} color={m.trend} gid="gL" gop={.3} glowPx={8} marker mr={2.8} pr={5}
+            draw={1.35} fade={1.3} fadeDelay={.35} closed={closed} animKey={settings.range} wrapStyle="margin-top:10px"
+            grid={(w, h) => [0.25, 0.5, 0.75].map(f => <line x1="0" y1={h * f} x2={w} y2={h * f} stroke={f === 0.5 ? 'rgba(233,233,237,.07)' : 'rgba(233,233,237,.055)'} stroke-dasharray="2 5"></line>)} />
           <div style="display:flex;justify-content:space-between;margin-top:8px">
             {axisLabels(m.d.series, settings.range).map(l => <span style={`font:400 10px/1 ${F};color:var(--color-neutral-600)`}>{l}</span>)}
           </div>
-          <span style="flex:1"></span>
         </div>
       )}
 
@@ -589,7 +637,7 @@ function errorCopy(err) {
     title: { auth: 'API key expired or revoked', forbidden: 'Missing API permission', rate: 'Rate limited', server: 'Trading 212 is unavailable', network: 'Can’t reach Trading 212' }[k] || 'Sync failed',
     code: label,
     network: k === 'network',
-    hint: k === 'forbidden' ? 'Give the key the Account data and Portfolio permissions.' : ''
+    hint: k === 'forbidden' ? `The API key is missing the \u201c${(err && err.scope) || 'Account data'}\u201d permission \u2014 create a new key with Account data, Portfolio and History.` : ''
   };
 }
 
@@ -693,7 +741,7 @@ function Connect({ st, settings }) {
         </div>
       </div>
       <p style={`position:relative;font:400 12.5px/1.55 ${F};color:var(--color-neutral-400);margin:0;max-width:62ch`}>
-        Both keys come from Trading 212 → Settings → API. {st.encrypted ? 'Encrypted on this PC with Windows DPAPI' : 'Stored locally on this PC'}, read-only permissions are enough.</p>
+        Trading 212 → Settings → API (Beta) → Generate API key. Tick <span style="color:var(--color-accent-300)">Account data</span>, <span style="color:var(--color-accent-300)">Portfolio</span> and <span style="color:var(--color-accent-300)">History</span> (dividends) — nothing else is needed. {st.encrypted ? 'Encrypted on this PC with Windows DPAPI.' : 'Stored locally on this PC.'}</p>
       <form class="ia" onSubmit={e => { e.preventDefault(); go(); }} style="position:relative;display:flex;flex-direction:column;gap:13px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:520px">
           <div style="display:flex;flex-direction:column;gap:5px">
@@ -783,9 +831,12 @@ function App({ init }) {
     body = size === 'small' ? <Small {...P} /> : size === 'large' ? <Large {...P} /> : size === 'rail' ? <Rail {...P} /> : <Medium {...P} />;
   }
   const [w, h] = DIMS[size] || DIMS.medium;
+  const ov = status === 'first-run' || status === 'error' || !st.data ? [0, 0] : size === 'medium' ? [0.09, 0.45] : size === 'large' ? [0.08, 0.4] : [0, 0];
+  const bg = useMemo(() => ditheredBg(settings.theme, settings.accent, settings.tint || 0, w, h, ov[0], ov[1]),
+    [settings.theme, settings.accent, settings.tint, w, h, ov[0], ov[1]]);
   return (
     <div class="stage">
-      <div key={size + (status === 'first-run' ? '-fr' : '')} class={'wg' + (settings.lockPosition ? '' : ' draggable')} style={`width:${w}px;height:${h}px`}
+      <div key={size + (status === 'first-run' ? '-fr' : '')} class={'wg' + (settings.lockPosition ? '' : ' draggable')} style={`width:${w}px;height:${h}px;background:url(${bg}) 0 0/100% 100% no-repeat`}
         onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
         {body}
         {status !== 'first-run' && <CornerMenu settings={settings} />}

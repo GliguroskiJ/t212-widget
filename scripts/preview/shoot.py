@@ -21,6 +21,7 @@ cases = [
   ('small-menu', {'settings': {'size': 'small'}, 'menu': True}),
   ('medium-green', {'settings': {'size': 'medium', 'accent': '#5fbf8f', 'tint': 0.5}}),
   ('large-gold-clear', {'settings': {'size': 'large', 'theme': 'clear', 'accent': '#d9b45a', 'tint': 0.4, 'largeView':'alloc'}}),
+  ('medium-rose-menu', {'settings': {'size': 'medium', 'accent': '#e07a9b', 'tint': 0.4}, 'menu': True}),
   ('error-small', {'settings': {'size': 'small'}, 'state': {'status': 'error', 'error': {'kind': 'network', 'code': 0, 'message': 'x', 'retryAt': 0}}}),
 ]
 only = sys.argv[2].split(',') if len(sys.argv) > 2 else None
@@ -43,9 +44,9 @@ with sync_playwright() as p:
         pg.screenshot(path=f'{OUT}/{name}.png')
         pg.close()
     # settings window
-    for tab in (['appearance'] if not only or 'settings' in only else []):
+    for tab in (['account', 'appearance'] if not only or 'settings' in only else []):
         pg = b.new_page(viewport={'width': 760, 'height': 680}, device_scale_factor=1.5)
-        pg.add_init_script('window.__MOCK=' + json.dumps({'settings': {'accent': '#6f8fe8', 'tint': 0.45, 'theme': 'clear'}}) + ';' + mock)
+        pg.add_init_script('window.__MOCK=' + json.dumps({'settings': {'accent': '#6f8fe8', 'tint': 0.3, 'theme': 'acrylic'}, 'state': {'divForbidden': True}}) + ';' + mock)
         pg.goto('file://' + ROOT + '/app/settings.html?tab=' + tab)
         pg.add_style_tag(content=':root:root{background:%s!important}' % WALL)
         pg.wait_for_timeout(1300)

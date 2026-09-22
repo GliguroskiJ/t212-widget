@@ -1,6 +1,6 @@
 {
   "name": "t212-widget",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Trading 212 desktop widget for Windows",
   "main": "main/main.js",
   "scripts": {

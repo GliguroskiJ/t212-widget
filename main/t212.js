@@ -140,8 +140,8 @@ class Poller extends EventEmitter {
     this.lastCycleAt = Date.now();
     const settings = this.store.all();
     try {
-      const summary = await apiGet(this.fetch, settings.env, creds, '/equity/account/summary');
-      const positions = await apiGet(this.fetch, settings.env, creds, '/equity/positions');
+      const summary = await apiGet(this.fetch, settings.env, creds, '/equity/account/summary').catch(e => { e.scope = 'Account data'; throw e; });
+      const positions = await apiGet(this.fetch, settings.env, creds, '/equity/positions').catch(e => { e.scope = 'Portfolio'; throw e; });
       const t = Date.now();
       this.raw = { summary, positions: Array.isArray(positions) ? positions : [], dividendsYTD: this.raw ? this.raw.dividendsYTD : null, t };
       this.lastSync = t;
@@ -161,7 +161,7 @@ class Poller extends EventEmitter {
       else if (status === 429) kind = 'rate';
       else if (status >= 500) kind = 'server';
       const retryAt = e.retryAt || Date.now() + 60e3;
-      this.error = { kind, code: status, message: e.message || String(e), retryAt };
+      this.error = { kind, code: status, message: e.message || String(e), retryAt, scope: e.scope || null };
       this.nextRetryAt = retryAt;
       this.status = 'error';
       this.schedule(retryAt - Date.now());
@@ -219,8 +219,10 @@ class Poller extends EventEmitter {
       }
       if (this.raw) { this.raw.dividendsYTD = total; this.store.history.last = this.raw; this.store.saveHistorySoon(); }
       this.divFetchedAt = Date.now();
+      this.divForbidden = false;
       this.emitState();
-    } catch {
+    } catch (e) {
+      if (e && (e.status === 403 || e.status === 401)) { this.divForbidden = true; this.emitState(); }
       this.divFetchedAt = Date.now() - 20 * 60e3; // try again in ~10 min
     } finally {
       this.divRunning = false;
@@ -271,7 +273,8 @@ class Poller extends EventEmitter {
       market: this.market,
       env: s.env,
       encrypted: this.store.encrypted(),
-      connected: !!this.creds()
+      connected: !!this.creds(),
+      divForbidden: !!this.divForbidden
     };
     if (!this.raw || !this.raw.summary) return { ...base, data: null };
     const { summary, positions, dividendsYTD } = this.raw;

@@ -74,9 +74,10 @@ export function themeCss(key, accent = DEFAULT_ACCENT, tint = 0) {
   const t = THEMES[key] || THEMES.acrylic;
   const [, C, H] = rgb2oklch(hex2rgb(/^#[0-9a-f]{6}$/i.test(accent) ? accent : DEFAULT_ACCENT));
   const tc = Math.min(0.085, Math.max(0.035, C * 0.7)) * (t.stops[0][3] < 0.5 ? 1.4 : 1);
-  const stops = t.stops.map(s => css(tintStop(s, H, tc, Math.min(1, Math.max(0, tint)))));
+  const raw = t.stops.map(s => tintStop(s, H, tc, Math.min(1, Math.max(0, tint))));
+  const stops = raw.map(css);
   const bg = stops.length > 1 ? `linear-gradient(158deg,${stops[0]},${stops[1]})` : `linear-gradient(${stops[0]},${stops[0]})`;
-  return { bg, edge: t.edge, hair: t.hair, hairWhite: t.hairWhite, light: t.light, swatch: bg };
+  return { bg, raw, edge: t.edge, hair: t.hair, hairWhite: t.hairWhite, light: t.light, swatch: bg };
 }
 
 export function applyTheme(key, accent = DEFAULT_ACCENT, tint = 0) {
@@ -89,6 +90,11 @@ export function applyTheme(key, accent = DEFAULT_ACCENT, tint = 0) {
   const t = themeCss(key, acc, tint);
   s.setProperty('--wg-bg', t.bg);
   s.setProperty('--wg-edge', t.edge);
+  // opaque surface for popovers (menu) that follows the background type + colour
+  const m = t.raw[0];
+  const menu = m[3] >= 0.5 ? [m[0], m[1], m[2]] : (() => { const c = tintStop([42, 44, 58, 1], rgb2oklch(hex2rgb(acc))[2], 0.03, Math.min(1, tint)); return [c[0], c[1], c[2]]; })();
+  s.setProperty('--menu-bg', `rgb(${menu.join(',')})`);
+  s.setProperty('--menu-edge', t.light ? 'rgba(213,209,253,.25)' : 'rgba(233,233,237,.14)');
   const hairC = t.hair ? (t.light ? `color-mix(in srgb, ${ramp[1]} ${t.hair * 100}%, transparent)` : `rgba(${hex2rgb(acc).join(',')},${t.hair})`) : `rgba(233,233,237,${t.hairWhite})`;
   s.setProperty('--wg-hair', `linear-gradient(to right,transparent,${hairC},transparent)`);
 }
@@ -97,6 +103,53 @@ export function applyMotion(m) {
   const b = document.body.classList;
   b.remove('m-full', 'm-subtle', 'm-off');
   b.add('m-' + (m || 'full'));
+}
+
+// Card background rendered pixel-by-pixel with triangular dithering.
+// Windows composites transparent windows without gradient dithering, which showed
+// up as diagonal bands; baking the gradient into an image removes them.
+const bgCache = new Map();
+export function ditheredBg(key, accent, tint, w, h, overlayAlpha = 0, overlayStop = 0.45) {
+  const id = [key, accent, tint, w, h, overlayAlpha, overlayStop].join('|');
+  if (bgCache.has(id)) return bgCache.get(id);
+  const t = themeCss(key, accent, tint);
+  const a0 = t.raw[0], a1 = t.raw[1] || t.raw[0];
+  const acc = hex2rgb(/^#[0-9a-f]{6}$/i.test(accent || '') ? accent : DEFAULT_ACCENT);
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  const px = img.data;
+  const ang = 158 * Math.PI / 180, sx = Math.sin(ang), sy = -Math.cos(ang);
+  const len = Math.abs(w * sx) + Math.abs(h * sy);
+  const cx = w / 2, cy = h / 2;
+  let seed = 1234567;
+  const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+  const dith = () => rnd() - rnd();                     // triangular, ±1 LSB
+  for (let y = 0; y < h; y++) {
+    const ov = overlayAlpha ? Math.max(0, 1 - y / (h * overlayStop)) * overlayAlpha : 0;
+    for (let x = 0; x < w; x++) {
+      const tt = Math.min(1, Math.max(0, ((x + 0.5 - cx) * sx + (y + 0.5 - cy) * sy) / len + 0.5));
+      let A = a0[3] + (a1[3] - a0[3]) * tt;
+      // premultiplied mix of the two stops
+      let r = (a0[0] * a0[3] + (a1[0] * a1[3] - a0[0] * a0[3]) * tt);
+      let g = (a0[1] * a0[3] + (a1[1] * a1[3] - a0[1] * a0[3]) * tt);
+      let b = (a0[2] * a0[3] + (a1[2] * a1[3] - a0[2] * a0[3]) * tt);
+      if (ov) { // accent wash on top (source-over, premultiplied)
+        r = acc[0] * ov + r * (1 - ov); g = acc[1] * ov + g * (1 - ov); b = acc[2] * ov + b * (1 - ov); A = ov + A * (1 - ov);
+      }
+      const i = (y * w + x) * 4;
+      px[i] = Math.round(r / A + dith());
+      px[i + 1] = Math.round(g / A + dith());
+      px[i + 2] = Math.round(b / A + dith());
+      px[i + 3] = Math.round(A * 255 + dith());
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const url = cv.toDataURL('image/png');
+  if (bgCache.size > 12) bgCache.clear();
+  bgCache.set(id, url);
+  return url;
 }
 
 // ── number formatting ────────────────────────────────────────

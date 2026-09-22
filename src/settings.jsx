@@ -1,6 +1,6 @@
 import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
-import { THEMES, UP, DOWN, applyTheme, applyMotion, agoStr, themeCss, ACCENT_PRESETS, DEFAULT_ACCENT } from './shared.js';
+import { THEMES, UP, DOWN, applyTheme, applyMotion, agoStr, themeCss, ACCENT_PRESETS, DEFAULT_ACCENT, ditheredBg } from './shared.js';
 
 const api = window.api;
 const F = "'Inter',sans-serif";
@@ -51,6 +51,16 @@ const Section = ({ label, children }) => (
 
 const Dot = ({ color, breathe }) => <span class={breathe ? 'breathe' : ''} style={`width:6px;height:6px;border-radius:50%;flex:none;background:${color}`}></span>;
 
+const Perm = ({ on, name, why, warn }) => (
+  <div style="display:flex;align-items:flex-start;gap:8px">
+    <i class={'ph ' + (warn ? 'ph-warning-circle' : on ? 'ph-check-circle' : 'ph-minus-circle')} style={`font-size:15px;margin-top:1px;color:${warn ? DOWN : on ? UP : 'var(--color-neutral-600)'}`}></i>
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <span style={`font:500 12px/1.3 ${F};color:${on ? 'var(--color-neutral-200)' : 'var(--color-neutral-500)'}`}>{name}</span>
+      <span style={`font:400 11px/1.3 ${F};color:${warn ? DOWN : 'var(--color-neutral-500)'}`}>{warn ? 'missing on your key — dividends can\u2019t be read' : why}</span>
+    </div>
+  </div>
+);
+
 // ── tabs ─────────────────────────────────────────────────────
 function AccountTab({ s, st, set }) {
   const [env, setEnv] = useState(s.env);
@@ -81,11 +91,19 @@ function AccountTab({ s, st, set }) {
         {connected && <button type="button" class="btn btn-ghost" style="font-size:12.5px;color:var(--color-neutral-400)" onClick={() => { api.disconnect(); setMsg(null); }}>Disconnect</button>}
       </div>
       <Section label="API key pair">
-        <p style={`font:400 12px/1.6 ${F};color:var(--color-neutral-400);margin:0 0 12px;max-width:68ch`}>
-          Create a key in Trading 212 → Settings → API (Beta). Enable at least <span style="color:var(--color-accent-300)">Account data</span> and <span style="color:var(--color-accent-300)">Portfolio</span>
-          {' '}(and <span style="color:var(--color-accent-300)">History</span> for dividends). No trading permissions needed.
-          {' '}{st && st.encrypted ? 'Keys are encrypted on this PC with Windows DPAPI.' : 'Keys are stored locally on this PC.'}
-          {' '}<a href="#" onClick={e => { e.preventDefault(); api.openExternal('https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key'); }}>How to create a key</a></p>
+        <div class="perm">
+          <span style={`font:500 12px/1.3 ${F};color:var(--color-neutral-200)`}>Which API key permissions to tick</span>
+          <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>Trading 212 → Settings → API (Beta) → Generate API key. The widget only reads data.</span>
+          <div class="perm-grid">
+            <Perm on name="Account data" why="total value, cash, P/L" />
+            <Perm on name="Portfolio" why="positions and allocation" />
+            <Perm on name="History" why="Dividends YTD (optional)" warn={st && st.divForbidden} />
+            <Perm name="Orders, Pies, Metadata, Transactions" why="not needed — leave off" />
+          </div>
+          <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>
+            {st && st.encrypted ? 'Keys are encrypted on this PC with Windows DPAPI.' : 'Keys are stored locally on this PC.'}
+            {' '}<a href="#" onClick={e => { e.preventDefault(); api.openExternal('https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key'); }}>How to create a key</a></span>
+        </div>
         <form onSubmit={e => { e.preventDefault(); connect(); }} style="display:flex;flex-direction:column;gap:14px">
           <div style="display:flex;align-items:center;gap:14px">
             <label class="lbl" style="width:auto">Environment</label>
@@ -289,9 +307,8 @@ function App({ init }) {
   }, []);
   return (
     <div class="stage">
-      <div class="wg" style="width:704px;height:624px;display:flex;flex-direction:column">
+      <div class="wg" style={`width:704px;height:624px;display:flex;flex-direction:column;background:url(${ditheredBg(s.theme, s.accent, s.tint || 0, 704, 624, 0.07, 0.35)}) 0 0/100% 100% no-repeat`}>
         <div class="loop" style="position:absolute;width:300px;height:300px;left:-110px;top:-160px;border-radius:50%;background:radial-gradient(circle,rgba(var(--acc-rgb),.18),transparent 70%);filter:blur(14px);animation:nglow 8s ease-in-out infinite;pointer-events:none"></div>
-        <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(var(--acc-rgb),.07),transparent 35%)"></div>
         <header class="titlebar">
           <div style="width:24px;height:24px;border-radius:6px;border:1px solid var(--color-accent-700);background:var(--color-accent-900);display:flex;align-items:center;justify-content:center;font:600 9.5px/1 ui-monospace,Menlo,monospace;color:var(--color-accent-300)">212</div>
           <span style={`font:500 13px/1 ${F};color:var(--color-neutral-200)`}>Settings</span>
