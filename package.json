@@ -1,0 +1,77 @@
+{
+  "name": "t212-widget",
+  "version": "1.0.0",
+  "description": "Trading 212 desktop widget for Windows",
+  "main": "main/main.js",
+  "scripts": {
+    "build:ui": "node scripts/build-renderer.mjs",
+    "start": "npm run build:ui && electron .",
+    "test": "node scripts/test-poller.js",
+    "dist": "node scripts/patch-builder.js && npm run build:ui && electron-builder --win nsis --x64 --publish never"
+  },
+  "keywords": [],
+  "author": "Jovan",
+  "license": "UNLICENSED",
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^44.4.4",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "png2icons": "^2.0.1",
+    "resedit": "^3.1.0",
+    "@fontsource/inter": "^5.3.0",
+    "@phosphor-icons/web": "^2.1.2",
+    "preact": "^10.29.8"
+  },
+  "productName": "T212 Widget",
+  "build": {
+    "appId": "cz.jovan.t212widget",
+    "productName": "T212 Widget",
+    "copyright": "© 2026 Jovan",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main/**",
+      "app/**",
+      "preload.js",
+      "package.json"
+    ],
+    "asar": true,
+    "afterPack": "scripts/afterPack.js",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "artifactName": "T212-Widget-Setup-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "T212 Widget",
+      "runAfterFinish": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "uninstallDisplayName": "T212 Widget",
+      "deleteAppDataOnUninstall": false,
+      "include": "build/installer.nsh"
+    },
+    "publish": null,
+    "compression": "maximum",
+    "electronLanguages": [
+      "en-US",
+      "cs"
+    ]
+  }
+}
