@@ -1,15 +1,17 @@
 import { render } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
-import { THEMES, UP, DOWN, applyTheme, applyMotion, agoStr, themeCss, ACCENT_PRESETS, DEFAULT_ACCENT, ditheredBg } from './shared.js';
+import { useState, useEffect, useRef } from 'preact/hooks';
+import { THEMES, UP, DOWN, applyTheme, applyMotion, agoStr, ACCENT_PRESETS, DEFAULT_ACCENT, ditheredBg, TEXT_PRESETS, resolveText } from './shared.js';
+import { t, setLang } from './i18n.js';
+import { marketStatus } from '../main/market.js';
 
 const api = window.api;
 const F = "'Inter',sans-serif";
-const TABS = [['account', 'Account'], ['widget', 'Widget'], ['appearance', 'Appearance'], ['data', 'Data'], ['system', 'System']];
+const TABS = () => [['account', t('Account')], ['widget', t('Widget')], ['appearance', t('Appearance')], ['data', t('Data')], ['system', t('System')]];
 
 // ── primitives (Nocturne) ────────────────────────────────────
 function Seg({ value, options, onChange, size = 11.5 }) {
   return (
-    <div style="display:inline-flex;gap:4px;padding:3px;border-radius:7px;background:rgba(233,233,237,.045);box-shadow:inset 0 0 0 1px rgba(233,233,237,.05)">
+    <div style="display:inline-flex;gap:4px;padding:3px;border-radius:7px;background:rgba(var(--ink-rgb),.045);box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.05)">
       {options.map(([v, label]) => {
         const on = v === value;
         return (
@@ -54,15 +56,15 @@ const Dot = ({ color, breathe }) => <span class={breathe ? 'breathe' : ''} style
 const Perm = ({ on, name, why, warn, err }) => {
   const [busy, setBusy] = useState(false);
   const msg = err ? (err.code === 401 || err.code === 403
-    ? `Trading 212 refused it (${err.code}) — tick “History – Dividends” on the key`
-    : `couldn’t load (${err.code ? err.code : 'network'}) — will retry`) : why;
+    ? t('Trading 212 refused it ({c}) — tick \u201cHistory – Dividends\u201d on the key', { c: err.code })
+    : t('couldn\u2019t load ({c}) — will retry', { c: err.code ? err.code : t('network') })) : why;
   return (
     <div style="display:flex;align-items:flex-start;gap:8px">
       <i class={'ph ' + (warn ? 'ph-warning-circle' : on ? 'ph-check-circle' : 'ph-minus-circle')} style={`font-size:15px;margin-top:1px;color:${warn ? DOWN : on ? UP : 'var(--color-neutral-600)'}`}></i>
       <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
         <span style={`font:500 12px/1.3 ${F};color:${on ? 'var(--color-neutral-200)' : 'var(--color-neutral-500)'}`}>{name}</span>
         <span title={err ? err.message : ''} style={`font:400 11px/1.3 ${F};color:${warn ? DOWN : 'var(--color-neutral-500)'}`}>{msg}</span>
-        {err && <a href="#" style="font-size:11px;margin-top:2px" onClick={async e => { e.preventDefault(); setBusy(true); await api.recheckDividends(); setTimeout(() => setBusy(false), 1500); }}>{busy ? 'Checking…' : 'Check again'}</a>}
+        {err && <a href="#" style="font-size:11px;margin-top:2px" onClick={async e => { e.preventDefault(); setBusy(true); await api.recheckDividends(); setTimeout(() => setBusy(false), 1500); }}>{busy ? t('Checking…') : t('Check again')}</a>}
       </div>
     </div>
   );
@@ -83,57 +85,57 @@ function AccountTab({ s, st, set }) {
     setMsg(null); setBusy(true);
     const r = await api.connect({ env, key, secret });
     setBusy(false);
-    if (r.ok) { setKey(''); setSecret(''); setMsg({ ok: true, text: `Connected · ${r.currency} account${r.id ? ' #' + r.id : ''}` }); }
+    if (r.ok) { setKey(''); setSecret(''); setMsg({ ok: true, text: t('Connected · {c} account{id}', { c: r.currency, id: r.id ? ' #' + r.id : '' }) }); }
     else setMsg({ ok: false, text: r.message });
   };
   let statusLine;
-  if (!connected) statusLine = <><Dot color="var(--color-neutral-600)" /><span>Not connected</span></>;
-  else if (st.status === 'error') statusLine = <><Dot color={DOWN} /><span>Connection problem — {st.error && st.error.message}</span></>;
-  else statusLine = <><Dot color={UP} breathe /><span>Connected · {s.env === 'demo' ? 'Practice' : 'Live'}{d ? ` · ${d.accountCurrency} account${d.accountId ? ' #' + d.accountId : ''}` : ''}{st.lastSync ? ` · synced ${agoStr(st.lastSync, Date.now())}` : ''}</span></>;
+  if (!connected) statusLine = <><Dot color="var(--color-neutral-600)" /><span>{t('Not connected')}</span></>;
+  else if (st.status === 'error') statusLine = <><Dot color={DOWN} /><span>{t('Connection problem — {m}', { m: st.error ? st.error.message : '' })}</span></>;
+  else statusLine = <><Dot color={UP} breathe /><span>{t('Connected')} · {s.env === 'demo' ? t('Practice') : t('Live')}{d ? ` · ${t('{c} account', { c: d.accountCurrency })}${d.accountId ? ' #' + d.accountId : ''}` : ''}{st.lastSync ? ` · ${t('synced {x}', { x: agoStr(st.lastSync, Date.now()) })}` : ''}</span></>;
   return (
     <>
       <div class="status">
         <span style={`display:flex;align-items:center;gap:8px;font:400 12px/1.4 ${F};color:var(--color-neutral-300);min-width:0`}>{statusLine}</span>
         <span style="flex:1"></span>
-        {connected && <button type="button" class="btn btn-ghost" style="font-size:12.5px;color:var(--color-neutral-400)" onClick={() => { api.disconnect(); setMsg(null); }}>Disconnect</button>}
+        {connected && <button type="button" class="btn btn-ghost" style="font-size:12.5px;color:var(--color-neutral-400)" onClick={() => { api.disconnect(); setMsg(null); }}>{t('Disconnect')}</button>}
       </div>
-      <Section label="API key pair">
+      <Section label={t('API key pair')}>
         <div class="perm">
-          <span style={`font:500 12px/1.3 ${F};color:var(--color-neutral-200)`}>Which API key permissions to tick</span>
-          <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>Trading 212 → Settings → API (Beta) → Generate API key. The widget only reads data.</span>
+          <span style={`font:500 12px/1.3 ${F};color:var(--color-neutral-200)`}>{t('Which API key permissions to tick')}</span>
+          <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>{t('Trading 212 → Settings → API (Beta) → Generate API key. The widget only reads data.')}</span>
           <div class="perm-grid">
-            <Perm on name="Account data" why="total value, cash, P/L" />
-            <Perm on name="Portfolio" why="positions and allocation" />
-            <Perm on name="History – Dividends" why="Dividends YTD (optional)" warn={st && st.divError} err={st && st.divError} />
-            <Perm name="Everything else" why="Orders, Pies, Metadata, other History — leave off" />
+            <Perm on name="Account data" why={t('total value, cash, P/L')} />
+            <Perm on name="Portfolio" why={t('positions and allocation')} />
+            <Perm on name="History – Dividends" why={t('Dividends YTD (optional)')} warn={st && st.divError} err={st && st.divError} />
+            <Perm name={t('Everything else')} why={t('Orders, Pies, Metadata, other History — leave off')} />
           </div>
           <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>
-            {st && st.encrypted ? 'Keys are encrypted on this PC with Windows DPAPI.' : 'Keys are stored locally on this PC.'}
-            {' '}<a href="#" onClick={e => { e.preventDefault(); api.openExternal('https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key'); }}>How to create a key</a></span>
+            {st && st.encrypted ? t('Keys are encrypted on this PC with Windows DPAPI.') : t('Keys are stored locally on this PC.')}
+            {' '}<a href="#" onClick={e => { e.preventDefault(); api.openExternal('https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key'); }}>{t('How to create a key')}</a></span>
         </div>
         <form onSubmit={e => { e.preventDefault(); connect(); }} style="display:flex;flex-direction:column;gap:14px">
           <div style="display:flex;align-items:center;gap:14px">
-            <label class="lbl" style="width:auto">Environment</label>
-            <Seg value={env} onChange={setEnv} options={[['live', 'Live'], ['demo', 'Practice']]} />
+            <label class="lbl" style="width:auto">{t('Environment')}</label>
+            <Seg value={env} onChange={setEnv} options={[['live', t('Live')], ['demo', t('Practice')]]} />
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
             <div style="display:flex;flex-direction:column;gap:5px">
-              <label class="lbl" style="display:flex;align-items:center;height:11px">API key</label>
-              <input class="input mono" type="text" spellcheck={false} value={key} placeholder={connected ? 'Saved — paste to replace' : 'Paste API key'} onInput={e => setKey(e.currentTarget.value)} style="font-size:12px" />
+              <label class="lbl" style="display:flex;align-items:center;height:11px">{t('API key')}</label>
+              <input class="input mono" type="text" spellcheck={false} value={key} placeholder={connected ? t('Saved — paste to replace') : t('Paste API key')} onInput={e => setKey(e.currentTarget.value)} style="font-size:12px" />
             </div>
             <div style="display:flex;flex-direction:column;gap:5px">
-              <label class="lbl" style="display:flex;align-items:center;height:11px;gap:5px">Secret key<i class="ph ph-lock-simple" style="font-size:11px;color:var(--color-accent-400)"></i></label>
+              <label class="lbl" style="display:flex;align-items:center;height:11px;gap:5px">{t('Secret key')}<i class="ph ph-lock-simple" style="font-size:11px;color:var(--color-accent-400)"></i></label>
               <div style="position:relative;display:flex;align-items:center">
-                <input class="input mono" type={show ? 'text' : 'password'} spellcheck={false} value={secret} placeholder={connected ? '••••••••••••' : 'Paste secret'} onInput={e => setSecret(e.currentTarget.value)} style="padding-right:30px;font-size:12px" />
+                <input class="input mono" type={show ? 'text' : 'password'} spellcheck={false} value={secret} placeholder={connected ? '••••••••••••' : t('Paste secret')} onInput={e => setSecret(e.currentTarget.value)} style="padding-right:30px;font-size:12px" />
                 <i class={'ph hov-icon ' + (show ? 'ph-eye-slash' : 'ph-eye')} onClick={() => setShow(v => !v)} style="position:absolute;right:9px;font-size:14px;color:var(--color-neutral-500)"></i>
               </div>
             </div>
           </div>
           <div style="display:flex;gap:12px;align-items:center;min-height:32px">
-            <button type="submit" class="btn btn-primary" disabled={busy || !key.trim() || !secret.trim()} style="font-size:13px">{connected ? 'Replace key' : 'Connect'}</button>
+            <button type="submit" class="btn btn-primary" disabled={busy || !key.trim() || !secret.trim()} style="font-size:13px">{connected ? t('Replace key') : t('Connect')}</button>
             {busy && <span style="display:flex;gap:8px;align-items:center">
               <span style="width:15px;height:15px;border-radius:50%;border:1.5px solid var(--color-accent-500);border-top-color:transparent;animation:nspin .9s linear infinite;box-sizing:border-box"></span>
-              <span style={`font:400 11.5px/1 ${F};color:var(--color-neutral-400)`}>Verifying key pair · fetching account currency</span></span>}
+              <span style={`font:400 11.5px/1 ${F};color:var(--color-neutral-400)`}>{t('Verifying key pair · fetching account currency')}</span></span>}
             {!busy && msg && <span style={`display:flex;gap:7px;align-items:center;font:400 11.5px/1.4 ${F};color:${msg.ok ? UP : DOWN}`}>
               <i class={'ph ' + (msg.ok ? 'ph-check-circle' : 'ph-warning-circle')} style="font-size:14px;flex:none"></i>{msg.text}</span>}
           </div>
@@ -153,26 +155,27 @@ const SIZE_CARDS = [
 function WidgetTab({ s, set }) {
   return (
     <>
-      <Section label="Size">
+      <Section label={t('Size')}>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:8px">
           {SIZE_CARDS.map(([k, label, sub, w, h]) => {
             const sc = 64 / 704;
+            const mw = Math.round(w * sc), mh = Math.round(h * sc);
             return (
               <button type="button" class={'szc' + (s.size === k ? ' on' : '')} onClick={() => set({ size: k })}>
                 <div style="height:70px;display:flex;align-items:center;justify-content:center">
-                  <div class="szmini" style={`width:${Math.round(w * sc)}px;height:${Math.round(h * sc)}px`}></div>
+                  <div class="szmini" style={`width:${mw}px;height:${mh}px;background:url(${ditheredBg(s.theme, s.accent, s.tint || 0, mw, mh)}) 0 0/100% 100%`}></div>
                 </div>
-                <span style={`font:500 12px/1 ${F};color:var(--color-neutral-200)`}>{label}</span>
-                <span style={`font:400 10.5px/1 ${F};color:var(--color-neutral-500)`}>{sub} · {w}×{h}</span>
+                <span style={`font:500 12px/1 ${F};color:var(--color-neutral-200)`}>{t(label)}</span>
+                <span style={`font:400 10.5px/1 ${F};color:var(--color-neutral-500)`}>{t(sub)} · {w}×{h}</span>
               </button>
             );
           })}
         </div>
       </Section>
-      <Section label="Behaviour">
-        <Row title="Show widget" desc="Hide it without quitting — the app keeps running in the tray."><Switch on={s.showWidget} onChange={v => set({ showWidget: v })} /></Row>
-        <Row title="Large widget opens on" desc="The view shown in the 2 × 2 widget."><Seg value={s.largeView} onChange={v => set({ largeView: v })} options={[['chart', 'Chart'], ['positions', 'Positions'], ['alloc', 'Allocation']]} /></Row>
-        <Row title="Chart range" desc="Also switchable right on the widget."><Seg value={s.range} onChange={v => set({ range: v })} options={[['1D', '1D'], ['1W', '1W'], ['1M', '1M'], ['1Y', '1Y'], ['ALL', 'ALL']]} size={11} /></Row>
+      <Section label={t('Behaviour')}>
+        <Row title={t('Show widget')} desc={t('Hide it without quitting — the app keeps running in the tray.')}><Switch on={s.showWidget} onChange={v => set({ showWidget: v })} /></Row>
+        <Row title={t('Large widget opens on')} desc={t('The view shown in the 2 × 2 widget.')}><Seg value={s.largeView} onChange={v => set({ largeView: v })} options={[['chart', t('Chart')], ['positions', t('Positions')], ['alloc', t('Allocation')]]} /></Row>
+        <Row title={t('Chart range')} desc={t('Also switchable right on the widget.')}><Seg value={s.range} onChange={v => set({ range: v })} options={[['1D', '1D'], ['1W', '1W'], ['1M', '1M'], ['1Y', '1Y'], ['ALL', 'ALL']]} size={11} /></Row>
       </Section>
     </>
   );
@@ -192,8 +195,8 @@ function ColourPicker({ s, set }) {
     <div class="row" style="flex-direction:column;align-items:stretch;gap:12px">
       <div style="display:flex;align-items:center;gap:20px">
         <div style="display:flex;flex-direction:column;gap:4px;flex:1">
-          <span style={`font:500 12.5px/1.2 ${F};color:var(--color-neutral-200)`}>Accent colour</span>
-          <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>Tile, chips, tabs, highlights and glows. Gains and losses stay green / red.</span>
+          <span style={`font:500 12.5px/1.2 ${F};color:var(--color-neutral-200)`}>{t('Accent colour')}</span>
+          <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>{t('Tile, chips, tabs, highlights and glows. Gains and losses stay green / red.')}</span>
         </div>
         <div style="display:flex;align-items:center;gap:8px">
           <span class="acc-prev" style={`background:${acc}`}></span>
@@ -204,14 +207,45 @@ function ColourPicker({ s, set }) {
       </div>
       <div style="display:flex;align-items:center;gap:10px">
         {ACCENT_PRESETS.map(([c, name]) => (
-          <button type="button" class={'dotc' + (c === acc ? ' on' : '')} title={name} onClick={() => set({ accent: c })} style={`--c:${c}`}></button>
+          <button type="button" class={'dotc' + (c === acc ? ' on' : '')} title={t(name)} onClick={() => set({ accent: c })} style={`--c:${c}`}></button>
         ))}
-        <label class={'dotc custom' + (!isPreset ? ' on' : '')} title="Custom colour" style={!isPreset ? `--c:${acc}` : ''}>
+        <label class={'dotc custom' + (!isPreset ? ' on' : '')} title={t('Custom colour')} style={!isPreset ? `--c:${acc}` : ''}>
           <i class="ph ph-eyedropper"></i>
           <input type="color" value={acc} onInput={e => set({ accent: e.currentTarget.value })} />
         </label>
         <span style="flex:1"></span>
-        {acc !== DEFAULT_ACCENT && <button type="button" class="btn btn-ghost" style="font-size:12px;color:var(--color-neutral-400)" onClick={() => set({ accent: DEFAULT_ACCENT, tint: 0 })}>Reset</button>}
+        {acc !== DEFAULT_ACCENT && <button type="button" class="btn btn-ghost" style="font-size:12px;color:var(--color-neutral-400)" onClick={() => set({ accent: DEFAULT_ACCENT, tint: 0 })}>{t('Reset')}</button>}
+      </div>
+    </div>
+  );
+}
+
+function TextColour({ s, set }) {
+  const cur = s.textColor || 'auto';
+  const isPreset = TEXT_PRESETS.some(([c]) => c === cur);
+  const sw = ditheredBg(s.theme, s.accent, s.tint || 0, 44, 32);
+  return (
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:12px">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span style={`font:500 12.5px/1.2 ${F};color:var(--color-neutral-200)`}>{t('Text colour')}</span>
+        <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>{t('Auto picks dark text on light backgrounds. Applies to the widget, its menu and this window.')}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        {TEXT_PRESETS.map(([c, name]) => {
+          const col = c === 'auto' ? resolveText('auto', s.theme) : c;
+          const on = cur === c;
+          return (
+            <button type="button" class={'txc' + (on ? ' on' : '')} title={t(name)} onClick={() => set({ textColor: c })}>
+              <span class="txs" style={`background:url(${sw}) 0 0/100% 100%;color:${col}`}>Aa</span>
+              <span class="txl">{t(name)}</span>
+            </button>
+          );
+        })}
+        <label class={'txc' + (!isPreset ? ' on' : '')} title={t('Custom colour')}>
+          <span class="txs" style={`background:url(${sw}) 0 0/100% 100%;color:${!isPreset ? cur : 'var(--color-neutral-300)'}`}><i class="ph ph-eyedropper"></i></span>
+          <span class="txl">{!isPreset ? cur : t('Custom colour')}</span>
+          <input type="color" value={!isPreset ? cur : '#e9e9ed'} onInput={e => set({ textColor: e.currentTarget.value })} />
+        </label>
       </div>
     </div>
   );
@@ -221,56 +255,64 @@ function AppearanceTab({ s, set }) {
   const pct = Math.round((s.opacity || 1) * 100);
   return (
     <>
-      <Section label="Background type">
-        <div style="display:flex;gap:14px;padding:4px 0 12px">
+      <Section label={t('Background')}>
+        <div class="thgrid">
           {Object.keys(THEMES).map(k => {
-            const t = THEMES[k]; const on = s.theme === k;
+            const on = s.theme === k;
             return (
-              <div style="display:flex;flex-direction:column;align-items:center;gap:7px">
-                <button type="button" class="swatch" title={t.label} onClick={() => set({ theme: k })}
-                  style={`background:url(noise.png),${themeCss(k, s.accent, s.tint).bg};box-shadow:${on ? 'inset 0 0 0 1px rgba(233,233,237,.2), 0 0 0 2px var(--color-accent)' : 'inset 0 0 0 1px rgba(233,233,237,.12)'}`}></button>
-                <span style={`font:400 10px/1 ${F};color:${on ? 'var(--color-accent-300)' : 'var(--color-neutral-500)'}`}>{t.label}</span>
-              </div>
+              <button type="button" class={'thc' + (on ? ' on' : '')} onClick={() => set({ theme: k })} title={t(THEMES[k].label)}>
+                <span class="ths" style={`background:url(${ditheredBg(k, s.accent, s.tint || 0, 76, 48)}) 0 0/100% 100%;box-shadow:${THEMES[k].edge.split(',')[0]}`}>
+                  <span style={`color:${resolveText(s.textColor, k)};font:300 13px/1 ${F};letter-spacing:-.02em`}>1,284</span>
+                </span>
+                <span class="txl">{t(THEMES[k].label)}</span>
+              </button>
             );
           })}
         </div>
       </Section>
-      <Section label="Colour">
+      <Section label={t('Colour')}>
         <ColourPicker s={s} set={set} />
-        <Row title="Tint the background" desc="Blends the colour into the background type. 0 % keeps the original Nocturne look.">
+        <Row title={t('Tint the background')} desc={t('Blends the colour into the background type. 0 % keeps the original look.')}>
           <input type="range" class="rng" min="0" max="100" step="5" value={Math.round((s.tint || 0) * 100)} onInput={e => set({ tint: Number(e.currentTarget.value) / 100 })} style={`--p:${Math.round((s.tint || 0) * 100)}%`} />
           <span class="tnum" style={`width:36px;text-align:right;font:400 12px/1 ${F};color:var(--color-neutral-300)`}>{Math.round((s.tint || 0) * 100)}%</span></Row>
       </Section>
-      <Section label="Display">
-        <Row title="Motion" desc="Subtle keeps number roll-ups but stops breathing and pulsing; Off shows final values immediately.">
-          <Seg value={s.motion} onChange={v => set({ motion: v })} options={[['full', 'Full'], ['subtle', 'Subtle'], ['off', 'Off']]} /></Row>
-        <Row title="Widget opacity" desc="Lets the desktop show through the whole widget.">
+      <Section label={t('Text colour')}>
+        <TextColour s={s} set={set} />
+      </Section>
+      <Section label={t('Display')}>
+        <Row title={t('Language')}><Seg value={s.language || 'cs'} onChange={v => set({ language: v })} options={[['cs', 'Čeština'], ['en', 'English']]} /></Row>
+        <Row title={t('Motion')} desc={t('Subtle keeps number roll-ups but stops breathing and pulsing; Off shows final values immediately.')}>
+          <Seg value={s.motion} onChange={v => set({ motion: v })} options={[['full', t('Full')], ['subtle', t('Subtle')], ['off', t('Off')]]} /></Row>
+        <Row title={t('Widget opacity')} desc={t('Lets the desktop show through the whole widget.')}>
           <input type="range" class="rng" min="50" max="100" step="5" value={pct} onInput={e => set({ opacity: Number(e.currentTarget.value) / 100 })} style={`--p:${(pct - 50) * 2}%`} />
           <span class="tnum" style={`width:36px;text-align:right;font:400 12px/1 ${F};color:var(--color-neutral-300)`}>{pct}%</span></Row>
-        <Row title="Number format"><Seg value={s.numberFormat} onChange={v => set({ numberFormat: v })} options={[['en', '1,284,640.50'], ['cs', '1 284 640,50']]} /></Row>
+        <Row title={t('Number format')}><Seg value={s.numberFormat} onChange={v => set({ numberFormat: v })} options={[['en', '1,284,640.50'], ['cs', '1 284 640,50']]} /></Row>
       </Section>
     </>
   );
 }
 
-function DataTab({ s, set }) {
+function DataTab({ s, set, st }) {
   const [cleared, setCleared] = useState(false);
+  const mk = marketStatus(new Date(), st && st.marketCodes);
   return (
     <>
-      <Section label="Sync">
-        <Row title="Refresh every" desc="Trading 212 allows one account request per 5 s — 30 s keeps well inside the limit.">
+      <Section label={t('Sync')}>
+        <Row title={t('Refresh every')} desc={t('Trading 212 allows one account request per 5 s — 30 s keeps well inside the limit.')}>
           <Seg value={s.refreshSeconds} onChange={v => set({ refreshSeconds: v })} options={[[10, '10 s'], [30, '30 s'], [60, '1 min'], [120, '2 min'], [300, '5 min']]} size={11} /></Row>
-        <Row title="Pause when markets are closed" desc="Outside Xetra and NYSE hours the widget shows the closed state and syncs only every 10 minutes.">
+        <Row title={t('Pause when markets are closed')} desc={t('Uses the exchanges of your holdings ({x}). While they are closed the widget shows the closed state and syncs every 10 minutes.', { x: mk.names })}>
           <Switch on={s.pauseWhenClosed} onChange={v => set({ pauseWhenClosed: v })} /></Row>
       </Section>
-      <Section label="Currency">
-        <Row title="Display currency" desc="Account = no conversion. Others use daily ECB rates (frankfurter.dev).">
-          <Seg value={s.displayCurrency} onChange={v => set({ displayCurrency: v })} options={[['account', 'Account'], ['CZK', 'CZK'], ['EUR', 'EUR'], ['USD', 'USD'], ['GBP', 'GBP']]} size={11} /></Row>
+      <Section label={t('Currency')}>
+        <Row title={t('Display currency')} desc={t('Account = no conversion. Others use daily ECB rates (frankfurter.dev).')}>
+          <Seg value={s.displayCurrency} onChange={v => set({ displayCurrency: v })} options={[['account', t('Account')], ['CZK', 'CZK'], ['EUR', 'EUR'], ['USD', 'USD'], ['GBP', 'GBP']]} size={11} /></Row>
       </Section>
-      <Section label="History">
-        <Row title="Chart history" desc="The API has no portfolio history, so the chart is recorded on this PC from the first sync on. Day P/L is measured from the last value before midnight.">
+      <Section label={t('History')}>
+        <Row title={t('Fill gaps in the chart')} desc={t('When the PC was off, the missing part is rebuilt from market prices (Yahoo Finance) using your current holdings.')}>
+          <Switch on={s.fillGaps !== false} onChange={v => set({ fillGaps: v })} /></Row>
+        <Row title={t('Chart history')} desc={t('Stored on this PC — about 1 MB even after years. Day P/L is measured from the last value before midnight.')}>
           <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={async () => { await api.clearHistory(); setCleared(true); setTimeout(() => setCleared(false), 2000); }}>
-            {cleared ? <><i class="ph ph-check" style={`color:${UP}`}></i>Cleared</> : 'Clear history'}</button></Row>
+            {cleared ? <><i class="ph ph-check" style={`color:${UP}`}></i>{t('Cleared')}</> : t('Clear history')}</button></Row>
       </Section>
     </>
   );
@@ -279,18 +321,18 @@ function DataTab({ s, set }) {
 function SystemTab({ s, set, info }) {
   return (
     <>
-      <Section label="Windows">
-        <Row title="Start with Windows" desc="Launch the widget when you sign in. Settings and position are remembered."><Switch on={s.startWithWindows} onChange={v => set({ startWithWindows: v })} /></Row>
-        <Row title="Keep on top" desc="Float above other windows instead of sitting on the desktop."><Switch on={s.alwaysOnTop} onChange={v => set({ alwaysOnTop: v })} /></Row>
-        <Row title="Lock position" desc="Stops the widget from being dragged by accident."><Switch on={s.lockPosition} onChange={v => set({ lockPosition: v })} /></Row>
-        <Row title="Widget position" desc="Move it back to the top-right corner of the main screen.">
-          <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={() => api.resetPosition()}>Reset position</button></Row>
+      <Section label={t('Windows')}>
+        <Row title={t('Start with Windows')} desc={t('Launch the widget when you sign in. Settings and position are remembered.')}><Switch on={s.startWithWindows} onChange={v => set({ startWithWindows: v })} /></Row>
+        <Row title={t('Keep on top')} desc={t('Float above other windows instead of sitting on the desktop.')}><Switch on={s.alwaysOnTop} onChange={v => set({ alwaysOnTop: v })} /></Row>
+        <Row title={t('Lock position')} desc={t('Stops the widget from being dragged by accident.')}><Switch on={s.lockPosition} onChange={v => set({ lockPosition: v })} /></Row>
+        <Row title={t('Widget position')} desc={t('Move it back to the top-right corner of the main screen.')}>
+          <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={() => api.resetPosition()}>{t('Reset position')}</button></Row>
       </Section>
-      <Section label="App">
-        <Row title="Data folder" desc={info.dataDir}>
-          <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={() => api.openDataFolder()}>Open</button></Row>
-        <Row title={`T212 Widget ${info.version}`} desc="Unofficial desktop widget using the Trading 212 public API. Read-only.">
-          <button type="button" class="btn btn-ghost" style={`font-size:12.5px;color:${DOWN}`} onClick={() => api.quit()}><i class="ph ph-power"></i>Quit app</button></Row>
+      <Section label={t('App')}>
+        <Row title={t('Data folder')} desc={info.dataDir}>
+          <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={() => api.openDataFolder()}>{t('Open')}</button></Row>
+        <Row title={`T212 Widget ${info.version}`} desc={t('Unofficial desktop widget using the Trading 212 public API. Read-only.')}>
+          <button type="button" class="btn btn-ghost" style={`font-size:12.5px;color:${DOWN}`} onClick={() => api.quit()}><i class="ph ph-power"></i>{t('Quit app')}</button></Row>
       </Section>
     </>
   );
@@ -301,9 +343,12 @@ function App({ init }) {
   const [s, setS] = useState(init.settings);
   const [st, setSt] = useState(init.state);
   const q = new URLSearchParams(location.search).get('tab');
-  const [tab, setTab] = useState(TABS.some(t => t[0] === q) ? q : (init.state && !init.state.connected ? 'account' : 'widget'));
+  const [tab, setTab] = useState(TABS().some(x => x[0] === q) ? q : (init.state && !init.state.connected ? 'account' : 'widget'));
   useEffect(() => { api.onSettings(setS); api.onState(setSt); api.onGotoTab(t => t && setTab(t)); }, []);
-  useEffect(() => applyTheme(s.theme, s.accent, s.tint), [s.theme, s.accent, s.tint]);
+  const themeKey = [s.theme, s.accent, s.tint, s.textColor].join('|');
+  const applied = useRef('');
+  if (applied.current !== themeKey) { applied.current = themeKey; applyTheme(s.theme, s.accent, s.tint, s.textColor); }
+  setLang(s.language || 'cs');
   useEffect(() => applyMotion(s.motion), [s.motion]);
   useEffect(() => { api.getAutostart().then(v => { if (typeof v === 'boolean' && v !== s.startWithWindows) setS(x => ({ ...x, startWithWindows: v })); }); }, []);
   const set = patch => { setS(x => ({ ...x, ...patch })); api.setSettings(patch); };
@@ -318,27 +363,27 @@ function App({ init }) {
         <div class="loop" style="position:absolute;width:300px;height:300px;left:-110px;top:-160px;border-radius:50%;background:radial-gradient(circle,rgba(var(--acc-rgb),.18),transparent 70%);filter:blur(14px);animation:nglow 8s ease-in-out infinite;pointer-events:none"></div>
         <header class="titlebar">
           <div style="width:24px;height:24px;border-radius:6px;border:1px solid var(--color-accent-700);background:var(--color-accent-900);display:flex;align-items:center;justify-content:center;font:600 9.5px/1 ui-monospace,Menlo,monospace;color:var(--color-accent-300)">212</div>
-          <span style={`font:500 13px/1 ${F};color:var(--color-neutral-200)`}>Settings</span>
+          <span style={`font:500 13px/1 ${F};color:var(--color-neutral-200)`}>{t('Settings')}</span>
           <span style={`font:400 11px/1 ${F};color:var(--color-neutral-600)`}>T212 Widget · v{init.version}</span>
           <span style="flex:1"></span>
-          <button type="button" class="tb" title="Minimise" onClick={() => api.minimizeSettings()}><i class="ph ph-minus"></i></button>
-          <button type="button" class="tb" title="Close" onClick={() => api.closeSettings()}><i class="ph ph-x"></i></button>
+          <button type="button" class="tb" title={t('Minimise')} onClick={() => api.minimizeSettings()}><i class="ph ph-minus"></i></button>
+          <button type="button" class="tb" title={t('Close')} onClick={() => api.closeSettings()}><i class="ph ph-x"></i></button>
         </header>
         <nav style="position:relative;padding:0 28px">
-          <Seg value={tab} onChange={setTab} options={TABS} />
+          <Seg value={tab} onChange={setTab} options={TABS()} />
         </nav>
         <main key={tab} class="scroll" style="position:relative;flex:1;min-height:0;padding:16px 28px 18px;display:flex;flex-direction:column;gap:14px;animation:nfade .4s ease both">
           {tab === 'account' && <AccountTab s={s} st={st} set={set} />}
           {tab === 'widget' && <WidgetTab s={s} set={set} />}
           {tab === 'appearance' && <AppearanceTab s={s} set={set} />}
-          {tab === 'data' && <DataTab s={s} set={set} />}
+          {tab === 'data' && <DataTab s={s} set={set} st={st} />}
           {tab === 'system' && <SystemTab s={s} set={set} info={init} />}
         </main>
-        <footer style="position:relative;display:flex;align-items:center;gap:10px;margin:0 28px;padding:14px 0 18px;border-top:1px solid rgba(233,233,237,.08)">
+        <footer style="position:relative;display:flex;align-items:center;gap:10px;margin:0 28px;padding:14px 0 18px;border-top:1px solid rgba(var(--ink-rgb),.08)">
           <i class="ph ph-check-circle" style="font-size:13px;color:var(--color-accent-400)"></i>
-          <span style={`font:400 11px/1 ${F};color:var(--color-neutral-500)`}>Changes apply instantly and are remembered.</span>
+          <span style={`font:400 11px/1 ${F};color:var(--color-neutral-500)`}>{t('Changes apply instantly and are remembered.')}</span>
           <span style="flex:1"></span>
-          <button type="button" class="btn btn-primary" style="font-size:13px;padding:6px 16px" onClick={() => api.closeSettings()}>Done</button>
+          <button type="button" class="btn btn-primary" style="font-size:13px;padding:6px 16px" onClick={() => api.closeSettings()}>{t('Done')}</button>
         </footer>
       </div>
     </div>
@@ -346,7 +391,8 @@ function App({ init }) {
 }
 
 api.init().then(init => {
-  applyTheme(init.settings.theme, init.settings.accent, init.settings.tint);
+  applyTheme(init.settings.theme, init.settings.accent, init.settings.tint, init.settings.textColor);
+  setLang(init.settings.language || 'cs');
   applyMotion(init.settings.motion);
   render(<App init={init} />, document.getElementById('root'));
 });

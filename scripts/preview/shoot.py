@@ -7,22 +7,18 @@ mock = open(ROOT + '/scripts/preview/mock.js').read()
 DIM = {'small': (356, 360), 'medium': (676, 360), 'large': (676, 676), 'rail': (376, 760)}
 WALL = "radial-gradient(120% 100% at 18% 0%,#282b48 0%,#191c2e 55%,#12141f 100%)"
 cases = [
-  ('small', {'settings': {'size': 'small'}}),
-  ('medium', {'settings': {'size': 'medium'}}),
-  ('large-chart', {'settings': {'size': 'large'}}),
-  ('large-positions', {'settings': {'size': 'large', 'largeView': 'positions'}, 'click': 'text=NVIDIA Corp'}),
-  ('large-alloc', {'settings': {'size': 'large', 'largeView': 'alloc'}}),
-  ('rail', {'settings': {'size': 'rail'}}),
-  ('loading-small', {'settings': {'size': 'small'}, 'state': {'status': 'loading'}, 'noData': True}),
-  ('closed-small', {'settings': {'size': 'small'}, 'state': {'status': 'closed', 'market': {'open': False, 'names': 'Xetra, NYSE', 'opensIn': '14h 22m'}}}),
-  ('error-medium', {'settings': {'size': 'medium'}, 'state': {'status': 'error'}}),
-  ('firstrun', {'settings': {'size': 'small'}, 'state': {'status': 'first-run', 'connected': False}, 'noData': True}),
-  ('medium-indigo', {'settings': {'size': 'medium', 'theme': 'indigo'}}),
-  ('small-menu', {'settings': {'size': 'small'}, 'menu': True}),
-  ('medium-green', {'settings': {'size': 'medium', 'accent': '#5fbf8f', 'tint': 0.5}}),
-  ('large-gold-clear', {'settings': {'size': 'large', 'theme': 'clear', 'accent': '#d9b45a', 'tint': 0.4, 'largeView':'alloc'}}),
-  ('medium-rose-menu', {'settings': {'size': 'medium', 'accent': '#e07a9b', 'tint': 0.4}, 'menu': True}),
-  ('error-small', {'settings': {'size': 'small'}, 'state': {'status': 'error', 'error': {'kind': 'network', 'code': 0, 'message': 'x', 'retryAt': 0}}}),
+  ('medium-cs', {'settings': {'size': 'medium'}}),
+  ('medium-en', {'settings': {'size': 'medium', 'language': 'en'}}),
+  ('porcelain-medium', {'settings': {'size': 'medium', 'theme': 'porcelain'}}),
+  ('porcelain-menu', {'settings': {'size': 'small', 'theme': 'porcelain'}, 'menu': True}),
+  ('aurora-large', {'settings': {'size': 'large', 'theme': 'aurora', 'accent': '#4fb3c8'}}),
+  ('mesh-medium', {'settings': {'size': 'medium', 'theme': 'mesh', 'accent': '#e07a9b'}}),
+  ('ember-small', {'settings': {'size': 'small', 'theme': 'ember', 'textColor': '#f2e8d8'}}),
+  ('blueprint-rail', {'settings': {'size': 'rail', 'theme': 'blueprint', 'accent': '#6f8fe8'}}),
+  ('carbon-large-pos', {'settings': {'size': 'large', 'theme': 'carbon', 'largeView': 'positions', 'accent': '#d9b45a'}}),
+  ('frost-medium', {'settings': {'size': 'medium', 'theme': 'frost'}}),
+  ('oled-small', {'settings': {'size': 'small', 'theme': 'oled', 'textColor': '#ffffff'}}),
+  ('closed-small', {'settings': {'size': 'small', 'pauseWhenClosed': True}, 'state': {'status': 'closed', 'marketCodes': ['US', 'GB', 'FR']}}),
 ]
 only = sys.argv[2].split(',') if len(sys.argv) > 2 else None
 with sync_playwright() as p:
@@ -44,9 +40,9 @@ with sync_playwright() as p:
         pg.screenshot(path=f'{OUT}/{name}.png')
         pg.close()
     # settings window
-    for tab in (['account', 'appearance'] if not only or 'settings' in only else []):
+    for tab in (['appearance', 'data'] if not only or 'settings' in only else []):
         pg = b.new_page(viewport={'width': 760, 'height': 680}, device_scale_factor=1.5)
-        pg.add_init_script('window.__MOCK=' + json.dumps({'settings': {'accent': '#6f8fe8', 'tint': 0.3, 'theme': 'acrylic'}, 'state': {'divError': {'code': 403, 'message': '403 Forbidden'}}}) + ';' + mock)
+        pg.add_init_script('window.__MOCK=' + json.dumps({'settings': {'accent': '#6f8fe8', 'tint': 0.2, 'theme': 'aurora'}, 'state': {'marketCodes': ['US', 'GB', 'FR']}}) + ';' + mock)
         pg.goto('file://' + ROOT + '/app/settings.html?tab=' + tab)
         pg.add_style_tag(content=':root:root{background:%s!important}' % WALL)
         pg.wait_for_timeout(1300)

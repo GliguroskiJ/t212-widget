@@ -3,6 +3,7 @@
 // Docs: https://docs.trading212.com/api  (Basic auth with API key + secret)
 const { EventEmitter } = require('events');
 const { marketStatus } = require('./market');
+const { reconstruct } = require('./backfill');
 
 const BASES = {
   live: 'https://live.trading212.com',
@@ -87,7 +88,20 @@ class Poller extends EventEmitter {
     this.fx = { pair: null, rate: 1, at: 0 };
     this.nextRetryAt = null;
     this.lastCycleAt = 0;
-    this.market = marketStatus();
+    this.market = marketStatus(new Date(), this.marketCodes());
+  }
+
+  marketCodes() {
+    const pos = (this.raw && this.raw.positions) || [];
+    return [...new Set(pos.map(p => marketOf(p.instrument && p.instrument.ticker)).filter(c => c !== 'OTHER'))];
+  }
+
+  // called every minute by main: keeps "opens in" fresh and wakes the loop when a market opens
+  tick() {
+    const was = this.market && this.market.open;
+    this.market = marketStatus(new Date(), this.marketCodes());
+    if (!was && this.market.open && this.status === 'closed') this.refreshNow();
+    else this.emitState();
   }
 
   creds() { return this.store.getCreds(); }
@@ -128,7 +142,7 @@ class Poller extends EventEmitter {
 
   async cycle() {
     clearTimeout(this.timer);
-    this.market = marketStatus();
+    this.market = marketStatus(new Date(), this.marketCodes());
     const creds = this.creds();
     if (!creds) {
       this.status = 'first-run';
@@ -146,7 +160,11 @@ class Poller extends EventEmitter {
       const t = Date.now();
       this.raw = { summary, positions: Array.isArray(positions) ? positions : [], dividendsYTD: this.raw ? this.raw.dividendsYTD : null, t };
       this.lastSync = t;
+      const pts0 = this.store.history.points;
+      const prevT = pts0.length ? pts0[pts0.length - 1][0] : null;
       this.record();
+      if (settings.fillGaps !== false) this.maybeBackfill(prevT);
+      this.market = marketStatus(new Date(), this.marketCodes());
       await this.updateFx(summary.currency, settings.displayCurrency);
       this.error = null;
       this.nextRetryAt = null;
@@ -197,6 +215,38 @@ class Poller extends EventEmitter {
     }
     h.last = this.raw;
     this.store.saveHistorySoon();
+  }
+
+  // PC was off / app closed → rebuild the missing part of the chart from market prices
+  async maybeBackfill(prevT) {
+    if (this.bfRunning || !this.raw) return;
+    const now = Date.now();
+    const from = prevT || now - 4.5 * 86400e3;          // first run: seed the last few trading days
+    if (now - from < 15 * 60e3) return;
+    this.bfRunning = true;
+    try {
+      const h = this.store.history;
+      h.symbols = h.symbols || {};
+      const pts = await reconstruct({
+        fetchImpl: this.fetch, summary: this.raw.summary, positions: this.raw.positions,
+        from, to: this.raw.t, symbolCache: h.symbols
+      });
+      if (pts.length) {
+        h.points = h.points.concat(pts).sort((a, b) => a[0] - b[0]);
+        // yesterday's close may now be known → fix today's P/L baseline
+        const sod = startOfToday();
+        let prev = null;
+        for (let i = h.points.length - 1; i >= 0; i--) { if (h.points[i][0] < sod) { prev = h.points[i]; break; } }
+        if (prev && h.dayBase && h.dayBase.date === localDate(now)) h.dayBase = { date: h.dayBase.date, pl: prev[2], value: prev[1] };
+        this.store.saveHistorySoon();
+        this.emitState();
+      }
+      this.lastBackfill = { at: Date.now(), points: pts.length };
+    } catch (e) {
+      this.lastBackfill = { at: Date.now(), points: 0, error: String(e && e.message || e) };
+    } finally {
+      this.bfRunning = false;
+    }
   }
 
   async fetchDividends(env, creds) {
@@ -288,6 +338,7 @@ class Poller extends EventEmitter {
       error: this.error,
       lastSync: this.lastSync,
       market: this.market,
+      marketCodes: this.marketCodes(),
       env: s.env,
       encrypted: this.store.encrypted(),
       connected: !!this.creds(),

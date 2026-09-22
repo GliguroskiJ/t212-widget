@@ -18,6 +18,9 @@ const DEFAULTS = {
   refreshSeconds: 30,
   displayCurrency: 'account',  // 'account' | 'CZK' | 'EUR' | 'USD' | 'GBP'
   pauseWhenClosed: true,
+  fillGaps: true,              // rebuild chart gaps from market prices (Yahoo Finance)
+  language: 'cs',              // 'cs' | 'en'
+  textColor: 'auto',           // 'auto' or a hex colour
   startWithWindows: true,
   alwaysOnTop: false,
   lockPosition: false,

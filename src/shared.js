@@ -1,6 +1,5 @@
+import { t } from './i18n.js';
 // Shared tokens, theme switching and chart helpers (direction 1a · Glass slate)
-export const UP = '#74c69a';
-export const DOWN = '#e0777d';
 export const RAMP = ['#b5abfc', '#968ae0', '#796cbf', '#5d5294', '#423a6a', '#4b4f5e'];
 
 // ── colour maths (OKLCH) ─────────────────────────────────────
@@ -53,13 +52,29 @@ export const ACCENT_PRESETS = [
   ['#d9b45a', 'Gold'], ['#e0895e', 'Orange'], ['#e07a9b', 'Rose'], ['#8e97aa', 'Steel']
 ];
 
-// Background types. Stops are [r,g,b,a]; the chosen colour can tint them.
+// Background types. `stops` are [r,g,b,a] (158° gradient); `layers` add effects painted on top.
+// `lightBg` themes get dark text when the text colour is on Auto.
 export const THEMES = {
   acrylic: { label: 'Acrylic', stops: [[45, 48, 68, .95], [24, 26, 40, .97]], edge: '0 0 0 1px #3f424d,0 10px 30px rgba(0,0,0,.55)', hair: .5 },
-  slate: { label: 'Flat slate', stops: [[35, 37, 50, 1]], edge: '0 0 0 1px #3f424d,0 8px 22px rgba(0,0,0,.45)', hair: 0, hairWhite: .18 },
-  indigo: { label: 'Indigo', stops: [[53, 59, 128, .92], [38, 42, 96, .97]], edge: '0 0 0 1px #4c5397,0 10px 30px rgba(0,0,0,.5)', hair: .55, light: true },
-  clear: { label: 'Clear glass', stops: [[233, 233, 237, .12], [233, 233, 237, .075]], edge: '0 0 0 1px rgba(233,233,237,.16),0 12px 34px rgba(0,0,0,.4)', hair: 0, hairWhite: .3 },
-  ink: { label: 'Ink', stops: [[27, 29, 44, 1], [20, 22, 34, 1]], edge: '0 0 0 1px #292b31,0 6px 18px rgba(0,0,0,.6)', hair: .32 }
+  slate: { label: 'Flat slate', stops: [[35, 37, 50, 1]], edge: '0 0 0 1px #3f424d,0 8px 22px rgba(0,0,0,.45)', hairWhite: .18 },
+  indigo: { label: 'Indigo', stops: [[53, 59, 128, .92], [38, 42, 96, .97]], edge: '0 0 0 1px #4c5397,0 10px 30px rgba(0,0,0,.5)', hair: .55, soft: true },
+  clear: { label: 'Clear glass', stops: [[233, 233, 237, .12], [233, 233, 237, .075]], edge: '0 0 0 1px rgba(233,233,237,.16),0 12px 34px rgba(0,0,0,.4)', hairWhite: .3, glass: true },
+  frost: { label: 'Smoked glass', stops: [[26, 28, 42, .66], [14, 15, 24, .78]], edge: '0 0 0 1px rgba(233,233,237,.14),0 12px 34px rgba(0,0,0,.45)', hairWhite: .35, glass: true,
+    layers: [{ type: 'sheen', a: .07, stop: .38 }] },
+  aurora: { label: 'Aurora', stops: [[20, 21, 36, .97], [13, 14, 24, .98]], edge: '0 0 0 1px #34374a,0 12px 34px rgba(0,0,0,.55)', hair: .6,
+    layers: [{ type: 'blob', cx: .12, cy: -.1, r: .85, hue: 0, a: .38 }, { type: 'blob', cx: 1.05, cy: 1.1, r: .8, hue: 110, a: .26 }, { type: 'blob', cx: .7, cy: .2, r: .5, hue: -70, a: .12 }] },
+  mesh: { label: 'Mesh', stops: [[22, 23, 34, .97]], edge: '0 0 0 1px #373a4c,0 12px 34px rgba(0,0,0,.5)', hair: .5,
+    layers: [{ type: 'mesh', hues: [0, 55, -55, 170], l: .3, c: .075, a: .92 }] },
+  ember: { label: 'Ember', stops: [[58, 30, 36, .96], [22, 15, 26, .98]], edge: '0 0 0 1px #4a3038,0 12px 34px rgba(0,0,0,.55)', hairWhite: .22,
+    layers: [{ type: 'blob', cx: 1, cy: 1.15, r: .9, rgb: [224, 120, 70], a: .28 }, { type: 'sheen', a: .04, stop: .3 }] },
+  blueprint: { label: 'Blueprint', stops: [[18, 26, 52, .97], [12, 17, 36, .98]], edge: '0 0 0 1px #2a3a66,0 10px 30px rgba(0,0,0,.5)', hair: .45,
+    layers: [{ type: 'grid', step: 16, a: .09 }] },
+  carbon: { label: 'Carbon', stops: [[28, 29, 34, 1], [17, 18, 22, 1]], edge: '0 0 0 1px #2f3036,0 8px 24px rgba(0,0,0,.6)', hairWhite: .14,
+    layers: [{ type: 'weave', a: .045 }] },
+  ink: { label: 'Ink', stops: [[27, 29, 44, 1], [20, 22, 34, 1]], edge: '0 0 0 1px #292b31,0 6px 18px rgba(0,0,0,.6)', hair: .32 },
+  oled: { label: 'Pure black', stops: [[0, 0, 0, 1]], edge: '0 0 0 1px #26272c', hair: .4 },
+  porcelain: { label: 'Porcelain', stops: [[247, 247, 251, .97], [228, 230, 240, .97]], edge: '0 0 0 1px rgba(20,22,40,.14),0 12px 30px rgba(0,0,0,.28)', hair: .55, lightBg: true,
+    layers: [{ type: 'sheen', a: .5, stop: .3 }] }
 };
 
 function tintStop([r, g, b, a], hue, chroma, t) {
@@ -69,33 +84,79 @@ function tintStop([r, g, b, a], hue, chroma, t) {
   return [nr, ng, nb, a];
 }
 const css = ([r, g, b, a]) => a >= 1 ? `rgb(${r},${g},${b})` : `rgba(${r},${g},${b},${a})`;
+const accHex = a => (/^#[0-9a-f]{6}$/i.test(a || '') ? a : DEFAULT_ACCENT);
 
 export function themeCss(key, accent = DEFAULT_ACCENT, tint = 0) {
   const t = THEMES[key] || THEMES.acrylic;
-  const [, C, H] = rgb2oklch(hex2rgb(/^#[0-9a-f]{6}$/i.test(accent) ? accent : DEFAULT_ACCENT));
-  const tc = Math.min(0.085, Math.max(0.035, C * 0.7)) * (t.stops[0][3] < 0.5 ? 1.4 : 1);
-  const raw = t.stops.map(s => tintStop(s, H, tc, Math.min(1, Math.max(0, tint))));
+  const [, C, H] = rgb2oklch(hex2rgb(accHex(accent)));
+  const tc = Math.min(0.085, Math.max(0.035, C * 0.7)) * (t.stops[0][3] < 0.5 || t.lightBg ? 1.4 : 1);
+  const raw = t.stops.map(s => tintStop(s, H, t.lightBg ? tc * 0.5 : tc, Math.min(1, Math.max(0, tint))));
   const stops = raw.map(css);
   const bg = stops.length > 1 ? `linear-gradient(158deg,${stops[0]},${stops[1]})` : `linear-gradient(${stops[0]},${stops[0]})`;
-  return { bg, raw, edge: t.edge, hair: t.hair, hairWhite: t.hairWhite, light: t.light, swatch: bg };
+  return { ...t, bg, raw, hue: H, chroma: C };
 }
 
-export function applyTheme(key, accent = DEFAULT_ACCENT, tint = 0) {
+// ── text colour ──────────────────────────────────────────────
+export const TEXT_PRESETS = [
+  ['auto', 'Auto'], ['#e9e9ed', 'Soft white'], ['#ffffff', 'Bright white'], ['#f2e8d8', 'Warm'],
+  ['#dde9f7', 'Ice'], ['#dcf3e6', 'Mint'], ['#1c1f2e', 'Dark']
+];
+const BASE_NEUTRAL = ['#f3f5fe', '#e4e7f5', '#cfd3e5', '#b2b6ca', '#9397ab', '#75798c', '#595d6c', '#3f424d', '#292b31'];
+const BASE_N_LCH = BASE_NEUTRAL.map(h => rgb2oklch(hex2rgb(h)));
+const L_TEXT = rgb2oklch(hex2rgb('#e9e9ed'))[0], L_900 = BASE_N_LCH[8][0];
+
+export function resolveText(textColor, themeKey) {
+  if (!textColor || textColor === 'auto') return (THEMES[themeKey] || {}).lightBg ? '#1c1f2e' : '#e9e9ed';
+  return /^#[0-9a-f]{6}$/i.test(textColor) ? textColor.toLowerCase() : '#e9e9ed';
+}
+// neutral ramp for any text colour: 100 = most prominent … 900 = closest to the background
+export function textRamp(hex) {
+  if (hex === '#e9e9ed') return BASE_NEUTRAL.slice();
+  const [L0, C0, H0] = rgb2oklch(hex2rgb(hex));
+  const dark = L0 < 0.55;
+  const Lb = dark ? 0.94 : 0.26;
+  return BASE_N_LCH.map(([L]) => {
+    const p = (L - L_900) / (L_TEXT - L_900);
+    const Li = Math.min(0.995, Math.max(0.05, Lb + (L0 - Lb) * p));
+    return rgbHex(oklch2rgb(Li, C0 * Math.max(0.25, Math.min(1, p)), H0));
+  });
+}
+
+// P/L colours — darker on light backgrounds so they stay readable
+export let UP = '#74c69a';
+export let DOWN = '#e0777d';
+
+export function applyTheme(key, accent = DEFAULT_ACCENT, tint = 0, textColor = 'auto') {
   const s = document.body.style;
-  const ramp = accentRamp(accent);
-  const acc = /^#[0-9a-f]{6}$/i.test(accent) ? accent : DEFAULT_ACCENT;
-  ramp.forEach((c, i) => s.setProperty(`--color-accent-${(i + 1) * 100}`, c));
-  s.setProperty('--color-accent', acc);
-  s.setProperty('--acc-rgb', hex2rgb(acc).join(','));
+  const acc = accHex(accent);
   const t = themeCss(key, acc, tint);
+  const text = resolveText(textColor, key);
+  const dark = rgb2oklch(hex2rgb(text))[0] < 0.55;
+  // dark text ⇒ light surface: flip the accent ramp so "light" accent steps become the dark ones
+  const ramp = dark ? accentRamp(acc).reverse() : accentRamp(acc);
+  ramp.forEach((c, i) => s.setProperty(`--color-accent-${(i + 1) * 100}`, c));
+  s.setProperty('--color-accent', dark ? ramp[6] : acc);
+  s.setProperty('--acc-rgb', hex2rgb(acc).join(','));
+  textRamp(text).forEach((c, i) => s.setProperty(`--color-neutral-${(i + 1) * 100}`, c));
+  s.setProperty('--color-text', text);
+  s.setProperty('--ink-rgb', hex2rgb(text).join(','));
+  s.setProperty('--color-divider', `rgba(${hex2rgb(text).join(',')},.16)`);
+  UP = dark ? '#23875a' : '#74c69a';
+  DOWN = dark ? '#c23f4b' : '#e0777d';
   s.setProperty('--wg-bg', t.bg);
   s.setProperty('--wg-edge', t.edge);
-  // opaque surface for popovers (menu) that follows the background type + colour
+  // opaque surface for popovers + inputs that follows background type, colour and text
   const m = t.raw[0];
-  const menu = m[3] >= 0.5 ? [m[0], m[1], m[2]] : (() => { const c = tintStop([42, 44, 58, 1], rgb2oklch(hex2rgb(acc))[2], 0.03, Math.min(1, tint)); return [c[0], c[1], c[2]]; })();
+  let menu;
+  if (t.lightBg) menu = [m[0], m[1], m[2]];
+  else if (m[3] >= 0.9 && !t.layers) menu = [m[0], m[1], m[2]];
+  else { const c = tintStop([34, 36, 50, 1], t.hue, 0.04, Math.min(1, tint + 0.25)); menu = [c[0], c[1], c[2]]; }
+  if (dark && !t.lightBg) menu = [236, 237, 243];                // dark text on a dark theme: use a light menu
+  if (!dark && t.lightBg) menu = [34, 36, 50];                   // light text on a light theme: use a dark menu
   s.setProperty('--menu-bg', `rgb(${menu.join(',')})`);
-  s.setProperty('--menu-edge', t.light ? 'rgba(213,209,253,.25)' : 'rgba(233,233,237,.14)');
-  const hairC = t.hair ? (t.light ? `color-mix(in srgb, ${ramp[1]} ${t.hair * 100}%, transparent)` : `rgba(${hex2rgb(acc).join(',')},${t.hair})`) : `rgba(233,233,237,${t.hairWhite})`;
+  s.setProperty('--color-surface', `rgb(${menu.join(',')})`);
+  s.setProperty('--menu-edge', `rgba(${hex2rgb(text).join(',')},.16)`);
+  const hairC = t.hair ? (t.soft ? `color-mix(in srgb, ${ramp[1]} ${t.hair * 100}%, transparent)` : `rgba(${hex2rgb(acc).join(',')},${t.hair})`) : `rgba(255,255,255,${t.hairWhite || .18})`;
   s.setProperty('--wg-hair', `linear-gradient(to right,transparent,${hairC},transparent)`);
 }
 
@@ -114,7 +175,14 @@ export function ditheredBg(key, accent, tint, w, h, overlayAlpha = 0, overlaySto
   if (bgCache.has(id)) return bgCache.get(id);
   const t = themeCss(key, accent, tint);
   const a0 = t.raw[0], a1 = t.raw[1] || t.raw[0];
-  const acc = hex2rgb(/^#[0-9a-f]{6}$/i.test(accent || '') ? accent : DEFAULT_ACCENT);
+  const acc = hex2rgb(accHex(accent));
+  const [aL, aC, aH] = rgb2oklch(acc);
+  const hueRgb = (off, L = 0.62, C = Math.max(0.09, aC)) => oklch2rgb(L, C, (aH + off + 360) % 360);
+  const layers = (t.layers || []).map(l => {
+    if (l.type === 'blob') return { ...l, col: l.rgb || hueRgb(l.hue || 0) };
+    if (l.type === 'mesh') return { ...l, cols: l.hues.map(o => oklch2rgb(l.l, l.c, (aH + o + 360) % 360)) };
+    return l;
+  });
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d');
@@ -122,7 +190,7 @@ export function ditheredBg(key, accent, tint, w, h, overlayAlpha = 0, overlaySto
   const px = img.data;
   const ang = 158 * Math.PI / 180, sx = Math.sin(ang), sy = -Math.cos(ang);
   const len = Math.abs(w * sx) + Math.abs(h * sy);
-  const cx = w / 2, cy = h / 2;
+  const cx = w / 2, cy = h / 2, diag = Math.hypot(w, h);
   let seed = 1234567;
   const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   const dith = () => rnd() - rnd();                     // triangular, ±1 LSB
@@ -131,13 +199,32 @@ export function ditheredBg(key, accent, tint, w, h, overlayAlpha = 0, overlaySto
     for (let x = 0; x < w; x++) {
       const tt = Math.min(1, Math.max(0, ((x + 0.5 - cx) * sx + (y + 0.5 - cy) * sy) / len + 0.5));
       let A = a0[3] + (a1[3] - a0[3]) * tt;
-      // premultiplied mix of the two stops
-      let r = (a0[0] * a0[3] + (a1[0] * a1[3] - a0[0] * a0[3]) * tt);
-      let g = (a0[1] * a0[3] + (a1[1] * a1[3] - a0[1] * a0[3]) * tt);
-      let b = (a0[2] * a0[3] + (a1[2] * a1[3] - a0[2] * a0[3]) * tt);
-      if (ov) { // accent wash on top (source-over, premultiplied)
-        r = acc[0] * ov + r * (1 - ov); g = acc[1] * ov + g * (1 - ov); b = acc[2] * ov + b * (1 - ov); A = ov + A * (1 - ov);
+      // premultiplied colour
+      let r = a0[0] * a0[3] + (a1[0] * a1[3] - a0[0] * a0[3]) * tt;
+      let g = a0[1] * a0[3] + (a1[1] * a1[3] - a0[1] * a0[3]) * tt;
+      let b = a0[2] * a0[3] + (a1[2] * a1[3] - a0[2] * a0[3]) * tt;
+      const over = (cr, cg, cb, k) => { r = cr * k + r * (1 - k); g = cg * k + g * (1 - k); b = cb * k + b * (1 - k); A = k + A * (1 - k); };
+      for (const l of layers) {
+        if (l.type === 'blob') {
+          const d = Math.hypot(x - l.cx * w, y - l.cy * h) / (l.r * diag);
+          const k = Math.max(0, 1 - d); if (k > 0) over(l.col[0], l.col[1], l.col[2], l.a * k * k * (3 - 2 * k));
+        } else if (l.type === 'mesh') {
+          const u = x / w, v = y / h, c = l.cols;
+          const mix = i => (c[0][i] * (1 - u) + c[1][i] * u) * (1 - v) + (c[2][i] * (1 - u) + c[3][i] * u) * v;
+          over(mix(0), mix(1), mix(2), l.a);
+        } else if (l.type === 'sheen') {
+          const k = Math.max(0, 1 - y / (h * l.stop)); if (k > 0) over(255, 255, 255, l.a * k * k);
+        } else if (l.type === 'grid') {
+          const gx = x % l.step, gy = y % l.step;
+          if (gx === 0 && gy === 0) over(acc[0], acc[1], acc[2], l.a * 4);
+          else if (gx === 0 || gy === 0) over(acc[0], acc[1], acc[2], l.a * 0.35);
+        } else if (l.type === 'weave') {
+          const band = ((x + y) >> 2) & 1, cross = ((x - y + 4096) >> 2) & 1;
+          const k = band ^ cross ? l.a : -l.a * 0.6;
+          if (k > 0) over(255, 255, 255, k); else over(0, 0, 0, -k);
+        }
       }
+      if (ov) over(acc[0], acc[1], acc[2], ov);
       const i = (y * w + x) * 4;
       px[i] = Math.round(r / A + dith());
       px[i + 1] = Math.round(g / A + dith());
@@ -147,7 +234,7 @@ export function ditheredBg(key, accent, tint, w, h, overlayAlpha = 0, overlaySto
   }
   ctx.putImageData(img, 0, 0);
   const url = cv.toDataURL('image/png');
-  if (bgCache.size > 12) bgCache.clear();
+  if (bgCache.size > 40) bgCache.clear();
   bgCache.set(id, url);
   return url;
 }
@@ -175,14 +262,14 @@ export function makeFmt(numberFormat) {
 }
 
 export function agoStr(lastSync, now) {
-  if (!lastSync) return 'never';
+  if (!lastSync) return t('never');
   const s = Math.max(0, Math.round((now - lastSync) / 1000));
-  if (s < 2) return 'just now';
-  if (s < 60) return s + 's ago';
+  if (s < 2) return t('just now');
+  if (s < 60) return t('{n}s ago', { n: s });
   const m = Math.round(s / 60);
-  if (m < 60) return m + 'm ago';
+  if (m < 60) return t('{n}m ago', { n: m });
   const d = new Date(lastSync);
-  return 'at ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  return t('at {t}', { t: String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') });
 }
 
 export function hhmm(ts) {

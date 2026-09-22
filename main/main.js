@@ -153,21 +153,32 @@ function applyAutostart(on) {
 }
 
 // ── tray ─────────────────────────────────────────────────────
+const TRAY_CS = {
+  'Hide widget': 'Skrýt widget', 'Show widget': 'Zobrazit widget', 'Refresh now': 'Obnovit', 'Size': 'Velikost',
+  'Small  1×1': 'Malý  1×1', 'Medium  2×1': 'Střední  2×1', 'Large  2×2': 'Velký  2×2', 'Rail': 'Panel',
+  'Always on top': 'Vždy navrchu', 'Lock position': 'Zamknout pozici', 'Start with Windows': 'Spouštět s Windows',
+  'Settings…': 'Nastavení…', 'Quit': 'Ukončit',
+  'Both the API key and the secret are required.': 'Je potřeba API klíč i tajný klíč.',
+  'Trading 212 returned 401 Unauthorized — check the key and secret.': 'Trading 212 vrátil 401 Unauthorized — zkontrolujte klíč a tajný klíč.',
+  'Trading 212 returned 403 Forbidden — the key needs the Account data and Portfolio permissions.': 'Trading 212 vrátil 403 Forbidden — klíč potřebuje oprávnění Account data a Portfolio.',
+  'Rate limited by Trading 212 — wait a few seconds and try again.': 'Trading 212 omezil počet dotazů — počkejte pár sekund a zkuste to znovu.'
+};
+const tr = s => ((store && store.get('language')) !== 'en' && TRAY_CS[s]) || s;
 function rebuildTrayMenu() {
   if (!tray) return;
   const s = store.all();
   const sizeItem = (k, label) => ({ label, type: 'radio', checked: s.size === k, click: () => applySettings({ size: k }) });
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: s.showWidget ? 'Hide widget' : 'Show widget', click: () => (s.showWidget ? hideWidget() : showWidget()) },
-    { label: 'Refresh now', click: () => poller.refreshNow() },
+    { label: s.showWidget ? tr('Hide widget') : tr('Show widget'), click: () => (s.showWidget ? hideWidget() : showWidget()) },
+    { label: tr('Refresh now'), click: () => poller.refreshNow() },
     { type: 'separator' },
-    { label: 'Size', submenu: [sizeItem('small', 'Small  1×1'), sizeItem('medium', 'Medium  2×1'), sizeItem('large', 'Large  2×2'), sizeItem('rail', 'Rail')] },
-    { label: 'Always on top', type: 'checkbox', checked: !!s.alwaysOnTop, click: m => applySettings({ alwaysOnTop: m.checked }) },
-    { label: 'Lock position', type: 'checkbox', checked: !!s.lockPosition, click: m => applySettings({ lockPosition: m.checked }) },
-    { label: 'Start with Windows', type: 'checkbox', checked: !!s.startWithWindows, click: m => applySettings({ startWithWindows: m.checked }) },
+    { label: tr('Size'), submenu: [sizeItem('small', tr('Small  1×1')), sizeItem('medium', tr('Medium  2×1')), sizeItem('large', tr('Large  2×2')), sizeItem('rail', tr('Rail'))] },
+    { label: tr('Always on top'), type: 'checkbox', checked: !!s.alwaysOnTop, click: m => applySettings({ alwaysOnTop: m.checked }) },
+    { label: tr('Lock position'), type: 'checkbox', checked: !!s.lockPosition, click: m => applySettings({ lockPosition: m.checked }) },
+    { label: tr('Start with Windows'), type: 'checkbox', checked: !!s.startWithWindows, click: m => applySettings({ startWithWindows: m.checked }) },
     { type: 'separator' },
-    { label: 'Settings…', click: () => openSettings() },
-    { label: 'Quit', click: () => { quitting = true; app.quit(); } }
+    { label: tr('Settings…'), click: () => openSettings() },
+    { label: tr('Quit'), click: () => { quitting = true; app.quit(); } }
   ]));
 }
 
@@ -227,7 +238,7 @@ function registerIpc() {
   });
   ipcMain.handle('connect', async (_e, { env, key, secret }) => {
     key = String(key || '').trim(); secret = String(secret || '').trim();
-    if (!key || !secret) return { ok: false, message: 'Both the API key and the secret are required.' };
+    if (!key || !secret) return { ok: false, message: tr('Both the API key and the secret are required.') };
     const useEnv = env === 'demo' ? 'demo' : 'live';
     try {
       const info = await poller.verify(useEnv, { key, secret });
@@ -245,9 +256,9 @@ function registerIpc() {
       return { ok: true, ...info };
     } catch (err) {
       const code = err.status || 0;
-      const message = code === 401 ? 'Trading 212 returned 401 Unauthorized — check the key and secret.'
-        : code === 403 ? 'Trading 212 returned 403 Forbidden — the key needs the Account data and Portfolio permissions.'
-        : code === 429 ? 'Rate limited by Trading 212 — wait a few seconds and try again.'
+      const message = code === 401 ? tr('Trading 212 returned 401 Unauthorized — check the key and secret.')
+        : code === 403 ? tr('Trading 212 returned 403 Forbidden — the key needs the Account data and Portfolio permissions.')
+        : code === 429 ? tr('Rate limited by Trading 212 — wait a few seconds and try again.')
         : err.message || String(err);
       return { ok: false, code, message };
     }
@@ -284,7 +295,7 @@ app.whenReady().then(() => {
   createWidget();
   poller.start();
   // market open/closed flips & "opens in" countdown refresh
-  setInterval(() => poller.emitState(), 60e3);
+  setInterval(() => poller.tick(), 30e3);
   screen.on('display-removed', () => {
     if (!widget) return;
     const [x, y] = widget.getPosition(); const [w, h] = widget.getSize();
