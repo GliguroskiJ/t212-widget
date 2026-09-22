@@ -1,6 +1,6 @@
 import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
-import { THEMES, UP, DOWN, applyTheme, applyMotion, agoStr } from './shared.js';
+import { THEMES, UP, DOWN, applyTheme, applyMotion, agoStr, themeCss, ACCENT_PRESETS, DEFAULT_ACCENT } from './shared.js';
 
 const api = window.api;
 const F = "'Inter',sans-serif";
@@ -153,23 +153,68 @@ function WidgetTab({ s, set }) {
   );
 }
 
+function ColourPicker({ s, set }) {
+  const acc = (s.accent || DEFAULT_ACCENT).toLowerCase();
+  const [hex, setHex] = useState(acc);
+  useEffect(() => setHex(acc), [acc]);
+  const isPreset = ACCENT_PRESETS.some(([c]) => c === acc);
+  const commitHex = v => {
+    let h = v.trim().toLowerCase(); if (!h.startsWith('#')) h = '#' + h;
+    if (/^#[0-9a-f]{3}$/.test(h)) h = '#' + h.slice(1).split('').map(c => c + c).join('');
+    if (/^#[0-9a-f]{6}$/.test(h)) set({ accent: h }); else setHex(acc);
+  };
+  return (
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:12px">
+      <div style="display:flex;align-items:center;gap:20px">
+        <div style="display:flex;flex-direction:column;gap:4px;flex:1">
+          <span style={`font:500 12.5px/1.2 ${F};color:var(--color-neutral-200)`}>Accent colour</span>
+          <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>Tile, chips, tabs, highlights and glows. Gains and losses stay green / red.</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="acc-prev" style={`background:${acc}`}></span>
+          <input class="input mono" value={hex} spellcheck={false} maxLength={7} onInput={e => setHex(e.currentTarget.value)}
+            onBlur={e => commitHex(e.currentTarget.value)} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+            style="width:92px;min-height:30px;padding:4px 8px;font-size:12px;text-transform:lowercase" />
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        {ACCENT_PRESETS.map(([c, name]) => (
+          <button type="button" class={'dotc' + (c === acc ? ' on' : '')} title={name} onClick={() => set({ accent: c })} style={`--c:${c}`}></button>
+        ))}
+        <label class={'dotc custom' + (!isPreset ? ' on' : '')} title="Custom colour" style={!isPreset ? `--c:${acc}` : ''}>
+          <i class="ph ph-eyedropper"></i>
+          <input type="color" value={acc} onInput={e => set({ accent: e.currentTarget.value })} />
+        </label>
+        <span style="flex:1"></span>
+        {acc !== DEFAULT_ACCENT && <button type="button" class="btn btn-ghost" style="font-size:12px;color:var(--color-neutral-400)" onClick={() => set({ accent: DEFAULT_ACCENT, tint: 0 })}>Reset</button>}
+      </div>
+    </div>
+  );
+}
+
 function AppearanceTab({ s, set }) {
   const pct = Math.round((s.opacity || 1) * 100);
   return (
     <>
-      <Section label="Widget background">
+      <Section label="Background type">
         <div style="display:flex;gap:14px;padding:4px 0 12px">
           {Object.keys(THEMES).map(k => {
             const t = THEMES[k]; const on = s.theme === k;
             return (
               <div style="display:flex;flex-direction:column;align-items:center;gap:7px">
                 <button type="button" class="swatch" title={t.label} onClick={() => set({ theme: k })}
-                  style={`background:${t.swatch};box-shadow:${on ? 'inset 0 0 0 1px rgba(233,233,237,.2), 0 0 0 2px var(--color-accent)' : 'inset 0 0 0 1px rgba(233,233,237,.12)'}`}></button>
+                  style={`background:url(noise.png),${themeCss(k, s.accent, s.tint).bg};box-shadow:${on ? 'inset 0 0 0 1px rgba(233,233,237,.2), 0 0 0 2px var(--color-accent)' : 'inset 0 0 0 1px rgba(233,233,237,.12)'}`}></button>
                 <span style={`font:400 10px/1 ${F};color:${on ? 'var(--color-accent-300)' : 'var(--color-neutral-500)'}`}>{t.label}</span>
               </div>
             );
           })}
         </div>
+      </Section>
+      <Section label="Colour">
+        <ColourPicker s={s} set={set} />
+        <Row title="Tint the background" desc="Blends the colour into the background type. 0 % keeps the original Nocturne look.">
+          <input type="range" class="rng" min="0" max="100" step="5" value={Math.round((s.tint || 0) * 100)} onInput={e => set({ tint: Number(e.currentTarget.value) / 100 })} style={`--p:${Math.round((s.tint || 0) * 100)}%`} />
+          <span class="tnum" style={`width:36px;text-align:right;font:400 12px/1 ${F};color:var(--color-neutral-300)`}>{Math.round((s.tint || 0) * 100)}%</span></Row>
       </Section>
       <Section label="Display">
         <Row title="Motion" desc="Subtle keeps number roll-ups but stops breathing and pulsing; Off shows final values immediately.">
@@ -233,7 +278,7 @@ function App({ init }) {
   const q = new URLSearchParams(location.search).get('tab');
   const [tab, setTab] = useState(TABS.some(t => t[0] === q) ? q : (init.state && !init.state.connected ? 'account' : 'widget'));
   useEffect(() => { api.onSettings(setS); api.onState(setSt); api.onGotoTab(t => t && setTab(t)); }, []);
-  useEffect(() => applyTheme(s.theme), [s.theme]);
+  useEffect(() => applyTheme(s.theme, s.accent, s.tint), [s.theme, s.accent, s.tint]);
   useEffect(() => applyMotion(s.motion), [s.motion]);
   useEffect(() => { api.getAutostart().then(v => { if (typeof v === 'boolean' && v !== s.startWithWindows) setS(x => ({ ...x, startWithWindows: v })); }); }, []);
   const set = patch => { setS(x => ({ ...x, ...patch })); api.setSettings(patch); };
@@ -245,8 +290,8 @@ function App({ init }) {
   return (
     <div class="stage">
       <div class="wg" style="width:704px;height:624px;display:flex;flex-direction:column">
-        <div class="loop" style="position:absolute;width:300px;height:300px;left:-110px;top:-160px;border-radius:50%;background:radial-gradient(circle,rgba(145,132,217,.18),transparent 70%);filter:blur(14px);animation:nglow 8s ease-in-out infinite;pointer-events:none"></div>
-        <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(145,132,217,.07),transparent 35%)"></div>
+        <div class="loop" style="position:absolute;width:300px;height:300px;left:-110px;top:-160px;border-radius:50%;background:radial-gradient(circle,rgba(var(--acc-rgb),.18),transparent 70%);filter:blur(14px);animation:nglow 8s ease-in-out infinite;pointer-events:none"></div>
+        <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(var(--acc-rgb),.07),transparent 35%)"></div>
         <header class="titlebar">
           <div style="width:24px;height:24px;border-radius:6px;border:1px solid var(--color-accent-700);background:var(--color-accent-900);display:flex;align-items:center;justify-content:center;font:600 9.5px/1 ui-monospace,Menlo,monospace;color:var(--color-accent-300)">212</div>
           <span style={`font:500 13px/1 ${F};color:var(--color-neutral-200)`}>Settings</span>
@@ -277,7 +322,7 @@ function App({ init }) {
 }
 
 api.init().then(init => {
-  applyTheme(init.settings.theme);
+  applyTheme(init.settings.theme, init.settings.accent, init.settings.tint);
   applyMotion(init.settings.motion);
   render(<App init={init} />, document.getElementById('root'));
 });

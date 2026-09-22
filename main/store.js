@@ -10,6 +10,8 @@ const DEFAULTS = {
   largeView: 'chart',          // 'chart' | 'positions' | 'alloc'
   range: '1D',                 // '1D' | '1W' | '1M' | '1Y' | 'ALL'
   theme: 'acrylic',            // 'acrylic' | 'slate' | 'indigo' | 'clear' | 'ink'
+  accent: '#9184d9',           // accent colour (hex) — drives the whole Nocturne accent ramp
+  tint: 0,                     // 0–1: how much the accent colour tints the background type
   motion: 'full',              // 'full' | 'subtle' | 'off'
   opacity: 1,                  // 0.5 – 1
   numberFormat: 'en',          // 'en' (1,234.56) | 'cs' (1 234,56)

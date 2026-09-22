@@ -1,7 +1,7 @@
 import { render } from 'preact';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'preact/hooks';
 import {
-  UP, DOWN, RAMP, applyTheme, applyMotion, makeFmt, agoStr, hhmm,
+  UP, DOWN, accentRamp, applyTheme, applyMotion, makeFmt, agoStr, hhmm,
   linePath, areaPath, lastPt, tint, glow
 } from './shared.js';
 
@@ -176,6 +176,8 @@ function useModel(st, settings) {
   const cur = d.currency;
   const sp = fmt.split(val ?? d.value);
   const values = (d.series && d.series.length ? d.series.map(p => p[1]) : [d.value, d.value]);
+  const ar = accentRamp(settings.accent || '#9184d9');
+  const RAMP = [ar[3], ar[4], ar[5], ar[6], ar[7], '#4b4f5e'];
   const maxW = Math.max(1, ...d.positions.map(p => p.weight));
   const positions = d.positions.map((p, i) => ({
     ...p,
@@ -246,7 +248,7 @@ function Medium({ m, st, now, closed, settings }) {
   const setRange = r => api.setSettings({ range: r });
   return (
     <div style="width:620px;height:304px;padding:22px 24px;display:grid;grid-template-columns:250px 1fr;gap:26px;box-sizing:border-box;position:relative">
-      <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(145,132,217,.09),transparent 45%)"></div>
+      <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(var(--acc-rgb),.09),transparent 45%)"></div>
       <div style="position:relative;display:flex;flex-direction:column;min-width:0">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:22px">
           <Tile px={22} muted={closed} />
@@ -385,7 +387,7 @@ function Large({ m, st, now, closed, settings }) {
   const [openRow, setOpenRow] = useState(null);
   return (
     <div style="width:620px;height:620px;padding:24px;display:flex;flex-direction:column;gap:18px;box-sizing:border-box;position:relative">
-      <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(145,132,217,.08),transparent 40%)"></div>
+      <div style="position:absolute;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(var(--acc-rgb),.08),transparent 40%)"></div>
       <div style="position:relative;display:flex;align-items:center;gap:9px;padding-right:14px">
         <Tile px={24} muted={closed} />
         <span style={`font:500 13px/1 ${F};color:var(--color-neutral-${closed ? 500 : 200})`}>Trading 212 · Invest</span>
@@ -439,7 +441,7 @@ function Large({ m, st, now, closed, settings }) {
             const open = openRow === p.ticker;
             return (
               <div class="hov-row ia" onClick={() => setOpenRow(o => (o === p.ticker ? null : p.ticker))}
-                style={`cursor:pointer;border-radius:6px;padding:9px 10px;flex:none;background:${open ? 'rgba(145,132,217,.13)' : 'rgba(233,233,237,.03)'}`}>
+                style={`cursor:pointer;border-radius:6px;padding:9px 10px;flex:none;background:${open ? 'rgba(var(--acc-rgb),.13)' : 'rgba(233,233,237,.03)'}`}>
                 <div style="display:flex;align-items:center;gap:11px">
                   <span style={`width:44px;flex:none;font:500 11.5px/1 ${F};color:var(--color-neutral-200);overflow:hidden;text-overflow:ellipsis`}>{p.sym}</span>
                   <span style={`flex:1;font:400 11px/1 ${F};color:var(--color-neutral-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}>{p.name}</span>
@@ -678,7 +680,7 @@ function Connect({ st, settings }) {
   const cur = settings.displayCurrency === 'account' ? 'Account' : settings.displayCurrency;
   return (
     <div style="width:620px;height:304px;padding:26px 28px;display:flex;flex-direction:column;gap:13px;box-sizing:border-box;position:relative">
-      <div class="loop" style="position:absolute;width:260px;height:260px;left:-90px;top:-130px;border-radius:50%;background:radial-gradient(circle,rgba(145,132,217,.22),transparent 70%);filter:blur(14px);animation:nglow 8s ease-in-out infinite;pointer-events:none"></div>
+      <div class="loop" style="position:absolute;width:260px;height:260px;left:-90px;top:-130px;border-radius:50%;background:radial-gradient(circle,rgba(var(--acc-rgb),.22),transparent 70%);filter:blur(14px);animation:nglow 8s ease-in-out infinite;pointer-events:none"></div>
       <div style="position:relative;display:flex;align-items:center;gap:9px">
         <Tile px={24} />
         <span style={`font:500 13px/1 ${F};color:var(--color-neutral-200)`}>Connect your account</span>
@@ -738,7 +740,7 @@ function App({ init }) {
   const [settings, setSettings] = useState(init.settings);
   const now = useNow(1000);
   useEffect(() => { api.onState(setSt); api.onSettings(setSettings); }, []);
-  useEffect(() => applyTheme(settings.theme), [settings.theme]);
+  useEffect(() => applyTheme(settings.theme, settings.accent, settings.tint), [settings.theme, settings.accent, settings.tint]);
   useEffect(() => applyMotion(settings.motion), [settings.motion]);
 
   // click-through outside the card; manual dragging on the card
@@ -793,7 +795,7 @@ function App({ init }) {
 }
 
 api.init().then(init => {
-  applyTheme(init.settings.theme);
+  applyTheme(init.settings.theme, init.settings.accent, init.settings.tint);
   applyMotion(init.settings.motion);
   render(<App init={init} />, document.getElementById('root'));
 });
