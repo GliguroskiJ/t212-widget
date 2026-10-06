@@ -1,7 +1,9 @@
 import * as esbuild from 'esbuild';
 import fs from 'fs';
 import path from 'path';
-const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
+import { fileURLToPath } from 'url';
+// fileURLToPath, not URL.pathname: on Windows the pathname is "/D:/…" and resolves to an invalid "\D:\…"
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const out = path.join(root, 'app');
 fs.mkdirSync(path.join(out, 'fonts'), { recursive: true });
 fs.mkdirSync(path.join(out, 'phosphor'), { recursive: true });
