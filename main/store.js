@@ -84,10 +84,16 @@ class Store {
   }
   setCreds(c) {
     const txt = JSON.stringify({ key: c.key, secret: c.secret });
-    const buf = this.safe && this.safe.isEncryptionAvailable()
-      ? this.safe.encryptString(txt)
-      : Buffer.from(txt, 'utf8');
-    fs.writeFileSync(this.credsFile, buf);
+    fs.writeFileSync(this.credsFile, this.seal(txt));
+  }
+  // Windows DPAPI / macOS Keychain. If encryption isn't available there, refuse instead of
+  // falling back to plain text. (Plain text only for tests without Electron.)
+  seal(txt) {
+    if (this.safe && this.safe.isEncryptionAvailable()) return this.safe.encryptString(txt);
+    if (this.safe && (process.platform === 'win32' || process.platform === 'darwin')) {
+      throw new Error('Secure storage is unavailable — the key was not saved.');
+    }
+    return Buffer.from(txt, 'utf8');
   }
   clearCreds() { try { fs.unlinkSync(this.credsFile); } catch {} }
 
@@ -101,8 +107,7 @@ class Store {
   }
   setGhToken(tok) {
     if (!tok) { try { fs.unlinkSync(this.ghFile); } catch {} return; }
-    const buf = this.safe && this.safe.isEncryptionAvailable() ? this.safe.encryptString(tok.trim()) : Buffer.from(tok.trim(), 'utf8');
-    fs.writeFileSync(this.ghFile, buf);
+    fs.writeFileSync(this.ghFile, this.seal(tok.trim()));
   }
   encrypted() { return !!(this.safe && this.safe.isEncryptionAvailable()); }
 

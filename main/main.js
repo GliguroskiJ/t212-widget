@@ -269,7 +269,7 @@ const TRAY_CS = {
   'rate': 'GitHub dočasně omezil počet dotazů — zkusím to později.',
   'network': 'GitHub není dostupný — zkontroluj připojení.',
   'http': 'GitHub vrátil chybu.',
-  'verify': 'Stažený soubor nesouhlasí s vydáním — instalace zrušena.',
+  'verify': 'Stažený soubor nejde ověřit proti vydání — instalace zrušena.',
   'noasset': 'Vydání nemá soubor pro tenhle počítač.'
 };
 const ERR_EN = {
@@ -278,7 +278,7 @@ const ERR_EN = {
   rate: 'GitHub is rate limiting — will try again later.',
   network: 'GitHub is unreachable — check the connection.',
   http: 'GitHub returned an error.',
-  verify: 'The downloaded file doesn\u2019t match the release — not installing.',
+  verify: 'The download couldn\u2019t be verified against the release — not installing.',
   noasset: 'The release has no file for this computer.'
 };
 const tr = s => ((store && store.get('language')) !== 'en' && TRAY_CS[s]) || s;
@@ -444,7 +444,7 @@ function registerIpc() {
     update: updater ? updater.state : null, hasGhToken: !!store.getGhToken(), packaged: app.isPackaged }));
   ipcMain.handle('update-check', () => manualCheck(false));
   ipcMain.handle('update-install', () => { promptUpdate(true); return true; });
-  ipcMain.handle('set-gh-token', (_e, tok) => { store.setGhToken(tok || null); return !!store.getGhToken(); });
+  ipcMain.handle('set-gh-token', (_e, tok) => { try { store.setGhToken(tok ? String(tok) : null); } catch {} return !!store.getGhToken(); });
   ipcMain.handle('hide-popover', () => { if (popover) popover.hide(); return true; });
   ipcMain.handle('set-settings', (_e, patch) => applySettings(patch || {}));
   ipcMain.handle('refresh', () => { poller.refreshNow(); return true; });
@@ -457,7 +457,7 @@ function registerIpc() {
   ipcMain.handle('minimize-settings', () => { if (settingsWin) settingsWin.minimize(); return true; });
   ipcMain.handle('clear-history', () => { store.clearHistory(); poller.emitState(); return true; });
   ipcMain.handle('open-data-folder', () => { shell.openPath(app.getPath('userData')); return true; });
-  ipcMain.handle('open-external', (_e, url) => { if (/^https:\/\//.test(url)) shell.openExternal(url); return true; });
+  ipcMain.handle('open-external', (_e, url) => { if (externalAllowed(url)) shell.openExternal(url); return true; });
   ipcMain.handle('reset-position', () => {
     if (!widget) return false;
     const { width, height } = winSize(effectiveSize());
@@ -527,6 +527,21 @@ function registerIpc() {
     try { return app.getLoginItemSettings().openAtLogin; } catch { return store.get('startWithWindows'); }
   });
 }
+
+// ── hardening ────────────────────────────────────────────────
+// Our windows only ever show the bundled pages: a dropped link/file or a stray <a> must not
+// load a foreign page next to window.api, and nothing may open new windows.
+const EXTERNAL_HOSTS = ['trading212.com', 'github.com'];
+function externalAllowed(url) {
+  try { const u = new URL(url); return u.protocol === 'https:' && EXTERNAL_HOSTS.some(h => u.hostname === h || u.hostname.endsWith('.' + h)); }
+  catch { return false; }
+}
+app.on('web-contents-created', (_e, wc) => {
+  wc.on('will-navigate', e => e.preventDefault());
+  wc.on('will-redirect', e => e.preventDefault());
+  wc.setWindowOpenHandler(({ url }) => { if (externalAllowed(url)) shell.openExternal(url); return { action: 'deny' }; });
+  wc.on('will-attach-webview', e => e.preventDefault());
+});
 
 // ── boot ─────────────────────────────────────────────────────
 app.on('second-instance', () => openSettings());

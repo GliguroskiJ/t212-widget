@@ -1,3 +1,10 @@
 node_modules/
 dist/
 app/
+# never commit app data or secrets (they live in %APPDATA%\T212 Widget / ~/Library/Application Support)
+credentials.bin
+github-token.bin
+settings.json
+history.json
+*.env
+.env*

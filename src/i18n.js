@@ -66,7 +66,7 @@ const CS = {
   'GitHub is rate limiting — will try again later.': 'GitHub dočasně omezil počet dotazů — zkusím to později.',
   'GitHub is unreachable — check the connection.': 'GitHub není dostupný — zkontroluj připojení.',
   'GitHub returned an error.': 'GitHub vrátil chybu.',
-  'The downloaded file doesn\u2019t match the release — not installing.': 'Stažený soubor nesouhlasí s vydáním — instalace zrušena.',
+  'The download couldn\u2019t be verified against the release — not installing.': 'Stažený soubor nejde ověřit proti vydání — instalace zrušena.',
   'The release has no file for this computer.': 'Vydání nemá soubor pro tenhle počítač.',
   'Chart': 'Graf',
   'Positions': 'Pozice',

@@ -24,6 +24,15 @@ npm test            # test API klienta proti falešnému T212 serveru
 - Změna u hodnoty se řídí zvoleným obdobím grafu (1D/1W/1M/1Y/ALL) a počítá se z rozdílu P/L, takže vklady a výběry ji nezkreslí. Když historie ještě nesahá tak daleko, ukazuje se „od <datum>“. ALL = celkový P/L.
 - Najetím myší na graf se ukáže hodnota portfolia v danou chvíli a změna od začátku období (body doplněné z tržních cen jsou označené „odhad“).
 
+## Bezpečnost
+- **API klíč nikdy neopouští počítač.** Ukládá se jen do `credentials.bin` v datové složce aplikace (mimo projekt),
+  šifrovaně přes Windows DPAPI / macOS Keychain. Když šifrování není k dispozici, klíč se neuloží vůbec — nikdy ne jako čistý text.
+  Do okna (rendereru) se nevrací, neloguje se a posílá se jen na `live/demo.trading212.com` přes HTTPS.
+- V repu ani v CI žádné klíče nejsou (testy používají smyšlené `KEY`/`SECRET`); `.gitignore` navíc blokuje soubory s daty aplikace.
+- Testovací přepínače adres (`T212_BASE`, `T212_UPDATE_API`) fungují jen v testech, v nainstalované aplikaci se ignorují.
+- Okna: sandbox, contextIsolation, přísná CSP, žádná navigace ani nová okna; externí odkazy jen na trading212.com a github.com.
+- Aktualizace: instaluje se jen po potvrzení a jen soubor, jehož SHA-256 sedí s vydáním; GitHub token jde jen na api.github.com.
+
 ## Aktualizace
 Aplikace sama hlídá GitHub Releases: při spuštění (tedy i po zapnutí počítače), po probuzení ze spánku,
 každý den ve 12:00 a na tlačítko *Zkontrolovat aktualizace* (Nastavení → Systém, nebo menu v tray).

@@ -12,7 +12,8 @@ const rel = () => ({
   body: '## What\'s Changed\n* Chart hover by @me in [#3](https://x)\n\n**Full Changelog**: v1.5.1...v1.6.0',
   assets: [
     { name: 'T212-Widget-Setup-1.6.0.exe', size: EXE.length, digest: mode === 'baddigest' ? sha(Buffer.from('x')) : sha(EXE),
-      url: `${base()}/api/assets/1`, browser_download_url: `${base()}/dl/T212-Widget-Setup-1.6.0.exe` },
+      url: mode === 'foreign' ? base().replace('127.0.0.1', 'localhost') + '/api/assets/1' : `${base()}/api/assets/1`,
+      browser_download_url: `${base()}/dl/T212-Widget-Setup-1.6.0.exe` },
     { name: 'T212-Widget-1.6.0-mac-arm64.zip', size: ZIP.length, digest: sha(ZIP), url: `${base()}/api/assets/2`, browser_download_url: `${base()}/dl/arm.zip` },
     { name: 'T212-Widget-1.6.0-mac-x64.zip', size: ZIP.length, url: `${base()}/api/assets/3`, browser_download_url: `${base()}/dl/x64.zip` },
     { name: 'T212-Widget-1.6.0-mac-arm64.dmg', size: 1, url: '', browser_download_url: '' }
@@ -86,6 +87,21 @@ srv.listen(0, async () => {
   await assert.rejects(() => u.download(), e => e.kind === 'verify');
   assert.ok(!fs.existsSync(path.join(tmp, 't212-widget-update-1.6.0', 'T212-Widget-Setup-1.6.0.exe.part')));
   console.log('checksum mismatch refused ok');
+  // asset without a checksum → refused before anything is downloaded
+  mode = 'ok'; u = mk('darwin', 'x64'); await u.check();
+  await assert.rejects(() => u.download(), e => e.kind === 'verify' && /checksum/.test(e.message));
+  console.log('missing checksum refused ok');
+  // the token never leaves the GitHub API origin
+  mode = 'foreign'; token = 'github_pat_TEST'; u = mk('win32', 'x64'); await u.check(); await u.download();
+  assert.equal(lastAuth.auth, undefined, 'token must not be sent to another origin'); assert.equal(lastAuth.url, '/dl/T212-Widget-Setup-1.6.0.exe');
+  token = null; mode = 'ok';
+  console.log('token stays on api origin ok');
+  // test hooks are ignored inside an installed (packaged) Electron app
+  const probe = `Object.defineProperty(process.versions,'electron',{value:'44.0.0'});` +
+    `const {baseFor}=require('./main/t212');const {apiBase}=require('./main/updater');console.log(baseFor('live')+' '+apiBase())`;
+  const outp = execFileSync(process.execPath, ['-e', probe], { cwd: path.join(__dirname, '..'), env: { ...process.env, T212_BASE: 'http://evil.test', T212_UPDATE_API: 'http://evil.test' } }).toString().trim();
+  assert.equal(outp, 'https://live.trading212.com https://api.github.com', outp);
+  console.log('env overrides ignored in packaged app ok');
 
   // Windows hand-over: silent installer, relaunch afterwards
   let spawned; installWindows('C:\\t\\setup.exe', (f, a, o) => { spawned = { f, a, o }; return { unref() {} }; });

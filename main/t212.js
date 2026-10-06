@@ -18,8 +18,11 @@ class ApiError extends Error {
   }
 }
 
+// Test hooks (fake servers) — honoured only in plain Node tests and `electron script.js` dev runs,
+// never in the installed app, so nothing can redirect the API key or the updater elsewhere.
+const devEnv = name => ((!process.versions.electron || process.defaultApp) ? process.env[name] : undefined);
 function baseFor(env) {
-  return process.env.T212_BASE || BASES[env] || BASES.live;
+  return devEnv('T212_BASE') || BASES[env] || BASES.live;
 }
 
 async function apiGet(fetchImpl, env, creds, pathAndQuery) {
@@ -440,4 +443,4 @@ class Poller extends EventEmitter {
   emitState() { this.emit('state', this.payload()); }
 }
 
-module.exports = { Poller, apiGet, ApiError, shortTicker, marketOf };
+module.exports = { Poller, apiGet, ApiError, shortTicker, marketOf, baseFor };

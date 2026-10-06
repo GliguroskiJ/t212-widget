@@ -38,6 +38,7 @@ app.whenReady().then(async () => {
   await widget.webContents.executeJavaScript("window.api.openSettings('system')");
   await wait(2500);
   const settings = BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('settings.html'));
+  const wcount = BrowserWindow.getAllWindows().length;
   await settings.webContents.executeJavaScript("document.querySelector('main').scrollTop = 99999");
   await wait(400);
   fs.writeFileSync(OUT + '/upd-1-before.png', (await settings.webContents.capturePage()).toPNG());
@@ -73,6 +74,15 @@ app.whenReady().then(async () => {
   await wait(500);
   fs.writeFileSync(OUT + '/upd-3-skipped.png', (await settings.webContents.capturePage()).toPNG());
 
+  // hardening: a page can't navigate our windows away or open new ones
+  const before = settings.webContents.getURL();
+  await settings.webContents.executeJavaScript("location.href = 'https://example.com/'; 1");
+  await wait(800);
+  assert.equal(settings.webContents.getURL(), before, 'navigation must be blocked');
+  const opened = await settings.webContents.executeJavaScript("window.open('https://example.com/') === null");
+  assert.equal(opened, true, 'window.open must be denied');
+  assert.equal(BrowserWindow.getAllWindows().length, wcount, 'no new window');
+  console.log('navigation + window.open blocked ok');
   console.log('renderer/main errors:', errors.length ? errors : 'none');
   console.log(errors.length ? 'SMOKE UPDATE FAILED' : 'SMOKE UPDATE PASSED');
   srv.close(); app.exit(errors.length ? 1 : 0);

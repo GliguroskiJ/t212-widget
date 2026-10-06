@@ -13,7 +13,13 @@ const EventEmitter = require('events');
 const { spawn, execFile } = require('child_process');
 
 const REPO = 'GliguroskiJ/t212-widget';
-const apiBase = () => process.env.T212_UPDATE_API || 'https://api.github.com';
+// Test hooks (fake servers) — honoured only in plain Node tests and `electron script.js` dev runs,
+// never in the installed app, so nothing can redirect the API key or the updater elsewhere.
+const devEnv = name => ((!process.versions.electron || process.defaultApp) ? process.env[name] : undefined);
+const apiBase = () => devEnv('T212_UPDATE_API') || 'https://api.github.com';
+const sameOrigin = (url, base) => { try { return new URL(url).origin === new URL(base).origin; } catch { return false; } };
+const SAFE_VER = /^\d+\.\d+\.\d+$/;
+const SAFE_NAME = /^[A-Za-z0-9._-]+$/;
 
 function parseVer(v) {
   const m = String(v || '').trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)/);
@@ -93,6 +99,7 @@ class Updater extends EventEmitter {
       const rel = await r.json();
       if (rel.draft || rel.prerelease) { this.set({ status: 'none', checkedAt: Date.now(), latest: this.version }); return this.state; }
       const latest = String(rel.tag_name || '').replace(/^v/i, '');
+      if (!SAFE_VER.test(latest)) { this.set({ status: 'none', checkedAt: Date.now(), latest: this.version }); return this.state; }
       const asset = pickAsset(rel.assets, this.platform, this.arch);
       this.release = { latest, asset, url: rel.html_url, notes: plainNotes(rel.body) };
       const newer = cmpVer(latest, this.version) > 0;
@@ -108,6 +115,10 @@ class Updater extends EventEmitter {
     const rel = this.release;
     if (!rel || !rel.asset) throw new UpdateError('noasset', 'This release has no file for this platform.');
     const a = rel.asset;
+    // never install anything we can't verify: GitHub publishes a sha256 for every release asset
+    const want = typeof a.digest === 'string' && /^sha256:[0-9a-f]{64}$/i.test(a.digest) ? a.digest.slice(7).toLowerCase() : null;
+    if (!want) throw new UpdateError('verify', 'The release file has no checksum — not installing.');
+    if (!SAFE_NAME.test(a.name || '')) throw new UpdateError('verify', 'Unexpected file name in the release — not installing.');
     const dir = path.join(this.tmpDir, `t212-widget-update-${rel.latest}`);
     fs.mkdirSync(dir, { recursive: true });
     const dest = path.join(dir, a.name);
@@ -115,7 +126,8 @@ class Updater extends EventEmitter {
     this.set({ status: 'downloading', progress: 0, error: null });
     try {
       // private repo → API asset URL with the token; public → plain download link
-      const tok = this.getToken();
+      // the token only ever goes to the GitHub API itself
+      const tok = sameOrigin(a.url, apiBase()) ? this.getToken() : null;
       const url = tok ? a.url : a.browser_download_url;
       const r = await this.fetch(url, { headers: tok ? this.headers({ Accept: 'application/octet-stream' }) : { 'User-Agent': 'T212-Widget-Updater' } });
       if (!r.ok || !r.body) throw new UpdateError('http', `Download failed (${r.status}).`);
@@ -136,8 +148,7 @@ class Updater extends EventEmitter {
       }
       await new Promise((res, rej) => out.end(err => (err ? rej(err) : res())));
       if (a.size && got !== a.size) throw new UpdateError('verify', `Downloaded ${got} B, expected ${a.size} B.`);
-      const want = typeof a.digest === 'string' && a.digest.startsWith('sha256:') ? a.digest.slice(7).toLowerCase() : null;
-      if (want && hash.digest('hex') !== want) throw new UpdateError('verify', 'Checksum does not match the release — not installing.');
+      if (hash.digest('hex') !== want) throw new UpdateError('verify', 'Checksum does not match the release — not installing.');
       fs.renameSync(part, dest);
       this.file = dest;
       this.set({ status: 'ready', progress: 1 });
@@ -203,4 +214,4 @@ async function installMac(zip, bundle, pid, { runImpl = run, spawnImpl = spawn }
   return true;
 }
 
-module.exports = { Updater, UpdateError, cmpVer, pickAsset, plainNotes, installWindows, installMac, macBundle, macCanReplace, REPO };
+module.exports = { apiBase, Updater, UpdateError, cmpVer, pickAsset, plainNotes, installWindows, installMac, macBundle, macCanReplace, REPO };

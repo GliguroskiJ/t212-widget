@@ -325,7 +325,7 @@ const UPD_ERR = {
   rate: 'GitHub is rate limiting — will try again later.',
   network: 'GitHub is unreachable — check the connection.',
   http: 'GitHub returned an error.',
-  verify: 'The downloaded file doesn’t match the release — not installing.',
+  verify: 'The download couldn’t be verified against the release — not installing.',
   noasset: 'The release has no file for this computer.'
 };
 
