@@ -2,7 +2,7 @@ import { render } from 'preact';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'preact/hooks';
 import {
   UP, DOWN, accentRamp, applyTheme, ditheredBg, applyMotion, makeFmt, agoStr, hhmm,
-  linePath, areaPath, lastPt, tint, glow
+  pts, linePath, areaPath, tint, glow
 } from './shared.js';
 import { t, setLang, locale } from './i18n.js';
 import { marketStatus } from '../main/market.js';
@@ -107,19 +107,66 @@ function FillChart(props) {
   );
 }
 
-function Chart({ values, w, h, pad, sw = 1.5, color, gid, gop = .24, glowPx = 0, marker, mr = 2.6, pr = 4.5, draw = 1.1, fade = 1.2, fadeDelay = .3, grid, closed, animKey, style = '' }) {
+// Value under the pointer: crosshair, point and a small glass tooltip.
+// The tooltip slides from left- to right-anchored as you move, so it never leaves the chart.
+function ChartTip({ tip, x, y, w }) {
+  const frac = w ? x / w : 0.5;
+  const above = y > 52;
+  return (
+    <div class="chart-tip" style={`position:absolute;left:${(frac * 100).toFixed(2)}%;top:${y.toFixed(1)}px;` +
+      `transform:translate(${-Math.round(frac * 100)}%,${above ? 'calc(-100% - 11px)' : '11px'});` +
+      `pointer-events:none;z-index:6;white-space:nowrap;padding:7px 9px 6px;border-radius:7px;` +
+      `background:rgba(10,11,18,.84);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);` +
+      `box-shadow:0 6px 18px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.07)`}>
+      <div style={`font:500 12px/1 ${F};color:var(--color-neutral-100);font-variant-numeric:tabular-nums;letter-spacing:-.01em`}>{tip.value}</div>
+      <div style={`display:flex;gap:7px;margin-top:5px;font:400 10px/1 ${F};font-variant-numeric:tabular-nums`}>
+        <span style="color:var(--color-neutral-500)">{tip.time}{tip.est ? ' · ' + t('est.') : ''}</span>
+        <span style={`color:${tip.up ? UP : DOWN}`}>{tip.chg} · {tip.pct}%</span>
+      </div>
+    </div>
+  );
+}
+
+function Chart({ values, tipFor, w, h, pad, sw = 1.5, color, gid, gop = .24, glowPx = 0, marker, mr = 2.6, pr = 4.5, draw = 1.1, fade = 1.2, fadeDelay = .3, grid, closed, animKey, style = '' }) {
+  const [hov, setHov] = useState(null);
+  const P = pts(values, w, h, pad);
   const line = linePath(values, w, h, pad);
   const area = areaPath(values, w, h, pad);
-  const lp = lastPt(values, w, h, pad);
+  const lp = P[P.length - 1];
   const g = typeof grid === 'function' ? grid(w, h) : grid;
+  const onMove = e => {
+    if (!tipFor) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    if (!r.width) return;
+    const fx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    setHov(Math.round(fx * (P.length - 1)));
+  };
+  const leave = () => setHov(null);
+  const tip = hov != null && tipFor ? tipFor(Math.min(hov, values.length - 1)) : null;
+  const hp = tip ? P[Math.min(hov, P.length - 1)] : null;
+  const hc = closed ? 'var(--color-neutral-300)' : color;
+  const cross = hp && (
+    <g style="pointer-events:none">
+      <line x1={hp[0].toFixed(1)} y1="0" x2={hp[0].toFixed(1)} y2={h} stroke="rgba(var(--ink-rgb),.24)" stroke-width="1" stroke-dasharray="2 3"></line>
+      <circle cx={hp[0].toFixed(1)} cy={hp[1].toFixed(1)} r={pr + 1.5} fill={hc} opacity=".22"></circle>
+      <circle cx={hp[0].toFixed(1)} cy={hp[1].toFixed(1)} r={mr + 0.6} fill={hc} stroke="rgba(0,0,0,.4)" stroke-width="1"></circle>
+    </g>
+  );
+  const wrap = svg => (
+    <div style={`position:relative;${tipFor ? 'cursor:crosshair' : ''}`} onMouseMove={onMove} onMouseLeave={leave} onPointerDown={leave}>
+      {svg}
+      {tip && <ChartTip tip={tip} x={hp[0]} y={hp[1]} w={w} />}
+    </div>
+  );
   if (closed) {
-    return (
-      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" style={`display:block;opacity:.4;${style}`}>
-        <path d={line} fill="none" stroke="var(--color-neutral-500)" stroke-width="1.4" stroke-linecap="round"></path>
+    return wrap(
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" style={`display:block;overflow:visible;${style}`}>
+        <path d={line} fill="none" stroke="var(--color-neutral-500)" stroke-width="1.4" stroke-linecap="round" style="opacity:.4"></path>
+        {cross}
       </svg>
     );
   }
-  return (
+  return wrap(
     <svg key={animKey} viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" style={`display:block;overflow:visible;${style}`}>
       <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color={color} stop-opacity={gop}></stop>
@@ -128,14 +175,60 @@ function Chart({ values, w, h, pad, sw = 1.5, color, gid, gop = .24, glowPx = 0,
       <path d={area} fill={`url(#${gid})`} style={`animation:nfade ${fade}s ease ${fadeDelay}s both;transition:fill .7s ease`}></path>
       <path d={line} fill="none" stroke={color} stroke-width={sw} stroke-linejoin="round" stroke-linecap="round" pathLength="1" stroke-dasharray="1"
         style={`animation:ndraw ${draw}s cubic-bezier(.4,0,.2,1) both;transition:stroke .7s ease;${glowPx ? `filter:drop-shadow(0 0 ${glowPx}px ${glow(color)})` : ''}`}></path>
-      {marker && <circle class="pulse-dot" cx={lp[0].toFixed(1)} cy={lp[1].toFixed(1)} r={pr} fill={color} opacity=".5"></circle>}
-      {marker && <circle cx={lp[0].toFixed(1)} cy={lp[1].toFixed(1)} r={mr} fill={color}></circle>}
+      {marker && <circle class="pulse-dot" cx={lp[0].toFixed(1)} cy={lp[1].toFixed(1)} r={pr} fill={color} opacity={hp ? '.2' : '.5'}></circle>}
+      {marker && <circle cx={lp[0].toFixed(1)} cy={lp[1].toFixed(1)} r={mr} fill={color} opacity={hp ? '.45' : '1'}></circle>}
+      {cross}
     </svg>
   );
 }
 
+// ── period helpers ───────────────────────────────────────────
+const PERIOD_WORD = { '1D': 'today', '1W': 'past week', '1M': 'past month', '1Y': 'past year', 'ALL': 'all time' };
+const dm = ts => new Date(ts).toLocaleDateString(locale(), { day: 'numeric', month: 'numeric' });
+
+// "today" / "past week" … or "since 22. 9." while the history doesn't reach that far back yet
+function periodLabel(per) {
+  if (per.partial && per.from) return t('since {d}', { d: dm(per.from) });
+  return t(PERIOD_WORD[per.range] || 'today');
+}
+
+function tipTime(ts, range) {
+  const d = new Date(ts);
+  if (range === '1D') return hhmm(ts);
+  if (range === '1W') return d.toLocaleDateString(locale(), { weekday: 'short' }) + ' ' + hhmm(ts);
+  if (range === '1M') return dm(ts) + ' ' + hhmm(ts);
+  return d.toLocaleDateString(locale(), { day: 'numeric', month: 'numeric', year: 'numeric' });
+}
+
+// Tooltip data for chart point i: value then, and the change since the start of the range
+// (measured on P/L like the pill, so the last point matches it exactly)
+function chartTip(d, per, fmt, i) {
+  const s = d.series;
+  if (!s || !s[i]) return null;
+  const [ts, v, pl, est] = s[i];
+  const chg = pl != null && per.basePl != null ? pl - per.basePl : v - s[0][1];
+  const base = v - chg;
+  return {
+    value: fmt(v, 2) + ' ' + d.currency,
+    time: tipTime(ts, per.range),
+    chg: fmt.signed(chg, 0),
+    pct: fmt.signed(base ? (chg / base) * 100 : 0, 2),
+    up: chg >= 0,
+    est: !!est
+  };
+}
+
+function spanStr(series, range) {
+  if (!series || series.length < 2) return '';
+  const a = series[0][0], b = series[series.length - 1][0];
+  const f = range === '1D' ? hhmm
+    : range === '1W' || range === '1M' ? dm
+      : ts => new Date(ts).toLocaleDateString(locale(), { month: 'numeric', year: '2-digit' });
+  return `${f(a)} – ${f(b)}`;
+}
+
 // Low–high of the visible range with a marker at the current value
-function RangeBar({ m, range, closed }) {
+function RangeBar({ m, range, closed, series }) {
   const vals = m.values;
   const lo = Math.min(...vals, m.val), hi = Math.max(...vals, m.val);
   const pos = hi > lo ? (m.val - lo) / (hi - lo) : 0.5;
@@ -154,7 +247,9 @@ function RangeBar({ m, range, closed }) {
         <div style={`position:absolute;top:50%;left:${pct}%;width:9px;height:9px;margin:-4.5px 0 0 -4.5px;border-radius:50%;background:${closed ? 'var(--color-neutral-500)' : 'var(--color-accent-300)'};box-shadow:0 0 0 2px rgba(0,0,0,.25)${closed ? '' : ',0 0 10px rgba(var(--acc-rgb),.6)'};transition:left 1.1s cubic-bezier(.3,1,.3,1)`}></div>
       </div>
       <div style={`display:flex;justify-content:space-between;font:400 10.5px/1 ${F};color:var(--color-neutral-500);font-variant-numeric:tabular-nums`}>
-        <span>{m.fmt(lo, 0)}</span><span>{m.fmt(hi, 0)}</span>
+        <span>{m.fmt(lo, 0)}</span>
+        <span style="font-size:9.5px;color:var(--color-neutral-600)">{spanStr(series, range)}</span>
+        <span>{m.fmt(hi, 0)}</span>
       </div>
     </div>
   );
@@ -226,10 +321,14 @@ function useModel(st, settings) {
   const flash = useFlash(d ? d.value : null, motion);
   const fmt = useMemo(() => makeFmt(settings.numberFormat), [settings.numberFormat]);
   if (!d) return { fmt, d: null };
-  const dayAbs = d.dayAbs + ((val ?? d.value) - d.value);
-  const prev = d.value - d.dayAbs;
-  const dayPct = prev ? (dayAbs / prev) * 100 : 0;
-  const trend = dayAbs >= 0 ? UP : DOWN;
+  // change over the selected range (1D = today); older builds of main only sent dayAbs
+  const per = d.period || { range: '1D', abs: d.dayAbs, pct: d.dayPct, basePl: null, from: null, partial: false };
+  const roll = (val ?? d.value) - d.value;
+  const chgAbs = per.abs + roll;
+  const prev = d.value - per.abs;
+  const chgPct = per.range === 'ALL' ? per.pct : prev ? (chgAbs / prev) * 100 : 0;
+  const chgLabel = periodLabel(per);
+  const trend = chgAbs >= 0 ? UP : DOWN;
   const flashC = flash > 0 ? UP : flash < 0 ? DOWN : trend;
   const cur = d.currency;
   const sp = fmt.split(val ?? d.value);
@@ -257,10 +356,11 @@ function useModel(st, settings) {
   return {
     d, fmt, cur, val, sp, values, positions, slices,
     trend, flashC,
-    dayAbs, dayPct,
-    dayPctStr: fmt.signed(dayPct, 2),
-    dayAbsStr: fmt.signed(dayAbs, 0) + ' ' + cur,
-    dayIcon: dayPct >= 0 ? 'ph ph-trend-up' : 'ph ph-trend-down',
+    per, chgAbs, chgPct, chgLabel,
+    chgPctStr: fmt.signed(chgPct, 2),
+    chgAbsStr: fmt.signed(chgAbs, 0) + ' ' + cur,
+    chgIcon: chgPct >= 0 ? 'ph ph-trend-up' : 'ph ph-trend-down',
+    tipFor: i => chartTip(d, per, fmt, i),
     cashStr: fmt(d.cash, 0),
     divStr: d.dividendsYTD == null ? '—' : fmt(d.dividendsYTD, 0) + ' ' + cur,
     divFull: d.dividendsYTD == null ? '—' : fmt(d.dividendsYTD, 0) + ' ' + cur,
@@ -274,11 +374,11 @@ function useModel(st, settings) {
 // ── sizes ────────────────────────────────────────────────────
 function Pill({ m, closed, size = 11.5, icon = 10, pad = '3px 7px 3px 5px', extra = '' }) {
   if (closed) {
-    return <span style={`align-self:flex-start;padding:3px 7px;border-radius:4px;background:rgba(var(--ink-rgb),.05);color:var(--color-neutral-400);font:500 ${size}px/1 ${F};font-variant-numeric:tabular-nums`}>{t('{x}% on the day', { x: m.dayPctStr })}</span>;
+    return <span style={`align-self:flex-start;padding:3px 7px;border-radius:4px;background:rgba(var(--ink-rgb),.05);color:var(--color-neutral-400);font:500 ${size}px/1 ${F};font-variant-numeric:tabular-nums`}>{t('{x}% {p}', { x: m.chgPctStr, p: m.chgLabel })}</span>;
   }
   return (
     <span style={`display:inline-flex;align-items:center;gap:4px;padding:${pad};border-radius:4px;background:${tint(m.flashC)};color:${m.flashC};font:500 ${size}px/1 ${F};font-variant-numeric:tabular-nums;transition:background .7s ease,color .7s ease;white-space:nowrap`}>
-      <i class={m.dayIcon} style={`font-size:${icon}px`}></i>{m.dayPctStr}%{extra}</span>
+      <i class={m.chgIcon} style={`font-size:${icon}px`}></i>{m.chgPctStr}%{extra}</span>
   );
 }
 
@@ -296,8 +396,11 @@ function Small({ m, st, now, closed }) {
         <span style={`font:300 28px/1 ${F};letter-spacing:-.03em;${closed ? 'color:var(--color-neutral-200)' : ''}`}>{m.sp.int}</span>
         <span style={`font:400 11px/1 ${F};color:var(--color-neutral-${closed ? 600 : 500})`}>{m.cur}</span>
       </div>
-      <div style="display:flex;margin-top:10px"><Pill m={m} closed={closed} /></div>
-      <FillChart values={m.values} pad={5} color={m.trend} gid="gS" closed={closed} animKey={st.range} marker glowPx={5} mr={2.3} wrapStyle="margin-top:16px" />
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
+        <Pill m={m} closed={closed} />
+        {!closed && <span style={`font:400 10.5px/1 ${F};color:var(--color-neutral-500);white-space:nowrap`}>{m.chgLabel}</span>}
+      </div>
+      <FillChart values={m.values} tipFor={m.tipFor} pad={5} color={m.trend} gid="gS" closed={closed} animKey={st.range} marker glowPx={5} mr={2.3} wrapStyle="margin-top:16px" />
       <span style={`font:400 10px/1 ${F};color:var(--color-neutral-600);margin-top:12px`}>
         {closed ? `${t('Opens in {x}', { x: st.market.opensIn || '—' })} · ${st.market.names}` : t('Updated {x}', { x: agoStr(st.lastSync, now) })}</span>
     </div>
@@ -321,10 +424,10 @@ function Medium({ m, st, now, closed, settings }) {
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-top:14px">
           <Pill m={m} closed={closed} size={12} icon={11} pad="4px 8px 4px 6px" />
-          {!closed && <span style={`font:400 12px/1 ${F};color:var(--color-neutral-400);font-variant-numeric:tabular-nums;white-space:nowrap`}>{m.dayAbsStr} {t('today')}</span>}
+          {!closed && <span style={`font:400 12px/1 ${F};color:var(--color-neutral-400);font-variant-numeric:tabular-nums;white-space:nowrap`}>{m.chgAbsStr} {m.chgLabel}</span>}
         </div>
         <span style="flex:1"></span>
-        <RangeBar m={m} range={settings.range} closed={closed} />
+        <RangeBar m={m} range={settings.range} closed={closed} series={m.d.series} />
         <span style="flex:1"></span>
         <div style="display:flex;gap:16px;padding-top:14px;border-top:1px solid rgba(var(--ink-rgb),.08)">
           <Stat label={t('Free cash')} value={`${m.cashStr} ${m.cur}`} />
@@ -338,7 +441,7 @@ function Medium({ m, st, now, closed, settings }) {
             {closed ? <ClosedChip /> : <><Dot color={m.trend} />{t('live')} · {agoStr(st.lastSync, now)}</>}</span>
           <RangeChips range={settings.range} onPick={setRange} list={['1D', '1W', '1M', '1Y']} />
         </div>
-        <FillChart values={m.values} pad={8} sw={1.7} color={m.trend} gid="gM" gop={.28} glowPx={7} marker
+        <FillChart values={m.values} tipFor={m.tipFor} pad={8} sw={1.7} color={m.trend} gid="gM" gop={.28} glowPx={7} marker
           draw={1.2} fade={1.3} fadeDelay={.35} closed={closed} animKey={settings.range} wrapStyle="margin-top:10px"
           grid={(w, h) => <line x1="0" y1={h / 2} x2={w} y2={h / 2} stroke="rgba(var(--ink-rgb),.07)" stroke-width="1" stroke-dasharray="2 4"></line>} />
         <div style="display:flex;gap:8px;margin-top:8px">
@@ -380,10 +483,10 @@ function Rail({ m, st, now, closed, settings }) {
         </div>
         <div style="display:flex;align-items:center;gap:9px">
           <Pill m={m} closed={closed} />
-          {!closed && <span style={`font:400 11.5px/1 ${F};color:var(--color-neutral-400);font-variant-numeric:tabular-nums`}>{m.dayAbsStr}</span>}
+          {!closed && <span style={`font:400 11.5px/1 ${F};color:var(--color-neutral-400);font-variant-numeric:tabular-nums;white-space:nowrap`}>{m.chgAbsStr} {m.chgLabel}</span>}
         </div>
       </div>
-      <Chart values={m.values} w={276} h={84} pad={6} sw={1.6} color={m.trend} gid="gR" gop={.26} glowPx={6} marker mr={2.4} draw={1.2} closed={closed} animKey={settings.range} />
+      <Chart values={m.values} tipFor={m.tipFor} w={276} h={84} pad={6} sw={1.6} color={m.trend} gid="gR" gop={.26} glowPx={6} marker mr={2.4} draw={1.2} closed={closed} animKey={settings.range} />
       <div style="display:flex;flex-direction:column;gap:10px;min-height:0;flex:1">
         <Eyebrow>{t('Holdings')}</Eyebrow>
         <div class="scroll" style="display:flex;flex-direction:column;gap:10px;min-height:0;margin-right:-6px;padding-right:6px">
@@ -466,8 +569,9 @@ function Large({ m, st, now, closed, settings }) {
         </div>
         <span style="flex:1"></span>
         <div style="display:flex;flex-direction:column;gap:7px;align-items:flex-end">
-          {closed ? <Pill m={m} closed /> : <Pill m={m} size={12.5} icon={11} pad="4px 8px 4px 6px" extra={' · ' + m.dayAbsStr} />}
-          <span style={`font:400 11px/1 ${F};color:var(--color-neutral-500);font-variant-numeric:tabular-nums`}>{t('All-time {v} · {p}%', { v: m.allTimeStr + ' ' + m.cur, p: m.allTimePctStr })}</span>
+          {closed ? <Pill m={m} closed /> : <Pill m={m} size={12.5} icon={11} pad="4px 8px 4px 6px" extra={' · ' + m.chgAbsStr} />}
+          <span style={`font:400 11px/1 ${F};color:var(--color-neutral-500);font-variant-numeric:tabular-nums`}>
+            {m.per.range === 'ALL' ? m.chgLabel : <>{m.chgLabel} · {t('All-time {v} · {p}%', { v: m.allTimeStr + ' ' + m.cur, p: m.allTimePctStr })}</>}</span>
         </div>
       </div>
       <div style="position:relative;display:flex;gap:4px;padding:3px;border-radius:7px;background:rgba(var(--ink-rgb),.045);box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.05);align-self:flex-start">
@@ -481,7 +585,7 @@ function Large({ m, st, now, closed, settings }) {
           <div style="display:flex;gap:6px;justify-content:flex-end">
             <RangeChips range={settings.range} onPick={r => api.setSettings({ range: r })} list={['1D', '1W', '1M', '1Y', 'ALL']} size={10.5} padX={8} />
           </div>
-          <FillChart values={m.values} pad={12} sw={1.9} color={m.trend} gid="gL" gop={.3} glowPx={8} marker mr={2.8} pr={5}
+          <FillChart values={m.values} tipFor={m.tipFor} pad={12} sw={1.9} color={m.trend} gid="gL" gop={.3} glowPx={8} marker mr={2.8} pr={5}
             draw={1.35} fade={1.3} fadeDelay={.35} closed={closed} animKey={settings.range} wrapStyle="margin-top:10px"
             grid={(w, h) => [0.25, 0.5, 0.75].map(f => <line x1="0" y1={h * f} x2={w} y2={h * f} stroke={f === 0.5 ? 'rgba(var(--ink-rgb),.07)' : 'rgba(var(--ink-rgb),.055)'} stroke-dasharray="2 5"></line>)} />
           <div style="display:flex;justify-content:space-between;margin-top:8px">

@@ -19,6 +19,15 @@
     dayAbs: 8412.4, dayPct: 0.66, dividendsYTD: 11640, holdings: 6, markets: 3,
     positions: POS, series: S.map((v, i) => [now - (47 - i) * 9 * 60e3, v])
   };
+  // range-aware series with P/L per point + the period change, like main/t212.js sends it
+  const SPAN = { '1D': 9 * 60e3, '1W': 3.5 * 3600e3, '1M': 15 * 3600e3, '1Y': 7.6 * 86400e3, 'ALL': 7.6 * 86400e3 };
+  const rng = (cfg.settings && cfg.settings.range) || '1D';
+  const PL0 = data.allTimePL - (data.value - S[0]);
+  data.series = S.map((v, i) => [now - (47 - i) * SPAN[rng], v, PL0 + (v - S[0]), i < 6 && rng !== '1D' ? 1 : 0]);
+  const basePl = rng === 'ALL' ? 0 : PL0;
+  const abs = data.allTimePL - basePl;
+  data.period = Object.assign({ range: rng, abs, pct: rng === 'ALL' ? data.allTimePct : abs / (data.value - abs) * 100,
+    basePl, from: data.series[0][0], partial: false }, cfg.period || {});
   const state = Object.assign({
     status: 'live', error: null, lastSync: now - 4000,
     market: { open: true, names: 'Xetra, NYSE', opensIn: '14h 22m' }, env: 'live', encrypted: true, connected: true, data

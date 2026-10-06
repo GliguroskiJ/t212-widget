@@ -1,12 +1,12 @@
 {
   "name": "t212-widget",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Trading 212 desktop widget for Windows",
   "main": "main/main.js",
   "scripts": {
     "build:ui": "node scripts/build-renderer.mjs",
     "start": "npm run build:ui && electron .",
-    "test": "node scripts/test-poller.js && node scripts/test-backfill.js",
+    "test": "node scripts/test-poller.js && node scripts/test-backfill.js && node scripts/test-period.js",
     "dist": "node scripts/patch-builder.js && npm run build:ui && electron-builder --win nsis --x64 --publish never",
     "dist:win": "node scripts/patch-builder.js && npm run build:ui && electron-builder --win nsis --x64 --publish never",
     "dist:mac": "node scripts/patch-builder.js && npm run build:ui && electron-builder --mac --publish never"

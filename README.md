@@ -21,6 +21,8 @@ npm test            # test API klienta proti falešnému T212 serveru
 - `/api/v0/equity/account/summary` (hodnota, cash, P/L), `/api/v0/equity/positions`, `/api/v0/equity/history/dividends`
 - Nastavení, historie grafu a šifrované klíče: `%APPDATA%\T212 Widget\`
 - API nemá historii hodnoty portfolia → graf se nahrává lokálně od první synchronizace; denní P/L se počítá od poslední hodnoty před půlnocí.
+- Změna u hodnoty se řídí zvoleným obdobím grafu (1D/1W/1M/1Y/ALL) a počítá se z rozdílu P/L, takže vklady a výběry ji nezkreslí. Když historie ještě nesahá tak daleko, ukazuje se „od <datum>“. ALL = celkový P/L.
+- Najetím myší na graf se ukáže hodnota portfolia v danou chvíli a změna od začátku období (body doplněné z tržních cen jsou označené „odhad“).
 
 ## macOS
 Stejná aplikace běží i na Macu: ikona v horní liště (klik = panel s widgetem, pravý klik = menu),

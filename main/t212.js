@@ -63,6 +63,11 @@ function localDate(ts) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
+const RANGE_MS = { '1W': 7 * 86400e3, '1M': 30 * 86400e3, '1Y': 365 * 86400e3 };
+function rangeStart(range, now = Date.now()) {
+  if (range === 'ALL') return 0;
+  return RANGE_MS[range] ? now - RANGE_MS[range] : startOfToday();
+}
 
 function downsample(arr, max) {
   if (arr.length <= max) return arr;
@@ -318,17 +323,44 @@ class Poller extends EventEmitter {
   }
 
   // ── payload for the renderer ─────────────────────────────────
+  // [time, value, P/L, estimated?] — P/L lets the chart tooltip show the change at any point
   series(range, fx) {
     const pts = this.store.history.points;
     const now = Date.now();
-    const from = {
-      '1D': startOfToday(), '1W': now - 7 * 86400e3, '1M': now - 30 * 86400e3, '1Y': now - 365 * 86400e3, 'ALL': 0
-    }[range] ?? startOfToday();
+    const from = rangeStart(range, now);
     let sel = pts.filter(p => p[0] >= from);
     if (range === '1D' && sel.length < 2) sel = pts.filter(p => p[0] >= now - 86400e3);
     if (sel.length < 2 && pts.length) sel = pts.slice(-2);
     sel = downsample(sel, 160);
-    return sel.map(p => [p[0], p[1] * fx]);
+    return sel.map(p => [p[0], p[1] * fx, Number.isFinite(p[2]) ? p[2] * fx : null, p[3] ? 1 : 0]);
+  }
+
+  // Change over the selected chart range. Like the day change it is measured on P/L,
+  // so deposits and withdrawals don't count as gains. 'ALL' = all-time P/L.
+  period(range, pl, value, allTimePct) {
+    const h = this.store.history;
+    const pts = h.points;
+    if (range === 'ALL') {
+      return { range, abs: pl, pct: allTimePct, basePl: 0, from: pts.length ? pts[0][0] : null, partial: false };
+    }
+    if (!RANGE_MS[range]) {
+      const db = h.dayBase || { pl };
+      const abs = pl - db.pl;
+      return { range: '1D', abs, pct: value - abs ? (abs / (value - abs)) * 100 : 0, basePl: db.pl, from: startOfToday(), partial: false };
+    }
+    const from = Date.now() - RANGE_MS[range];
+    let base = null;
+    for (let i = pts.length - 1; i >= 0; i--) {
+      if (pts[i][0] <= from && Number.isFinite(pts[i][2])) { base = pts[i]; break; }
+    }
+    let partial = false;
+    if (!base) { // history doesn't reach that far back yet → measure from the oldest point we have
+      base = pts.find(p => p[0] > from && Number.isFinite(p[2])) || null;
+      partial = !!base;
+    }
+    if (!base) return { range, abs: 0, pct: 0, basePl: pl, from, partial: true };
+    const abs = pl - base[2];
+    return { range, abs, pct: value - abs ? (abs / (value - abs)) * 100 : 0, basePl: base[2], from: base[0], partial };
   }
 
   payload() {
@@ -396,7 +428,11 @@ class Poller extends EventEmitter {
         holdings: positions.length,
         markets: markets.size,
         positions: pos,
-        series: this.series(s.range, fx)
+        series: this.series(s.range, fx),
+        period: (() => {
+          const p = this.period(s.range, pl, value, inv.totalCost ? (pl / inv.totalCost) * 100 : 0);
+          return { ...p, abs: p.abs * fx, basePl: p.basePl * fx };
+        })()
       }
     };
   }
