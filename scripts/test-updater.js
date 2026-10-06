@@ -92,31 +92,37 @@ srv.listen(0, async () => {
   assert.deepEqual(spawned.a, ['/S', '--updated', '--force-run']); assert.equal(spawned.o.detached, true);
   console.log('windows hand-over ok');
 
-  // macOS swap: real script on fake bundles (ditto/open stubbed)
-  const apps = fs.mkdtempSync(path.join(os.tmpdir(), 'apps-'));
-  const bundle = path.join(apps, 'T212 Widget.app');
-  fs.mkdirSync(path.join(bundle, 'Contents'), { recursive: true }); fs.writeFileSync(path.join(bundle, 'Contents', 'v'), 'old');
-  const fakeRun = async (cmd, args) => {
-    if (cmd.endsWith('ditto')) { const d = path.join(args[3], 'T212 Widget.app', 'Contents'); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'v'), 'new'); }
-  };
-  let script; await installMac(zip, bundle, 999999, { runImpl: fakeRun, spawnImpl: (c, a) => { script = a[0]; return { unref() {} }; } });
-  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'bin-'));
-  fs.writeFileSync(path.join(bin, 'open'), '#!/bin/sh\necho "$1" > "' + path.join(bin, 'opened') + '"\n', { mode: 0o755 });
-  const sh = fs.readFileSync(script, 'utf8').replace(/\/usr\/bin\/ditto/g, 'cp -R');
-  fs.writeFileSync(script, sh);
-  execFileSync('/bin/sh', [script], { env: { ...process.env, PATH: bin + ':' + process.env.PATH } });
-  assert.equal(fs.readFileSync(path.join(bundle, 'Contents', 'v'), 'utf8'), 'new');
-  assert.ok(!fs.existsSync(bundle + '.update-old'));
-  assert.equal(fs.readFileSync(path.join(bin, 'opened'), 'utf8').trim(), bundle);
-  console.log('mac swap ok (old replaced, backup removed, reopened)');
-  // copy of the new version fails → the old app is put back and still opens
-  let script2; await installMac(zip, bundle, 999999, { runImpl: fakeRun, spawnImpl: (c, a) => { script2 = a[0]; return { unref() {} }; } });
-  fs.writeFileSync(script2, fs.readFileSync(script2, 'utf8').replace(/\/usr\/bin\/ditto "\$NEW" "\$OLD"/, 'false'));
-  fs.writeFileSync(path.join(bundle, 'Contents', 'v'), 'current');
-  execFileSync('/bin/sh', [script2], { env: { ...process.env, PATH: bin + ':' + process.env.PATH } });
-  assert.equal(fs.readFileSync(path.join(bundle, 'Contents', 'v'), 'utf8'), 'current');
-  assert.ok(!fs.existsSync(bundle + '.update-old'));
-  console.log('mac swap rollback ok');
+  // macOS swap: real script on fake bundles (ditto/open stubbed) — needs /bin/sh, so not on Windows;
+  // CI runs this part in the macOS job
+  if (process.platform === 'win32') console.log('mac swap: skipped on Windows (tested in the macOS job)');
+  else {
+    // macOS swap: real script on fake bundles (ditto/open stubbed)
+    const apps = fs.mkdtempSync(path.join(os.tmpdir(), 'apps-'));
+    const bundle = path.join(apps, 'T212 Widget.app');
+    fs.mkdirSync(path.join(bundle, 'Contents'), { recursive: true }); fs.writeFileSync(path.join(bundle, 'Contents', 'v'), 'old');
+    const fakeRun = async (cmd, args) => {
+      if (cmd.endsWith('ditto')) { const d = path.join(args[3], 'T212 Widget.app', 'Contents'); fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'v'), 'new'); }
+    };
+    let script; await installMac(zip, bundle, 999999, { runImpl: fakeRun, spawnImpl: (c, a) => { script = a[0]; return { unref() {} }; } });
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'bin-'));
+    fs.writeFileSync(path.join(bin, 'open'), '#!/bin/sh\necho "$1" > "' + path.join(bin, 'opened') + '"\n', { mode: 0o755 });
+    const sh = fs.readFileSync(script, 'utf8').replace(/\/usr\/bin\/ditto/g, 'cp -R');
+    fs.writeFileSync(script, sh);
+    execFileSync('/bin/sh', [script], { env: { ...process.env, PATH: bin + ':' + process.env.PATH } });
+    assert.equal(fs.readFileSync(path.join(bundle, 'Contents', 'v'), 'utf8'), 'new');
+    assert.ok(!fs.existsSync(bundle + '.update-old'));
+    assert.equal(fs.readFileSync(path.join(bin, 'opened'), 'utf8').trim(), bundle);
+    console.log('mac swap ok (old replaced, backup removed, reopened)');
+    // copy of the new version fails → the old app is put back and still opens
+    let script2; await installMac(zip, bundle, 999999, { runImpl: fakeRun, spawnImpl: (c, a) => { script2 = a[0]; return { unref() {} }; } });
+    fs.writeFileSync(script2, fs.readFileSync(script2, 'utf8').replace(/\/usr\/bin\/ditto "\$NEW" "\$OLD"/, 'false'));
+    fs.writeFileSync(path.join(bundle, 'Contents', 'v'), 'current');
+    execFileSync('/bin/sh', [script2], { env: { ...process.env, PATH: bin + ':' + process.env.PATH } });
+    assert.equal(fs.readFileSync(path.join(bundle, 'Contents', 'v'), 'utf8'), 'current');
+    assert.ok(!fs.existsSync(bundle + '.update-old'));
+    console.log('mac swap rollback ok');
+
+  }
 
   console.log('UPDATER TESTS PASSED'); srv.close(); process.exit(0);
 });

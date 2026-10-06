@@ -30,6 +30,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: npm ci
+      - run: npm test            # also runs the macOS app-swap script for real
       - run: npm run build:ui
       - run: npx electron-builder --mac dir --arm64 --x64 --publish never
       - name: Ad-hoc sign, zip and dmg
