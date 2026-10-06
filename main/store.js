@@ -29,7 +29,9 @@ const DEFAULTS = {
   macMode: 'menubar',          // macOS: 'menubar' | 'desktop' | 'both'
   popoverSize: 'medium',       // size of the menu-bar panel
   menuBarText: 'value',        // macOS menu-bar title: 'value' | 'change' | 'none'
-  firstLaunchDone: false
+  firstLaunchDone: false,
+  autoUpdate: true,            // check GitHub Releases on start, after sleep and daily at 12:00 — always asks first
+  skippedVersion: null         // "Skip this version" → no automatic prompt for it
 };
 
 function atomicWrite(file, data) {
@@ -49,6 +51,7 @@ class Store {
     fs.mkdirSync(dir, { recursive: true });
     this.settingsFile = path.join(dir, 'settings.json');
     this.credsFile = path.join(dir, 'credentials.bin');
+    this.ghFile = path.join(dir, 'github-token.bin');
     this.historyFile = path.join(dir, 'history.json');
     this.settings = { ...DEFAULTS, ...readJson(this.settingsFile, {}) };
     this.history = readJson(this.historyFile, null) || { points: [], dayBase: null, posHist: {}, last: null };
@@ -87,6 +90,20 @@ class Store {
     fs.writeFileSync(this.credsFile, buf);
   }
   clearCreds() { try { fs.unlinkSync(this.credsFile); } catch {} }
+
+  // GitHub token for updates while the repository is private — encrypted the same way
+  getGhToken() {
+    try {
+      const buf = fs.readFileSync(this.ghFile);
+      const txt = this.safe && this.safe.isEncryptionAvailable() ? this.safe.decryptString(buf) : buf.toString('utf8');
+      return txt.trim() || null;
+    } catch { return null; }
+  }
+  setGhToken(tok) {
+    if (!tok) { try { fs.unlinkSync(this.ghFile); } catch {} return; }
+    const buf = this.safe && this.safe.isEncryptionAvailable() ? this.safe.encryptString(tok.trim()) : Buffer.from(tok.trim(), 'utf8');
+    fs.writeFileSync(this.ghFile, buf);
+  }
   encrypted() { return !!(this.safe && this.safe.isEncryptionAvailable()); }
 
   // ── history ─────────────────────────────────────────────────

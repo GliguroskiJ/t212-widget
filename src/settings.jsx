@@ -318,6 +318,73 @@ function DataTab({ s, set, st }) {
   );
 }
 
+// ── updates ──────────────────────────────────────────────────
+const UPD_ERR = {
+  notfound: 'No release on GitHub, or the repository is private and no token is set.',
+  auth: 'The GitHub token doesn’t work — check it below.',
+  rate: 'GitHub is rate limiting — will try again later.',
+  network: 'GitHub is unreachable — check the connection.',
+  http: 'GitHub returned an error.',
+  verify: 'The downloaded file doesn’t match the release — not installing.',
+  noasset: 'The release has no file for this computer.'
+};
+
+function updateLine(u, now) {
+  if (!u) return t('Not checked yet');
+  switch (u.status) {
+    case 'checking': return t('Checking…');
+    case 'available': return t('Version {v} is available.', { v: u.latest });
+    case 'downloading': return t('Downloading {p} %', { p: Math.round((u.progress || 0) * 100) });
+    case 'ready': return t('Installing — the widget restarts in a moment.');
+    case 'none': return t('You have the latest version · checked {x}', { x: agoStr(u.checkedAt, now) });
+    case 'error': return t(UPD_ERR[u.error && u.error.kind] || 'GitHub returned an error.');
+    default: return t('Not checked yet');
+  }
+}
+
+function Updates({ s, set, info }) {
+  const [u, setU] = useState(info.update);
+  const [hasTok, setHasTok] = useState(!!info.hasGhToken);
+  const [tok, setTok] = useState('');
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { api.onUpdate(setU); const i = setInterval(() => setNow(Date.now()), 15e3); return () => clearInterval(i); }, []);
+  const busy = u && (u.status === 'checking' || u.status === 'downloading' || u.status === 'ready');
+  const saveTok = async v => { const ok = await api.setGithubToken(v); setHasTok(ok); setTok(''); if (ok) api.checkUpdate(); };
+  const err = u && u.status === 'error';
+  return (
+    <Section label={t('Updates')}>
+      <Row title={t('Version {v}', { v: info.version })} desc={<span style={err ? `color:${DOWN}` : ''}>{updateLine(u, now)}</span>}>
+        {u && u.status === 'available'
+          ? <button type="button" class="btn btn-primary" style="font-size:12.5px" onClick={() => api.installUpdate()}><i class="ph ph-download-simple"></i>{t('Install {v}', { v: u.latest })}</button>
+          : <button type="button" class="btn btn-secondary" style="font-size:12.5px" disabled={busy} onClick={() => api.checkUpdate()}>
+              {u && u.status === 'checking'
+                ? <span style="width:12px;height:12px;border-radius:50%;border:1.5px solid var(--color-accent-500);border-top-color:transparent;animation:nspin .9s linear infinite;box-sizing:border-box"></span>
+                : <i class="ph ph-arrows-clockwise"></i>}
+              {t('Check for updates')}</button>}
+      </Row>
+      {u && u.status === 'downloading' && (
+        <div style="height:3px;border-radius:2px;background:rgba(var(--ink-rgb),.07);overflow:hidden;margin:-4px 0 6px">
+          <div style={`height:100%;width:${Math.round((u.progress || 0) * 100)}%;background:linear-gradient(to right,var(--color-accent-700),var(--color-accent-400));transition:width .3s ease`}></div>
+        </div>
+      )}
+      <Row title={t('Check automatically')} desc={t('When the app starts (also after turning the PC on), after waking from sleep and every day at 12:00. Nothing is downloaded until you say yes.')}>
+        <Switch on={s.autoUpdate !== false} onChange={v => set({ autoUpdate: v })} /></Row>
+      {s.skippedVersion && <Row title={t('Skipped version')} desc={t('Version {v} won’t be offered automatically.', { v: s.skippedVersion })}>
+        <button type="button" class="btn btn-ghost" style="font-size:12.5px" onClick={() => set({ skippedVersion: null })}>{t('Offer again')}</button></Row>}
+      <Row top title={t('GitHub token')} desc={hasTok
+        ? t('Saved and encrypted. Only needed while the repository is private.')
+        : t('Only needed while the repository is private: a fine-grained token with read-only access to Contents of t212-widget.')}>
+        {hasTok
+          ? <button type="button" class="btn btn-ghost" style={`font-size:12.5px;color:${DOWN}`} onClick={() => saveTok(null)}>{t('Remove')}</button>
+          : <form style="display:flex;gap:8px" onSubmit={e => { e.preventDefault(); if (tok.trim()) saveTok(tok.trim()); }}>
+              <input class="input mono" type="password" spellcheck={false} value={tok} placeholder="github_pat_…" onInput={e => setTok(e.currentTarget.value)} style="width:170px;font-size:12px" />
+              <button type="submit" class="btn btn-secondary" style="font-size:12.5px" disabled={!tok.trim()}>{t('Save')}</button>
+            </form>}
+      </Row>
+    </Section>
+  );
+}
+
 function SystemTab({ s, set, info }) {
   return (
     <>
@@ -339,6 +406,7 @@ function SystemTab({ s, set, info }) {
         <Row title={t('Widget position')} desc={t('Move it back to the top-right corner of the main screen.')}>
           <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={() => api.resetPosition()}>{t('Reset position')}</button></Row>
       </Section>
+      <Updates s={s} set={set} info={info} />
       <Section label={t('App')}>
         <Row title={t('Data folder')} desc={info.dataDir}>
           <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={() => api.openDataFolder()}>{t('Open')}</button></Row>

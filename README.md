@@ -24,6 +24,19 @@ npm test            # test API klienta proti falešnému T212 serveru
 - Změna u hodnoty se řídí zvoleným obdobím grafu (1D/1W/1M/1Y/ALL) a počítá se z rozdílu P/L, takže vklady a výběry ji nezkreslí. Když historie ještě nesahá tak daleko, ukazuje se „od <datum>“. ALL = celkový P/L.
 - Najetím myší na graf se ukáže hodnota portfolia v danou chvíli a změna od začátku období (body doplněné z tržních cen jsou označené „odhad“).
 
+## Aktualizace
+Aplikace sama hlídá GitHub Releases: při spuštění (tedy i po zapnutí počítače), po probuzení ze spánku,
+každý den ve 12:00 a na tlačítko *Zkontrolovat aktualizace* (Nastavení → Systém, nebo menu v tray).
+Když najde novější verzi, zeptá se — **Stáhnout a nainstalovat / Teď ne / Přeskočit tuto verzi**.
+Stažený soubor se ověří proti velikosti a SHA-256 z vydání, pak:
+- **Windows** — spustí se instalátor potichu (`/S --updated --force-run`), přepíše aplikaci a znovu ji spustí.
+- **macOS** — rozbalí se `.zip`, po ukončení aplikace ji skript vymění (stará verze zůstane, dokud není nová na místě) a otevře.
+  Aplikace musí běžet ze složky, kam může zapisovat (typicky `Aplikace`), ne přímo ze Stažených.
+
+Dokud je repozitář soukromý, potřebuje GitHub token (fine-grained, *Contents: Read-only* jen pro `t212-widget`)
+v Nastavení → Systém → Aktualizace. Ukládá se šifrovaně vedle API klíčů. U veřejného repa není potřeba.
+`main/updater.js`, test: `node scripts/test-updater.js`, smoke v Electronu: `xvfb-run electron --no-sandbox scripts/smoke-update.js`.
+
 ## macOS
 Stejná aplikace běží i na Macu: ikona v horní liště (klik = panel s widgetem, pravý klik = menu),
 volitelně i plovoucí widget na ploše. `npm run dist:mac` (na Linuxu vznikne .app, podepsat ad-hoc přes `rcodesign sign`).

@@ -1,8 +1,9 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, Tray, Menu, screen, shell, safeStorage, nativeTheme, net, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, screen, shell, safeStorage, nativeTheme, net, nativeImage, dialog, powerMonitor, Notification } = require('electron');
 const path = require('path');
 const { Store } = require('./store');
 const { Poller } = require('./t212');
+const { Updater, installWindows, installMac, macBundle, macCanReplace } = require('./updater');
 
 const SIZES = {
   small: { w: 300, h: 304 },
@@ -16,7 +17,7 @@ const SETTINGS_W = 760, SETTINGS_H = 680;
 app.setAppUserModelId('cz.jovan.t212widget');
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
-let store, poller, widget, settingsWin, tray, popover;
+let store, poller, widget, settingsWin, tray, popover, updater;
 const IS_MAC = process.platform === 'darwin';
 let lastState = null;
 let quitting = false;
@@ -241,9 +242,48 @@ const TRAY_CS = {
   'Both the API key and the secret are required.': 'Je potřeba API klíč i tajný klíč.',
   'Trading 212 returned 401 Unauthorized — check the key and secret.': 'Trading 212 vrátil 401 Unauthorized — zkontrolujte klíč a tajný klíč.',
   'Trading 212 returned 403 Forbidden — the key needs the Account data and Portfolio permissions.': 'Trading 212 vrátil 403 Forbidden — klíč potřebuje oprávnění Account data a Portfolio.',
-  'Rate limited by Trading 212 — wait a few seconds and try again.': 'Trading 212 omezil počet dotazů — počkejte pár sekund a zkuste to znovu.'
+  'Rate limited by Trading 212 — wait a few seconds and try again.': 'Trading 212 omezil počet dotazů — počkejte pár sekund a zkuste to znovu.',
+  // updates
+  'Check for updates…': 'Zkontrolovat aktualizace…',
+  'Install update {v}…': 'Nainstalovat aktualizaci {v}…',
+  'Downloading update… {p} %': 'Stahuji aktualizaci… {p} %',
+  'Version {v} is available': 'Je k dispozici nová verze {v}',
+  'You have {c}. Once installed, the widget restarts by itself.': 'Teď máš {c}. Po instalaci se widget sám znovu spustí.',
+  'You have {c}.': 'Teď máš {c}.',
+  'Download and install': 'Stáhnout a nainstalovat',
+  'Open download page': 'Otevřít stránku ke stažení',
+  'Not now': 'Teď ne',
+  'Skip this version': 'Přeskočit tuto verzi',
+  'You have the latest version': 'Máš nejnovější verzi',
+  'T212 Widget {v} is up to date.': 'T212 Widget {v} je aktuální.',
+  "Couldn't check for updates": 'Aktualizace se nepodařilo zkontrolovat',
+  'Update failed': 'Aktualizace se nepovedla',
+  'Downloading T212 Widget {v}…': 'Stahuji T212 Widget {v}…',
+  'It installs and restarts by itself.': 'Nainstaluje se a spustí se sám.',
+  'This is a development build — install the new version from the release page.': 'Tohle je vývojová verze — novou verzi nainstaluj ze stránky vydání.',
+  'The release has no file for this computer — download it from the release page.': 'Vydání nemá soubor pro tenhle počítač — stáhni ho ze stránky vydání.',
+  'macOS is running the app from a temporary location. Move T212 Widget to Applications and start it from there — then it can update itself.': 'macOS spouští aplikaci z dočasného umístění. Přesuň T212 Widget do složky Aplikace a spusť ho odtud — pak se bude umět aktualizovat sám.',
+  'The app folder is read-only for your account, so it can\u2019t update itself in place.': 'Do složky s aplikací tvůj účet nemůže zapisovat, takže se nemůže aktualizovat sám.',
+  'notfound': 'Na GitHubu není žádné vydání, nebo je repozitář soukromý a chybí token (Nastavení → Systém → Aktualizace).',
+  'auth': 'GitHub token nefunguje — zkontroluj ho v Nastavení → Systém → Aktualizace.',
+  'rate': 'GitHub dočasně omezil počet dotazů — zkusím to později.',
+  'network': 'GitHub není dostupný — zkontroluj připojení.',
+  'http': 'GitHub vrátil chybu.',
+  'verify': 'Stažený soubor nesouhlasí s vydáním — instalace zrušena.',
+  'noasset': 'Vydání nemá soubor pro tenhle počítač.'
+};
+const ERR_EN = {
+  notfound: 'No release on GitHub, or the repository is private and no token is set (Settings → System → Updates).',
+  auth: 'The GitHub token doesn\u2019t work — check it in Settings → System → Updates.',
+  rate: 'GitHub is rate limiting — will try again later.',
+  network: 'GitHub is unreachable — check the connection.',
+  http: 'GitHub returned an error.',
+  verify: 'The downloaded file doesn\u2019t match the release — not installing.',
+  noasset: 'The release has no file for this computer.'
 };
 const tr = s => ((store && store.get('language')) !== 'en' && TRAY_CS[s]) || s;
+const trv = (s, vars) => Object.entries(vars).reduce((a, [k, v]) => a.split('{' + k + '}').join(v), tr(s));
+const errText = e => (e && ((store.get('language') !== 'en' ? TRAY_CS[e.kind] : ERR_EN[e.kind]) || e.message)) || '';
 function rebuildTrayMenu() {
   if (!tray) return;
   const s = store.all();
@@ -260,6 +300,7 @@ function rebuildTrayMenu() {
     { label: IS_MAC ? tr('Open at login') : tr('Start with Windows'), type: 'checkbox', checked: !!s.startWithWindows, click: m => applySettings({ startWithWindows: m.checked }) },
     { type: 'separator' },
     { label: tr('Settings…'), click: () => openSettings() },
+    updateMenuItem(),
     { label: tr('Quit'), click: () => { quitting = true; app.quit(); } }
   ]);
   tray.__menu = menu;
@@ -283,9 +324,127 @@ function createTray() {
   rebuildTrayMenu();
 }
 
+// ── updates (GitHub Releases) ────────────────────────────────
+// When: shortly after start (also covers turning the PC on — the app starts at login),
+// after waking from sleep, every day at 12:00, and on demand. Nothing is downloaded without a yes.
+const DAILY_HOUR = 12;
+let updateBusy = false, dailyTimer = null, lastPrompt = { version: null, at: 0 }, lastUpdStatus = null;
+
+function updateMenuItem() {
+  const u = updater ? updater.state : { status: 'idle' };
+  if (u.status === 'downloading') return { label: trv('Downloading update… {p} %', { p: Math.round((u.progress || 0) * 100) }), enabled: false };
+  if (u.status === 'available') return { label: trv('Install update {v}…', { v: u.latest }), click: () => promptUpdate(true) };
+  return { label: tr('Check for updates…'), click: () => manualCheck(true) };
+}
+
+function setupUpdater() {
+  updater = new Updater({
+    version: app.getVersion(),
+    fetchImpl: (u, o) => net.fetch(u, o),
+    getToken: () => store.getGhToken(),
+    tmpDir: app.getPath('temp')
+  });
+  updater.on('state', u => {
+    broadcast('update', u);
+    if (tray) tray.setToolTip(u.status === 'downloading' ? trv('Downloading update… {p} %', { p: Math.round(u.progress * 100) }) : 'T212 Widget');
+    if (u.status !== lastUpdStatus) { lastUpdStatus = u.status; rebuildTrayMenu(); }
+  });
+  setTimeout(() => autoCheck('startup'), 15e3);
+  scheduleDaily();
+  powerMonitor.on('resume', () => { scheduleDaily(); setTimeout(() => autoCheck('resume'), 20e3); });
+}
+
+function scheduleDaily() {
+  clearTimeout(dailyTimer);
+  const now = new Date(), next = new Date(now);
+  next.setHours(DAILY_HOUR, 0, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  dailyTimer = setTimeout(() => { autoCheck('daily'); scheduleDaily(); }, next - now);
+}
+
+async function autoCheck(reason) {
+  if (!store.get('autoUpdate') || updateBusy || !app.isPackaged) return;
+  // waking up several times an hour shouldn't mean several checks or prompts
+  if (reason === 'resume' && updater.state.checkedAt && Date.now() - updater.state.checkedAt < 3600e3) return;
+  const u = await updater.check();
+  if (u.status !== 'available' || store.get('skippedVersion') === u.latest) return;
+  if (reason === 'resume' && lastPrompt.version === u.latest && Date.now() - lastPrompt.at < 4 * 3600e3) return;
+  promptUpdate(false);
+}
+
+// from the tray (dialog for every outcome) or the settings window (result shows inline)
+async function manualCheck(fromTray) {
+  if (updateBusy) return updater.state;
+  const u = await updater.check();
+  if (u.status === 'available') promptUpdate(true);
+  else if (fromTray && u.status === 'none') {
+    focusForDialog();
+    dialog.showMessageBox({ type: 'info', title: 'T212 Widget', message: tr('You have the latest version'), detail: trv('T212 Widget {v} is up to date.', { v: app.getVersion() }), buttons: ['OK'], noLink: true });
+  } else if (fromTray && u.status === 'error') {
+    focusForDialog();
+    dialog.showMessageBox({ type: 'warning', title: 'T212 Widget', message: tr("Couldn't check for updates"), detail: errText(u.error), buttons: ['OK'], noLink: true });
+  }
+  return updater.state;
+}
+
+function focusForDialog() { if (IS_MAC) app.focus({ steal: true }); }
+
+// why this install can't replace itself (dev build / no asset / macOS location) — null when it can
+function installBlocker(u) {
+  if (!app.isPackaged) return tr('This is a development build — install the new version from the release page.');
+  if (!u.hasAsset) return tr('The release has no file for this computer — download it from the release page.');
+  if (IS_MAC) {
+    const c = macCanReplace(macBundle(app.getPath('exe')));
+    if (!c.ok) return c.reason === 'translocated'
+      ? tr('macOS is running the app from a temporary location. Move T212 Widget to Applications and start it from there — then it can update itself.')
+      : tr('The app folder is read-only for your account, so it can’t update itself in place.');
+  }
+  return null;
+}
+
+async function promptUpdate(manual) {
+  if (updateBusy || !updater || updater.state.status !== 'available') return;
+  updateBusy = true;
+  try {
+    const u = updater.state;
+    const blocker = installBlocker(u);
+    focusForDialog();
+    const { response } = await dialog.showMessageBox({
+      type: 'info',
+      title: 'T212 Widget',
+      message: trv('Version {v} is available', { v: u.latest }),
+      detail: [blocker ? trv('You have {c}.', { c: app.getVersion() }) : trv('You have {c}. Once installed, the widget restarts by itself.', { c: app.getVersion() }),
+        u.notes, blocker].filter(Boolean).join('\n\n'),
+      buttons: [blocker ? tr('Open download page') : tr('Download and install'), tr('Not now'), tr('Skip this version')],
+      defaultId: 0, cancelId: 1, noLink: true
+    });
+    lastPrompt = { version: u.latest, at: Date.now() };
+    if (response === 2) { store.set({ skippedVersion: u.latest }); broadcast('settings', store.all()); return; }
+    if (response !== 0) return;
+    if (store.get('skippedVersion') === u.latest) store.set({ skippedVersion: null });
+    if (blocker) { shell.openExternal(u.url); return; }
+    if (Notification.isSupported()) new Notification({ title: trv('Downloading T212 Widget {v}…', { v: u.latest }), body: tr('It installs and restarts by itself.'), silent: true }).show();
+    const file = await updater.download();
+    if (process.platform === 'win32') installWindows(file);
+    else if (IS_MAC) await installMac(file, macBundle(app.getPath('exe')), process.pid);
+    quitting = true;
+    try { store.saveHistory(); } catch {}
+    app.quit();   // the installer (Windows) / swap script (macOS) starts the new version
+  } catch (e) {
+    focusForDialog();
+    dialog.showMessageBox({ type: 'error', title: 'T212 Widget', message: tr('Update failed'), detail: errText(e) || String(e && e.message || e), buttons: ['OK'], noLink: true });
+  } finally {
+    updateBusy = false;
+  }
+}
+
 // ── IPC ──────────────────────────────────────────────────────
 function registerIpc() {
-  ipcMain.handle('init', () => ({ settings: store.all(), state: poller.payload(), version: app.getVersion(), dataDir: app.getPath('userData'), platform: process.platform }));
+  ipcMain.handle('init', () => ({ settings: store.all(), state: poller.payload(), version: app.getVersion(), dataDir: app.getPath('userData'), platform: process.platform,
+    update: updater ? updater.state : null, hasGhToken: !!store.getGhToken(), packaged: app.isPackaged }));
+  ipcMain.handle('update-check', () => manualCheck(false));
+  ipcMain.handle('update-install', () => { promptUpdate(true); return true; });
+  ipcMain.handle('set-gh-token', (_e, tok) => { store.setGhToken(tok || null); return !!store.getGhToken(); });
   ipcMain.handle('hide-popover', () => { if (popover) popover.hide(); return true; });
   ipcMain.handle('set-settings', (_e, patch) => applySettings(patch || {}));
   ipcMain.handle('refresh', () => { poller.refreshNow(); return true; });
@@ -383,6 +542,7 @@ app.whenReady().then(() => {
     store.set({ firstLaunchDone: true });
     applyAutostart(store.get('startWithWindows'));
   }
+  setupUpdater();
   registerIpc();
   poller.on('state', st => { lastState = st; broadcast('state', st); applyWidgetSize(); applyPopoverSize(); updateTrayTitle(); });
   createTray();
