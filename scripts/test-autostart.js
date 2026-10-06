@@ -1,53 +1,64 @@
-// Autostart against a fake Electron login-item API that mimics the Windows Run key.
+// Autostart against a fake Windows registry (`reg query` output exactly as Windows prints it)
+// and a fake Electron that — like on the real machine — reports Off for our entry.
 const assert = require('assert');
-const { isEnabled, apply, reconcile, state, NAME } = require('../main/autostart');
-const EXE = 'C:\\Users\\me\\AppData\\Local\\Programs\\t212-widget\\T212 Widget.exe';
-function fakeApp(items) {
-  const reg = new Map(items.map(i => [i.name, { ...i }]));
-  return {
-    reg,
-    getLoginItemSettings({ path = EXE } = {}) {
-      const launchItems = [...reg.values()].map(i => ({ name: i.name, path: i.path, args: [], scope: 'user', enabled: i.enabled !== false }));
-      const mine = launchItems.filter(i => i.path.toLowerCase() === path.toLowerCase());
-      // like Electron: openAtLogin only looks at the value named after the AppUserModelId
-      return { openAtLogin: !!reg.get(NAME), executableWillLaunchAtLogin: mine.some(i => i.enabled), launchItems };
-    },
+const { state, isEnabled, apply, reconcile, regValue, NAME, RUN, APPROVED } = require('../main/autostart');
+const EXE = 'C:\\Users\\gligu\\AppData\\Local\\Programs\\t212-widget\\T212 Widget.exe';
+
+function machine(run, approved = {}) {
+  const reg = { [RUN]: new Map(Object.entries(run)), [APPROVED]: new Map(Object.entries(approved)) };
+  const exec = args => {                                     // reg query <key> /v <name>
+    const [, key, , name] = args;
+    const v = reg[key] && reg[key].get(name);
+    if (v == null) { const e = new Error('ERROR: The system was unable to find the specified registry key or value.'); e.status = 1; throw e; }
+    const type = key === APPROVED ? 'REG_BINARY' : 'REG_SZ';
+    return `\r\n${key.replace('HKCU', 'HKEY_CURRENT_USER')}\r\n    ${name}    ${type}    ${v}\r\n\r\n`;
+  };
+  const app = {
+    getLoginItemSettings: () => ({ openAtLogin: false, executableWillLaunchAtLogin: false, launchItems: [] }),   // what Electron told us
     setLoginItemSettings({ openAtLogin, name = NAME, path = EXE, enabled = true }) {
-      if (openAtLogin) reg.set(name, { name, path, enabled }); else reg.delete(name);
+      if (openAtLogin) { reg[RUN].set(name, `"${path}"`); if (enabled) reg[APPROVED].delete(name); }
+      else { reg[RUN].delete(name); reg[APPROVED].delete(name); }
     }
   };
+  return { reg, exec, app };
 }
-// 1) the reported bug: old entry under another name → app starts at login, switch must show On
-let app = fakeApp([{ name: 'electron.app.T212 Widget', path: '"' + EXE + '"' }]);
-assert.equal(app.getLoginItemSettings().openAtLogin, false, 'Electron alone says Off');
-assert.equal(isEnabled(app, 'win32', EXE), true, 'we say On');
-// 2) turning it off removes the old entry too
-apply(app, false, 'win32', EXE);
-assert.equal(app.reg.size, 0); assert.equal(isEnabled(app, 'win32', EXE), false);
-// 3) turning it on writes exactly one entry under our name
-apply(app, true, 'win32', EXE); apply(app, true, 'win32', EXE);
-assert.deepEqual([...app.reg.keys()], [NAME]); assert.equal(isEnabled(app, 'win32', EXE), true);
-// 4) disabled in Task Manager → shown as Off, switching on re-enables
-app = fakeApp([{ name: NAME, path: EXE, enabled: false }]);
-assert.equal(isEnabled(app, 'win32', EXE), false);
-apply(app, true, 'win32', EXE); assert.equal(isEnabled(app, 'win32', EXE), true);
-// 5) entries of other apps are left alone
-app = fakeApp([{ name: 'Spotify', path: 'C:\\Spotify.exe' }, { name: 'old', path: EXE }]);
-apply(app, true, 'win32', EXE);
-assert.deepEqual([...app.reg.keys()].sort(), [NAME, 'Spotify'].sort());
-// 6) macOS keeps Electron's own state
+const THEIRS = { OneDrive: '"C:\\Program Files\\Microsoft OneDrive\\OneDrive.exe" /background', 'Docker Desktop': 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe',
+  'electron.app.CurseForge': 'C:\\Users\\gligu\\AppData\\Local\\Programs\\CurseForge Windows\\CurseForge.exe --minimized' };
+const THEIRS_OK = { Steam: '020000000000000000000000', Discord: '030000006a1b2c3d4e5f6071', 'Docker Desktop': '030000000000000000000000' };
+
+// 1) exactly the reported machine: entry present, nothing in StartupApproved, Electron says Off → we say On
+let m = machine({ ...THEIRS, [NAME]: `"${EXE}"` }, THEIRS_OK);
+assert.equal(state(m.app, 'win32', EXE, m.exec), 'on');
+assert.equal(isEnabled(m.app, 'win32', EXE, m.exec), true);
+assert.equal(reconcile(m.app, true, 'win32', EXE, m.exec), true);
+// 2) parsing: names with spaces, binary data
+assert.deepEqual(regValue(RUN, 'Docker Desktop', m.exec), { type: 'REG_SZ', data: 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' });
+assert.equal(regValue(APPROVED, 'Steam', m.exec).data, '020000000000000000000000');
+assert.equal(regValue(RUN, 'Nope', m.exec), null);
+// 3) switched off in Task Manager (first byte 03) → 'disabled', reconcile keeps it off and doesn't touch it
+m = machine({ [NAME]: `"${EXE}"` }, { [NAME]: '030000000000000000000000' });
+assert.equal(state(m.app, 'win32', EXE, m.exec), 'disabled');
+assert.equal(reconcile(m.app, true, 'win32', EXE, m.exec), false);
+assert.equal(m.reg[APPROVED].get(NAME), '030000000000000000000000');
+// 4) enabled flag 02 → on
+m = machine({ [NAME]: `"${EXE}"` }, { [NAME]: '020000000000000000000000' });
+assert.equal(state(m.app, 'win32', EXE, m.exec), 'on');
+// 5) an update's uninstaller removed it, user wants it → written again → On
+m = machine(THEIRS, THEIRS_OK);
+assert.equal(state(m.app, 'win32', EXE, m.exec), 'missing');
+assert.equal(reconcile(m.app, true, 'win32', EXE, m.exec), true);
+assert.equal(m.reg[RUN].get(NAME), `"${EXE}"`);
+// 6) not wanted and missing → stays off, nothing written
+m = machine(THEIRS); assert.equal(reconcile(m.app, false, 'win32', EXE, m.exec), false); assert.ok(!m.reg[RUN].has(NAME));
+// 7) toggle on/off round trip through apply()
+m = machine(THEIRS);
+apply(m.app, true, 'win32', EXE); assert.equal(isEnabled(m.app, 'win32', EXE, m.exec), true);
+apply(m.app, false, 'win32', EXE); assert.equal(isEnabled(m.app, 'win32', EXE, m.exec), false);
+// 8) other apps' entries are never touched
+assert.equal(m.reg[RUN].size, Object.keys(THEIRS).length);
+// 9) reg.exe unavailable → falls back to "missing", never throws
+assert.equal(state(m.app, 'win32', EXE, () => { throw new Error('ENOENT'); }), 'missing');
+// 10) macOS keeps Electron's own state
 const mac = { getLoginItemSettings: () => ({ openAtLogin: true }), setLoginItemSettings: o => { mac.last = o; } };
 assert.equal(isEnabled(mac, 'darwin'), true); apply(mac, false, 'darwin'); assert.equal(mac.last.openAtLogin, false);
-// 7) the reported bug: an update's uninstaller deleted the entry; user still wants autostart → written again, On
-app = fakeApp([]);
-assert.equal(state(app, 'win32', EXE), 'missing');
-assert.equal(reconcile(app, true, 'win32', EXE), true); assert.deepEqual([...app.reg.keys()], [NAME]);
-// 8) user switched it off in Task Manager → stays off, entry untouched
-app = fakeApp([{ name: NAME, path: EXE, enabled: false }]);
-assert.equal(reconcile(app, true, 'win32', EXE), false); assert.equal(app.reg.get(NAME).enabled, false);
-// 9) not wanted and missing → stays off, nothing written
-app = fakeApp([]); assert.equal(reconcile(app, false, 'win32', EXE), false); assert.equal(app.reg.size, 0);
-// 10) turned on outside the app (old name) → On, tidied to one entry
-app = fakeApp([{ name: 'electron.app.T212 Widget', path: EXE }]);
-assert.equal(reconcile(app, false, 'win32', EXE), true); assert.deepEqual([...app.reg.keys()], [NAME]);
 console.log('AUTOSTART TESTS PASSED');
