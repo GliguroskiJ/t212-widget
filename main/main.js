@@ -270,7 +270,10 @@ const TRAY_CS = {
   'network': 'GitHub není dostupný — zkontroluj připojení.',
   'http': 'GitHub vrátil chybu.',
   'verify': 'Stažený soubor nejde ověřit proti vydání — instalace zrušena.',
-  'noasset': 'Vydání nemá soubor pro tenhle počítač.'
+  'noasset': 'Vydání nemá soubor pro tenhle počítač.',
+  'Windows did not allow the installer to start:': 'Windows nedovolil spustit instalátor:',
+  'It is downloaded here and you can run it yourself: {f}': 'Je stažený tady a můžeš ho spustit ručně: {f}',
+  'Show installer': 'Zobrazit instalátor'
 };
 const ERR_EN = {
   notfound: 'No release on GitHub, or the repository is private and no token is set (Settings → System → Updates).',
@@ -425,14 +428,21 @@ async function promptUpdate(manual) {
     if (blocker) { shell.openExternal(u.url); return; }
     if (Notification.isSupported()) new Notification({ title: trv('Downloading T212 Widget {v}…', { v: u.latest }), body: tr('It installs and restarts by itself.'), silent: true }).show();
     const file = await updater.download();
-    if (process.platform === 'win32') installWindows(file);
+    if (process.platform === 'win32') await installWindows(file);
     else if (IS_MAC) await installMac(file, macBundle(app.getPath('exe')), process.pid);
     quitting = true;
     try { store.saveHistory(); } catch {}
     app.quit();   // the installer (Windows) / swap script (macOS) starts the new version
   } catch (e) {
     focusForDialog();
-    dialog.showMessageBox({ type: 'error', title: 'T212 Widget', message: tr('Update failed'), detail: errText(e) || String(e && e.message || e), buttons: ['OK'], noLink: true });
+    const file = updater && updater.file;
+    const launch = e && e.kind === 'launch' && file;
+    const detail = launch
+      ? [tr('Windows did not allow the installer to start:'), e.message, trv('It is downloaded here and you can run it yourself: {f}', { f: file })].join('\n\n')
+      : (errText(e) || String(e && e.message || e));
+    const { response } = await dialog.showMessageBox({ type: 'error', title: 'T212 Widget', message: tr('Update failed'), detail,
+      buttons: launch ? ['OK', tr('Show installer')] : ['OK'], defaultId: 0, cancelId: 0, noLink: true });
+    if (launch && response === 1) shell.showItemInFolder(file);
   } finally {
     updateBusy = false;
   }

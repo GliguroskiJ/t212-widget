@@ -146,7 +146,8 @@ class Updater extends EventEmitter {
         const now = Date.now();
         if (total && now - lastEmit > 250) { lastEmit = now; this.set({ progress: Math.min(0.999, got / total) }); }
       }
-      await new Promise((res, rej) => out.end(err => (err ? rej(err) : res())));
+      // wait for 'close', not just 'finish' — Windows won't execute a file we still hold open
+      await new Promise((res, rej) => { out.once('close', res); out.once('error', rej); out.end(); });
       if (a.size && got !== a.size) throw new UpdateError('verify', `Downloaded ${got} B, expected ${a.size} B.`);
       if (hash.digest('hex') !== want) throw new UpdateError('verify', 'Checksum does not match the release — not installing.');
       fs.renameSync(part, dest);
@@ -164,10 +165,44 @@ class Updater extends EventEmitter {
 
 // ── installing ───────────────────────────────────────────────
 // Windows: the NSIS one-click installer, silent; --force-run starts the new version afterwards.
-function installWindows(file, spawnImpl = spawn) {
-  const p = spawnImpl(file, ['/S', '--updated', '--force-run'], { detached: true, stdio: 'ignore', windowsHide: true });
-  p.unref();
-  return true;
+// Direct CreateProcess first. If Windows refuses it (Smart App Control / code integrity, antivirus,
+// policy — Node only reports "spawn UNKNOWN" for those), go through the shell like a double-click,
+// which also hands back Windows' own error text. Resolves only once the installer really started.
+const WIN_ARGS = ['/S', '--updated', '--force-run'];
+async function installWindows(file, { spawnImpl = spawn, shellImpl = startViaShell } = {}) {
+  try {
+    await new Promise((res, rej) => {
+      const p = spawnImpl(file, WIN_ARGS, { detached: true, stdio: 'ignore', windowsHide: true });
+      p.once('spawn', () => { p.unref(); res(); });
+      p.once('error', rej);
+    });
+    return 'direct';
+  } catch (first) {
+    await shellImpl(file, WIN_ARGS, first);
+    return 'shell';
+  }
+}
+
+// PowerShell's first error line, without the "At line:… / CategoryInfo" noise
+function psError(text) {
+  const lines = String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const cut = lines.findIndex(l => /^(At line:|\+ |CategoryInfo|FullyQualifiedErrorId)/.test(l));
+  return (cut < 0 ? lines : lines.slice(0, cut)).join(' ').replace(/^Start-Process\s*:\s*/, '').slice(0, 400);
+}
+
+function startViaShell(file, args, first, spawnImpl = spawn) {
+  return new Promise((res, rej) => {
+    // path and args go in through env vars, so nothing in them is ever parsed as a command
+    const ps = spawnImpl('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      "$ErrorActionPreference='Stop'; Start-Process -FilePath $env:T212_SETUP -ArgumentList ($env:T212_ARGS -split ' ')"],
+      { windowsHide: true, env: { ...process.env, T212_SETUP: file, T212_ARGS: args.join(' ') } });
+    let err = '';
+    if (ps.stderr) ps.stderr.on('data', d => { err += d; });
+    const why = `spawn ${first && first.code || 'error'}`;
+    ps.once('error', e => rej(new UpdateError('launch', `Windows refused to start the installer (${why}), PowerShell unavailable: ${e.message}`)));
+    ps.once('close', code => (code === 0 ? res()
+      : rej(new UpdateError('launch', psError(err) || `Windows refused to start the installer (${why}).`))));
+  });
 }
 
 // macOS: where the running app lives, and whether we may replace it in place
@@ -214,4 +249,4 @@ async function installMac(zip, bundle, pid, { runImpl = run, spawnImpl = spawn }
   return true;
 }
 
-module.exports = { apiBase, Updater, UpdateError, cmpVer, pickAsset, plainNotes, installWindows, installMac, macBundle, macCanReplace, REPO };
+module.exports = { apiBase, Updater, UpdateError, cmpVer, pickAsset, plainNotes, installWindows, startViaShell, psError, installMac, macBundle, macCanReplace, REPO };

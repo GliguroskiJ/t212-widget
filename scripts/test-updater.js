@@ -1,7 +1,7 @@
 // Updater against a fake GitHub API: check, errors, asset pick, verified download, macOS swap script.
 const assert = require('assert'); const http = require('http'); const crypto = require('crypto');
 const fs = require('fs'); const os = require('os'); const path = require('path'); const { execFileSync } = require('child_process');
-const { Updater, cmpVer, pickAsset, plainNotes, installMac, installWindows, macBundle, macCanReplace } = require('../main/updater');
+const { Updater, cmpVer, pickAsset, plainNotes, installMac, installWindows, startViaShell, macBundle, macCanReplace } = require('../main/updater');
 
 const EXE = Buffer.alloc(300 * 1024, 7), ZIP = Buffer.alloc(120 * 1024, 3);
 const sha = b => 'sha256:' + crypto.createHash('sha256').update(b).digest('hex');
@@ -104,9 +104,30 @@ srv.listen(0, async () => {
   console.log('env overrides ignored in packaged app ok');
 
   // Windows hand-over: silent installer, relaunch afterwards
-  let spawned; installWindows('C:\\t\\setup.exe', (f, a, o) => { spawned = { f, a, o }; return { unref() {} }; });
-  assert.deepEqual(spawned.a, ['/S', '--updated', '--force-run']); assert.equal(spawned.o.detached, true);
-  console.log('windows hand-over ok');
+  const EventEmitter = require('events');
+  const fakeChild = (ev, arg) => { const c = new EventEmitter(); c.unref = () => {}; c.stderr = new EventEmitter(); setImmediate(() => c.emit(ev, arg)); return c; };
+  let spawned, viaShell = null;
+  const shellSpy = async (f, a, first) => { viaShell = { f, a, code: first && first.code }; };
+  // a) direct start works
+  let how = await installWindows('C:\\t\\setup.exe', { spawnImpl: (f, a, o) => { spawned = { f, a, o }; return fakeChild('spawn'); }, shellImpl: shellSpy });
+  assert.equal(how, 'direct'); assert.deepEqual(spawned.a, ['/S', '--updated', '--force-run']); assert.equal(spawned.o.detached, true); assert.equal(viaShell, null);
+  // b) CreateProcess refused synchronously — what Smart App Control / policy gives: "spawn UNKNOWN"
+  how = await installWindows('C:\\t\\setup.exe', { spawnImpl: () => { const e = new Error('spawn UNKNOWN'); e.code = 'UNKNOWN'; throw e; }, shellImpl: shellSpy });
+  assert.equal(how, 'shell'); assert.equal(viaShell.code, 'UNKNOWN'); assert.deepEqual(viaShell.a, ['/S', '--updated', '--force-run']);
+  // c) asynchronous spawn error also falls back
+  viaShell = null;
+  how = await installWindows('C:\\t\\setup.exe', { spawnImpl: () => fakeChild('error', Object.assign(new Error('spawn EACCES'), { code: 'EACCES' })), shellImpl: shellSpy });
+  assert.equal(how, 'shell'); assert.equal(viaShell.code, 'EACCES');
+  // d) the shell path refused too → Windows' own words reach the dialog
+  const psText = "Start-Process : This command cannot be run due to the error: An operation was blocked as the file may be unsafe.\r\nAt line:1 char:31\r\n+ ... Start-Process ...\r\n    + CategoryInfo          : InvalidOperation: (:) [Start-Process], InvalidOperationException";
+  let envSeen;
+  const psSpawn = (cmd, args, opts) => { envSeen = opts.env; const c = fakeChild('close', 1); setImmediate(() => {}); c.stderr = new EventEmitter(); process.nextTick(() => c.stderr.emit('data', psText)); return c; };
+  await assert.rejects(() => startViaShell('C:\\Users\\a b\\x & y\\setup.exe', ['/S', '--updated', '--force-run'], { code: 'UNKNOWN' }, psSpawn),
+    e => e.kind === 'launch' && e.message === 'This command cannot be run due to the error: An operation was blocked as the file may be unsafe.');
+  assert.equal(envSeen.T212_SETUP, 'C:\\Users\\a b\\x & y\\setup.exe', 'path passed as data, not as command text');
+  // e) shell path OK
+  await startViaShell('C:\\t\\setup.exe', ['/S'], { code: 'UNKNOWN' }, () => fakeChild('close', 0));
+  console.log('windows hand-over ok (direct, sync UNKNOWN → shell, async error → shell, Windows error text surfaced)');
 
   // macOS swap: real script on fake bundles (ditto/open stubbed) — needs /bin/sh, so not on Windows;
   // CI runs this part in the macOS job
