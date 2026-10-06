@@ -1,0 +1,6 @@
+.notes{flex:1;min-height:0;margin-top:14px;padding:10px 12px;border-radius:6px;background:rgba(var(--ink-rgb),.035);box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.06);font:400 11.5px/1.55 "Inter",sans-serif;color:var(--color-neutral-400);white-space:pre-wrap;overflow-wrap:anywhere}
+.notes .mono{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--color-neutral-300)}
+.foot{display:flex;align-items:center;gap:8px;margin-top:14px}
+.foot .btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.indet{animation:nindet 1.2s ease-in-out infinite}
+@keyframes nindet{0%{transform:translateX(-110%)}100%{transform:translateX(300%)}}

@@ -14,7 +14,7 @@ for (const w of [300, 400, 500, 600]) for (const s of ['latin', 'latin-ext'])
 const ph = path.join(root, 'node_modules/@phosphor-icons/web/src/regular');
 for (const f of ['style.css', 'Phosphor.woff2', 'Phosphor.woff', 'Phosphor.ttf']) fs.copyFileSync(path.join(ph, f), path.join(out, 'phosphor', f));
 await esbuild.build({
-  entryPoints: { widget: path.join(root, 'src/widget.jsx'), settings: path.join(root, 'src/settings.jsx') },
+  entryPoints: { widget: path.join(root, 'src/widget.jsx'), settings: path.join(root, 'src/settings.jsx'), update: path.join(root, 'src/update.jsx') },
   bundle: true, minify: true, outdir: out, format: 'iife', target: 'chrome120',
   jsx: 'automatic', jsxImportSource: 'preact', logLevel: 'info'
 });

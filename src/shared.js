@@ -52,36 +52,61 @@ export const ACCENT_PRESETS = [
   ['#d9b45a', 'Gold'], ['#e0895e', 'Orange'], ['#e07a9b', 'Rose'], ['#8e97aa', 'Steel']
 ];
 
-// Background types. `stops` are [r,g,b,a] (158° gradient); `layers` add effects painted on top.
-// `lightBg` themes get dark text when the text colour is on Auto.
+// Background types. `stops` are [r,g,b,a] (158° gradient); `layers` are painted on top:
+//   blob   soft radial light — hue is relative to the accent, so it follows the colour you pick
+//   rim    specular inner edge, brightest top-left (what makes a pane read as glass)
+//   streak diagonal reflection band       grain  frosted-glass noise       shade  darker bottom
+//   sheen  light falling from the top     mesh / grid / weave  pattern types
+// `glass` panes let the desktop through and get a little denser when tinted.
+// `lightBg` themes get dark text when the text colour is on Auto. `lift` = how far tint may raise a very dark base.
 export const THEMES = {
-  acrylic: { label: 'Acrylic', stops: [[45, 48, 68, .95], [24, 26, 40, .97]], edge: '0 0 0 1px #3f424d,0 10px 30px rgba(0,0,0,.55)', hair: .5 },
-  slate: { label: 'Flat slate', stops: [[35, 37, 50, 1]], edge: '0 0 0 1px #3f424d,0 8px 22px rgba(0,0,0,.45)', hairWhite: .18 },
-  indigo: { label: 'Indigo', stops: [[53, 59, 128, .92], [38, 42, 96, .97]], edge: '0 0 0 1px #4c5397,0 10px 30px rgba(0,0,0,.5)', hair: .55, soft: true },
-  clear: { label: 'Clear glass', stops: [[233, 233, 237, .12], [233, 233, 237, .075]], edge: '0 0 0 1px rgba(233,233,237,.16),0 12px 34px rgba(0,0,0,.4)', hairWhite: .3, glass: true },
-  frost: { label: 'Smoked glass', stops: [[26, 28, 42, .66], [14, 15, 24, .78]], edge: '0 0 0 1px rgba(233,233,237,.14),0 12px 34px rgba(0,0,0,.45)', hairWhite: .35, glass: true,
-    layers: [{ type: 'sheen', a: .07, stop: .38 }] },
+  acrylic: { label: 'Acrylic', stops: [[48, 51, 72, .88], [22, 24, 38, .94]], edge: '0 0 0 1px rgba(233,233,237,.10),0 10px 30px rgba(0,0,0,.55)', hair: .5,
+    layers: [{ type: 'blob', cx: .02, cy: -.18, r: .95, hue: 0, a: .2 }, { type: 'streak', pos: .3, width: .12, a: .045 }, { type: 'grain', a: .012 },
+      { type: 'shade', stop: .55, a: .18 }, { type: 'rim', a: .2 }] },
+  slate: { label: 'Flat slate', stops: [[35, 37, 50, 1]], edge: '0 0 0 1px #3f424d,0 8px 22px rgba(0,0,0,.45)', hairWhite: .18,
+    layers: [{ type: 'rim', a: .07 }] },
+  indigo: { label: 'Indigo', stops: [[56, 62, 134, .92], [32, 36, 90, .97]], edge: '0 0 0 1px #4c5397,0 10px 30px rgba(0,0,0,.5)', hair: .55, soft: true,
+    layers: [{ type: 'streak', pos: .32, width: .12, a: .05 }, { type: 'shade', stop: .55, a: .16 }, { type: 'rim', a: .22 }] },
+  clear: { label: 'Clear glass', stops: [[238, 239, 246, .19], [160, 165, 182, .13]], edge: '0 0 0 1px rgba(255,255,255,.22),0 12px 34px rgba(0,0,0,.35)', hairWhite: .45, glass: true,
+    layers: [{ type: 'streak', pos: .26, width: .16, a: .09 }, { type: 'streak', pos: .37, width: .022, a: .1 }, { type: 'grain', a: .02 },
+      { type: 'shade', stop: .5, a: .12 }, { type: 'rim', a: .6 }] },
+  frost: { label: 'Smoked glass', stops: [[34, 36, 54, .6], [12, 13, 22, .74]], edge: '0 0 0 1px rgba(233,233,237,.16),0 12px 34px rgba(0,0,0,.45)', hairWhite: .4, glass: true,
+    layers: [{ type: 'blob', cx: .05, cy: -.2, r: .9, hue: 0, a: .16 }, { type: 'streak', pos: .28, width: .14, a: .07 }, { type: 'streak', pos: .38, width: .02, a: .07 },
+      { type: 'grain', a: .03 }, { type: 'shade', stop: .5, a: .2 }, { type: 'rim', a: .38 }] },
   aurora: { label: 'Aurora', stops: [[20, 21, 36, .97], [13, 14, 24, .98]], edge: '0 0 0 1px #34374a,0 12px 34px rgba(0,0,0,.55)', hair: .6,
-    layers: [{ type: 'blob', cx: .12, cy: -.1, r: .85, hue: 0, a: .38 }, { type: 'blob', cx: 1.05, cy: 1.1, r: .8, hue: 110, a: .26 }, { type: 'blob', cx: .7, cy: .2, r: .5, hue: -70, a: .12 }] },
+    layers: [{ type: 'blob', cx: .12, cy: -.1, r: .85, hue: 0, a: .42 }, { type: 'blob', cx: 1.05, cy: 1.1, r: .8, hue: 110, a: .28 }, { type: 'blob', cx: .7, cy: .2, r: .5, hue: -70, a: .14 },
+      { type: 'grain', a: .01 }, { type: 'rim', a: .14 }] },
   mesh: { label: 'Mesh', stops: [[22, 23, 34, .97]], edge: '0 0 0 1px #373a4c,0 12px 34px rgba(0,0,0,.5)', hair: .5,
-    layers: [{ type: 'mesh', hues: [0, 55, -55, 170], l: .3, c: .075, a: .92 }] },
+    layers: [{ type: 'mesh', hues: [0, 55, -55, 170], l: .32, c: .085, a: .92 }, { type: 'grain', a: .01 }, { type: 'rim', a: .12 }] },
   ember: { label: 'Ember', stops: [[58, 30, 36, .96], [22, 15, 26, .98]], edge: '0 0 0 1px #4a3038,0 12px 34px rgba(0,0,0,.55)', hairWhite: .22,
-    layers: [{ type: 'blob', cx: 1, cy: 1.15, r: .9, rgb: [224, 120, 70], a: .28 }, { type: 'sheen', a: .04, stop: .3 }] },
+    layers: [{ type: 'blob', cx: 1, cy: 1.15, r: .9, rgb: [224, 120, 70], a: .3 }, { type: 'sheen', a: .04, stop: .3 }, { type: 'rim', a: .16 }] },
   blueprint: { label: 'Blueprint', stops: [[18, 26, 52, .97], [12, 17, 36, .98]], edge: '0 0 0 1px #2a3a66,0 10px 30px rgba(0,0,0,.5)', hair: .45,
-    layers: [{ type: 'grid', step: 16, a: .09 }] },
+    layers: [{ type: 'grid', step: 16, a: .09 }, { type: 'blob', cx: .1, cy: -.2, r: .8, hue: 0, a: .1 }, { type: 'rim', a: .14 }] },
   carbon: { label: 'Carbon', stops: [[28, 29, 34, 1], [17, 18, 22, 1]], edge: '0 0 0 1px #2f3036,0 8px 24px rgba(0,0,0,.6)', hairWhite: .14,
-    layers: [{ type: 'weave', a: .045 }] },
-  ink: { label: 'Ink', stops: [[27, 29, 44, 1], [20, 22, 34, 1]], edge: '0 0 0 1px #292b31,0 6px 18px rgba(0,0,0,.6)', hair: .32 },
-  oled: { label: 'Pure black', stops: [[0, 0, 0, 1]], edge: '0 0 0 1px #26272c', hair: .4 },
+    layers: [{ type: 'weave', a: .045 }, { type: 'rim', a: .1 }] },
+  ink: { label: 'Ink', stops: [[27, 29, 44, 1], [20, 22, 34, 1]], edge: '0 0 0 1px #292b31,0 6px 18px rgba(0,0,0,.6)', hair: .32,
+    layers: [{ type: 'blob', cx: 0, cy: -.25, r: .9, hue: 0, a: .09 }] },
+  oled: { label: 'Pure black', stops: [[0, 0, 0, 1]], edge: '0 0 0 1px #26272c', hair: .4, lift: .13 },
   porcelain: { label: 'Porcelain', stops: [[247, 247, 251, .97], [228, 230, 240, .97]], edge: '0 0 0 1px rgba(20,22,40,.14),0 12px 30px rgba(0,0,0,.28)', hair: .55, lightBg: true,
-    layers: [{ type: 'sheen', a: .5, stop: .3 }] }
+    layers: [{ type: 'sheen', a: .5, stop: .3 }, { type: 'blob', cx: 1, cy: 1.1, r: .9, hue: 0, a: .07, light: true }, { type: 'rim', a: .7 }] }
 };
 
-function tintStop([r, g, b, a], hue, chroma, t) {
+// Tint moves a stop towards the accent in OKLab (smooth hue change, no jump at low values)
+// and lifts very dark bases a little, otherwise the colour can't show on near-black.
+// 0 = the background's own colour, 1 = clearly the accent colour.
+function tintStop([r, g, b, a], hue, chroma, t, opt = {}) {
   if (!t) return [r, g, b, a];
-  const [L, C] = rgb2oklch([r, g, b]);
-  const [nr, ng, nb] = oklch2rgb(L, C * (1 - t) + chroma * t, hue);
-  return [nr, ng, nb, a];
+  const [L, C, H] = rgb2oklch([r, g, b]);
+  const rad = Math.PI / 180;
+  const lift = opt.lift ?? 0.2;
+  // light panes under light text (clear glass) go darker when tinted — milky pastel would swallow the text
+  const L2 = opt.light ? L - 0.025 * t
+    : opt.glass && L > 0.5 ? L + (0.42 - L) * t
+      : L + (Math.max(L, lift) - L) * t + 0.025 * t;
+  const A = C * Math.cos(H * rad) * (1 - t) + chroma * Math.cos(hue * rad) * t;
+  const B = C * Math.sin(H * rad) * (1 - t) + chroma * Math.sin(hue * rad) * t;
+  const [nr, ng, nb] = oklch2rgb(L2, Math.hypot(A, B), (Math.atan2(B, A) / rad + 360) % 360);
+  return [nr, ng, nb, opt.glass ? a + (Math.min(1, a + 0.28) - a) * t : a];
 }
 const css = ([r, g, b, a]) => a >= 1 ? `rgb(${r},${g},${b})` : `rgba(${r},${g},${b},${a})`;
 const accHex = a => (/^#[0-9a-f]{6}$/i.test(a || '') ? a : DEFAULT_ACCENT);
@@ -89,8 +114,10 @@ const accHex = a => (/^#[0-9a-f]{6}$/i.test(a || '') ? a : DEFAULT_ACCENT);
 export function themeCss(key, accent = DEFAULT_ACCENT, tint = 0) {
   const t = THEMES[key] || THEMES.acrylic;
   const [, C, H] = rgb2oklch(hex2rgb(accHex(accent)));
-  const tc = Math.min(0.085, Math.max(0.035, C * 0.7)) * (t.stops[0][3] < 0.5 || t.lightBg ? 1.4 : 1);
-  const raw = t.stops.map(s => tintStop(s, H, t.lightBg ? tc * 0.5 : tc, Math.min(1, Math.max(0, tint))));
+  // how saturated the tinted background gets: follows the accent, but always visible
+  const tc = t.lightBg ? Math.min(0.07, Math.max(0.035, C * 0.45)) : Math.min(0.15, Math.max(0.055, C * 1.05));
+  const opt = { light: t.lightBg, glass: t.glass, lift: t.lift };
+  const raw = t.stops.map(s => tintStop(s, H, tc, Math.min(1, Math.max(0, tint)), opt));
   const stops = raw.map(css);
   const bg = stops.length > 1 ? `linear-gradient(158deg,${stops[0]},${stops[1]})` : `linear-gradient(${stops[0]},${stops[0]})`;
   return { ...t, bg, raw, hue: H, chroma: C };
@@ -135,7 +162,8 @@ export function applyTheme(key, accent = DEFAULT_ACCENT, tint = 0, textColor = '
   // dark text ⇒ light surface: flip the accent ramp so "light" accent steps become the dark ones
   const ramp = dark ? accentRamp(acc).reverse() : accentRamp(acc);
   ramp.forEach((c, i) => s.setProperty(`--color-accent-${(i + 1) * 100}`, c));
-  s.setProperty('--color-accent', dark ? ramp[6] : acc);
+  // dark text ⇒ a dark accent shade for text/borders (ramp is reversed: [0] darkest … [8] lightest)
+  s.setProperty('--color-accent', dark ? ramp[2] : acc);
   s.setProperty('--acc-rgb', hex2rgb(acc).join(','));
   textRamp(text).forEach((c, i) => s.setProperty(`--color-neutral-${(i + 1) * 100}`, c));
   s.setProperty('--color-text', text);
@@ -150,7 +178,7 @@ export function applyTheme(key, accent = DEFAULT_ACCENT, tint = 0, textColor = '
   let menu;
   if (t.lightBg) menu = [m[0], m[1], m[2]];
   else if (m[3] >= 0.9 && !t.layers) menu = [m[0], m[1], m[2]];
-  else { const c = tintStop([34, 36, 50, 1], t.hue, 0.04, Math.min(1, tint + 0.25)); menu = [c[0], c[1], c[2]]; }
+  else { const c = tintStop([34, 36, 50, 1], t.hue, 0.05, Math.min(1, (tint || 0) * 0.8 + 0.15)); menu = [c[0], c[1], c[2]]; }
   if (dark && !t.lightBg) menu = [236, 237, 243];                // dark text on a dark theme: use a light menu
   if (!dark && t.lightBg) menu = [34, 36, 50];                   // light text on a light theme: use a dark menu
   s.setProperty('--menu-bg', `rgb(${menu.join(',')})`);
@@ -179,7 +207,7 @@ export function ditheredBg(key, accent, tint, w, h, overlayAlpha = 0, overlaySto
   const [aL, aC, aH] = rgb2oklch(acc);
   const hueRgb = (off, L = 0.62, C = Math.max(0.09, aC)) => oklch2rgb(L, C, (aH + off + 360) % 360);
   const layers = (t.layers || []).map(l => {
-    if (l.type === 'blob') return { ...l, col: l.rgb || hueRgb(l.hue || 0) };
+    if (l.type === 'blob') return { ...l, col: l.rgb || (l.light ? hueRgb(l.hue || 0, 0.82, Math.max(0.06, aC * 0.8)) : hueRgb(l.hue || 0)) };
     if (l.type === 'mesh') return { ...l, cols: l.hues.map(o => oklch2rgb(l.l, l.c, (aH + o + 360) % 360)) };
     return l;
   });
@@ -194,6 +222,14 @@ export function ditheredBg(key, accent, tint, w, h, overlayAlpha = 0, overlaySto
   let seed = 1234567;
   const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
   const dith = () => rnd() - rnd();                     // triangular, ±1 LSB
+  let gseed = 7654321;                                  // separate stream for grain, so dither stays independent
+  const grnd = () => { gseed = (gseed * 22695477 + 1) >>> 0; return gseed / 4294967296; };
+  // signed distance to the card's rounded rectangle (radius 8 px, as .wg in app.css)
+  const R = 8, hw = w / 2 - R, hh = h / 2 - R;
+  const edgeDist = (x, y) => {
+    const qx = Math.abs(x - w / 2) - hw, qy = Math.abs(y - h / 2) - hh;
+    return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - R;
+  };
   for (let y = 0; y < h; y++) {
     const ov = overlayAlpha ? Math.max(0, 1 - y / (h * overlayStop)) * overlayAlpha : 0;
     for (let x = 0; x < w; x++) {
@@ -218,6 +254,22 @@ export function ditheredBg(key, accent, tint, w, h, overlayAlpha = 0, overlaySto
           const gx = x % l.step, gy = y % l.step;
           if (gx === 0 && gy === 0) over(acc[0], acc[1], acc[2], l.a * 4);
           else if (gx === 0 || gy === 0) over(acc[0], acc[1], acc[2], l.a * 0.35);
+        } else if (l.type === 'rim') {
+          const e = -edgeDist(x + 0.5, y + 0.5);                         // px inside the edge
+          if (e >= 0 && e < 1.6) {
+            const light = Math.min(1, Math.max(0.12, 1.2 - 0.95 * (y / h) - 0.35 * (x / w)));
+            over(255, 255, 255, l.a * light * (1 - e / 1.6));
+          }
+        } else if (l.type === 'streak') {
+          const u = (x / w * 0.85 + y / h * 0.55) / 1.4;
+          const d = (u - l.pos) / l.width;
+          if (Math.abs(d) < 3) over(255, 255, 255, l.a * Math.exp(-d * d));
+        } else if (l.type === 'grain') {
+          const k = (grnd() - 0.5) * 2 * l.a;
+          if (k > 0) over(255, 255, 255, k); else over(0, 0, 0, -k);
+        } else if (l.type === 'shade') {
+          const k = Math.max(0, (y / h - l.stop) / (1 - l.stop));
+          if (k > 0) over(0, 0, 0, l.a * k * k);
         } else if (l.type === 'weave') {
           const band = ((x + y) >> 2) & 1, cross = ((x - y + 4096) >> 2) & 1;
           const k = band ^ cross ? l.a : -l.a * 0.6;

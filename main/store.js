@@ -51,7 +51,8 @@ class Store {
     fs.mkdirSync(dir, { recursive: true });
     this.settingsFile = path.join(dir, 'settings.json');
     this.credsFile = path.join(dir, 'credentials.bin');
-    this.ghFile = path.join(dir, 'github-token.bin');
+    // a GitHub token could be saved by 1.6.x — the option is gone, so is the file
+    try { fs.unlinkSync(path.join(dir, 'github-token.bin')); } catch {}
     this.historyFile = path.join(dir, 'history.json');
     this.settings = { ...DEFAULTS, ...readJson(this.settingsFile, {}) };
     this.history = readJson(this.historyFile, null) || { points: [], dayBase: null, posHist: {}, last: null };
@@ -96,19 +97,6 @@ class Store {
     return Buffer.from(txt, 'utf8');
   }
   clearCreds() { try { fs.unlinkSync(this.credsFile); } catch {} }
-
-  // GitHub token for updates while the repository is private — encrypted the same way
-  getGhToken() {
-    try {
-      const buf = fs.readFileSync(this.ghFile);
-      const txt = this.safe && this.safe.isEncryptionAvailable() ? this.safe.decryptString(buf) : buf.toString('utf8');
-      return txt.trim() || null;
-    } catch { return null; }
-  }
-  setGhToken(tok) {
-    if (!tok) { try { fs.unlinkSync(this.ghFile); } catch {} return; }
-    fs.writeFileSync(this.ghFile, this.seal(tok.trim()));
-  }
   encrypted() { return !!(this.safe && this.safe.isEncryptionAvailable()); }
 
   // ── history ─────────────────────────────────────────────────

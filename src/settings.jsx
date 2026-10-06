@@ -2,6 +2,7 @@ import { render } from 'preact';
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { THEMES, UP, DOWN, applyTheme, applyMotion, agoStr, ACCENT_PRESETS, DEFAULT_ACCENT, ditheredBg, TEXT_PRESETS, resolveText } from './shared.js';
 import { t, setLang } from './i18n.js';
+import { updErr } from './updtext.js';
 import { marketStatus } from '../main/market.js';
 
 const api = window.api;
@@ -156,7 +157,7 @@ const SIZE_CARDS = [
 function WidgetTab({ s, set }) {
   return (
     <>
-      <Section label={t('Size')}>
+      <Section label={MAC ? t('Desktop widget size') : t('Size')}>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:8px">
           {SIZE_CARDS.map(([k, label, sub, w, h]) => {
             const sc = 64 / 704;
@@ -173,10 +174,29 @@ function WidgetTab({ s, set }) {
           })}
         </div>
       </Section>
-      <Section label={t('Behaviour')}>
+      <Section label={t('What it shows')}>
+        <Row title={t('Chart range')} desc={t('Also sets the period of the change next to the value. Switchable right on the widget too.')}>
+          <Seg value={s.range} onChange={v => set({ range: v })} options={[['1D', '1D'], ['1W', '1W'], ['1M', '1M'], ['1Y', '1Y'], ['ALL', 'ALL']]} size={11} /></Row>
+        <Row title={t('Large widget opens on')} desc={t('The view shown in the 2 × 2 widget.')}>
+          <Seg value={s.largeView} onChange={v => set({ largeView: v })} options={[['chart', t('Chart')], ['positions', t('Positions')], ['alloc', t('Allocation')]]} /></Row>
+        <Row title={t('Display currency')} desc={t('Account = no conversion. Others use daily ECB rates (frankfurter.dev).')}>
+          <Seg value={s.displayCurrency} onChange={v => set({ displayCurrency: v })} options={[['account', t('Account')], ['CZK', 'CZK'], ['EUR', 'EUR'], ['USD', 'USD'], ['GBP', 'GBP']]} size={11} /></Row>
+        <Row title={t('Number format')}><Seg value={s.numberFormat} onChange={v => set({ numberFormat: v })} options={[['en', '1,284,640.50'], ['cs', '1 284 640,50']]} /></Row>
+      </Section>
+      {MAC && <Section label={t('Menu bar')}>
+        <Row title={t('Show portfolio in')} desc={t('Menu bar = click the icon at the top of the screen. Desktop = floating widget like on Windows.')}>
+          <Seg value={s.macMode || 'menubar'} onChange={v => set({ macMode: v })} options={[['menubar', t('Menu bar')], ['desktop', t('Desktop')], ['both', t('Both')]]} /></Row>
+        <Row title={t('Panel size')} desc={t('Size of the panel that opens from the menu bar.')}>
+          <Seg value={s.popoverSize || 'medium'} onChange={v => set({ popoverSize: v })} options={[['small', t('Small')], ['medium', t('Medium')], ['large', t('Large')], ['rail', t('Rail')]]} /></Row>
+        <Row title={t('Text next to the icon')}>
+          <Seg value={s.menuBarText || 'value'} onChange={v => set({ menuBarText: v })} options={[['value', t('Value')], ['change', t('Day change')], ['none', t('Icon only')]]} /></Row>
+      </Section>}
+      <Section label={t('On the desktop')}>
         <Row title={t('Show widget')} desc={t('Hide it without quitting — the app keeps running in the tray.')}><Switch on={s.showWidget} onChange={v => set({ showWidget: v })} /></Row>
-        <Row title={t('Large widget opens on')} desc={t('The view shown in the 2 × 2 widget.')}><Seg value={s.largeView} onChange={v => set({ largeView: v })} options={[['chart', t('Chart')], ['positions', t('Positions')], ['alloc', t('Allocation')]]} /></Row>
-        <Row title={t('Chart range')} desc={t('Also switchable right on the widget.')}><Seg value={s.range} onChange={v => set({ range: v })} options={[['1D', '1D'], ['1W', '1W'], ['1M', '1M'], ['1Y', '1Y'], ['ALL', 'ALL']]} size={11} /></Row>
+        <Row title={t('Keep on top')} desc={t('Float above other windows instead of sitting on the desktop.')}><Switch on={s.alwaysOnTop} onChange={v => set({ alwaysOnTop: v })} /></Row>
+        <Row title={t('Lock position')} desc={t('Stops the widget from being dragged by accident.')}><Switch on={s.lockPosition} onChange={v => set({ lockPosition: v })} /></Row>
+        <Row title={t('Widget position')} desc={t('Move it back to the top-right corner of the main screen.')}>
+          <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={() => api.resetPosition()}>{t('Reset position')}</button></Row>
       </Section>
     </>
   );
@@ -273,26 +293,25 @@ function AppearanceTab({ s, set }) {
       </Section>
       <Section label={t('Colour')}>
         <ColourPicker s={s} set={set} />
-        <Row title={t('Tint the background')} desc={t('Blends the colour into the background type. 0 % keeps the original look.')}>
+        <Row title={t('Tint the background')} desc={t('How much the background takes on the accent colour. 0 % = its own colour, 100 % = fully in the accent.')}>
           <input type="range" class="rng" min="0" max="100" step="5" value={Math.round((s.tint || 0) * 100)} onInput={e => set({ tint: Number(e.currentTarget.value) / 100 })} style={`--p:${Math.round((s.tint || 0) * 100)}%`} />
           <span class="tnum" style={`width:36px;text-align:right;font:400 12px/1 ${F};color:var(--color-neutral-300)`}>{Math.round((s.tint || 0) * 100)}%</span></Row>
       </Section>
       <Section label={t('Text colour')}>
         <TextColour s={s} set={set} />
       </Section>
-      <Section label={t('Display')}>
-        <Row title={t('Motion')} desc={t('Subtle keeps number roll-ups but stops breathing and pulsing; Off shows final values immediately.')}>
-          <Seg value={s.motion} onChange={v => set({ motion: v })} options={[['full', t('Full')], ['subtle', t('Subtle')], ['off', t('Off')]]} /></Row>
-        <Row title={t('Widget opacity')} desc={t('Lets the desktop show through the whole widget.')}>
+      <Section label={t('Effects')}>
+        <Row title={t('Widget opacity')} desc={t('Lets the desktop show through the whole widget, text included.')}>
           <input type="range" class="rng" min="50" max="100" step="5" value={pct} onInput={e => set({ opacity: Number(e.currentTarget.value) / 100 })} style={`--p:${(pct - 50) * 2}%`} />
           <span class="tnum" style={`width:36px;text-align:right;font:400 12px/1 ${F};color:var(--color-neutral-300)`}>{pct}%</span></Row>
-        <Row title={t('Number format')}><Seg value={s.numberFormat} onChange={v => set({ numberFormat: v })} options={[['en', '1,284,640.50'], ['cs', '1 284 640,50']]} /></Row>
+        <Row title={t('Motion')} desc={t('Subtle keeps number roll-ups but stops breathing and pulsing; Off shows final values immediately.')}>
+          <Seg value={s.motion} onChange={v => set({ motion: v })} options={[['full', t('Full')], ['subtle', t('Subtle')], ['off', t('Off')]]} /></Row>
       </Section>
     </>
   );
 }
 
-function DataTab({ s, set, st }) {
+function DataTab({ s, set, st, info }) {
   const [cleared, setCleared] = useState(false);
   const mk = marketStatus(new Date(), st && st.marketCodes);
   return (
@@ -303,32 +322,22 @@ function DataTab({ s, set, st }) {
         <Row title={t('Pause when markets are closed')} desc={t('Uses the exchanges of your holdings ({x}). While they are closed the widget shows the closed state and syncs every 10 minutes.', { x: mk.names })}>
           <Switch on={s.pauseWhenClosed} onChange={v => set({ pauseWhenClosed: v })} /></Row>
       </Section>
-      <Section label={t('Currency')}>
-        <Row title={t('Display currency')} desc={t('Account = no conversion. Others use daily ECB rates (frankfurter.dev).')}>
-          <Seg value={s.displayCurrency} onChange={v => set({ displayCurrency: v })} options={[['account', t('Account')], ['CZK', 'CZK'], ['EUR', 'EUR'], ['USD', 'USD'], ['GBP', 'GBP']]} size={11} /></Row>
-      </Section>
-      <Section label={t('History')}>
+      <Section label={t('Chart history')}>
         <Row title={t('Fill gaps in the chart')} desc={t('When the PC was off, the missing part is rebuilt from market prices (Yahoo Finance) using your current holdings.')}>
           <Switch on={s.fillGaps !== false} onChange={v => set({ fillGaps: v })} /></Row>
-        <Row title={t('Chart history')} desc={t('Stored on this PC — about 1 MB even after years. Day P/L is measured from the last value before midnight.')}>
+        <Row title={t('Clear history')} desc={t('Stored on this PC — about 1 MB even after years. The day change is measured from the last value before midnight.')}>
           <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={async () => { await api.clearHistory(); setCleared(true); setTimeout(() => setCleared(false), 2000); }}>
             {cleared ? <><i class="ph ph-check" style={`color:${UP}`}></i>{t('Cleared')}</> : t('Clear history')}</button></Row>
+      </Section>
+      <Section label={t('Stored on this computer')}>
+        <Row title={t('Data folder')} desc={info.dataDir}>
+          <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={() => api.openDataFolder()}>{t('Open')}</button></Row>
       </Section>
     </>
   );
 }
 
 // ── updates ──────────────────────────────────────────────────
-const UPD_ERR = {
-  notfound: 'No release on GitHub, or the repository is private and no token is set.',
-  auth: 'The GitHub token doesn’t work — check it below.',
-  rate: 'GitHub is rate limiting — will try again later.',
-  network: 'GitHub is unreachable — check the connection.',
-  http: 'GitHub returned an error.',
-  verify: 'The download couldn’t be verified against the release — not installing.',
-  noasset: 'The release has no file for this computer.'
-};
-
 function updateLine(u, now) {
   if (!u) return t('Not checked yet');
   switch (u.status) {
@@ -337,19 +346,16 @@ function updateLine(u, now) {
     case 'downloading': return t('Downloading {p} %', { p: Math.round((u.progress || 0) * 100) });
     case 'ready': return t('Installing — the widget restarts in a moment.');
     case 'none': return t('You have the latest version · checked {x}', { x: agoStr(u.checkedAt, now) });
-    case 'error': return t(UPD_ERR[u.error && u.error.kind] || 'GitHub returned an error.');
+    case 'error': return updErr(u.error);
     default: return t('Not checked yet');
   }
 }
 
 function Updates({ s, set, info }) {
   const [u, setU] = useState(info.update);
-  const [hasTok, setHasTok] = useState(!!info.hasGhToken);
-  const [tok, setTok] = useState('');
   const [now, setNow] = useState(Date.now());
   useEffect(() => { api.onUpdate(setU); const i = setInterval(() => setNow(Date.now()), 15e3); return () => clearInterval(i); }, []);
   const busy = u && (u.status === 'checking' || u.status === 'downloading' || u.status === 'ready');
-  const saveTok = async v => { const ok = await api.setGithubToken(v); setHasTok(ok); setTok(''); if (ok) api.checkUpdate(); };
   const err = u && u.status === 'error';
   return (
     <Section label={t('Updates')}>
@@ -371,16 +377,6 @@ function Updates({ s, set, info }) {
         <Switch on={s.autoUpdate !== false} onChange={v => set({ autoUpdate: v })} /></Row>
       {s.skippedVersion && <Row title={t('Skipped version')} desc={t('Version {v} won’t be offered automatically.', { v: s.skippedVersion })}>
         <button type="button" class="btn btn-ghost" style="font-size:12.5px" onClick={() => set({ skippedVersion: null })}>{t('Offer again')}</button></Row>}
-      <Row top title={t('GitHub token')} desc={hasTok
-        ? t('Saved and encrypted. Only needed while the repository is private.')
-        : t('Only needed while the repository is private: a fine-grained token with read-only access to Contents of t212-widget.')}>
-        {hasTok
-          ? <button type="button" class="btn btn-ghost" style={`font-size:12.5px;color:${DOWN}`} onClick={() => saveTok(null)}>{t('Remove')}</button>
-          : <form style="display:flex;gap:8px" onSubmit={e => { e.preventDefault(); if (tok.trim()) saveTok(tok.trim()); }}>
-              <input class="input mono" type="password" spellcheck={false} value={tok} placeholder="github_pat_…" onInput={e => setTok(e.currentTarget.value)} style="width:170px;font-size:12px" />
-              <button type="submit" class="btn btn-secondary" style="font-size:12.5px" disabled={!tok.trim()}>{t('Save')}</button>
-            </form>}
-      </Row>
     </Section>
   );
 }
@@ -391,26 +387,12 @@ function SystemTab({ s, set, info }) {
       <Section label={t('Language')}>
         <Row title={t('Language')} desc={t('Widget, menus and this window.')}><Seg value={s.language || 'cs'} onChange={v => set({ language: v })} options={[['cs', 'Čeština'], ['en', 'English']]} /></Row>
       </Section>
-      {MAC && <Section label={t('Menu bar')}>
-        <Row title={t('Show portfolio in')} desc={t('Menu bar = click the icon at the top of the screen. Desktop = floating widget like on Windows.')}>
-          <Seg value={s.macMode || 'menubar'} onChange={v => set({ macMode: v })} options={[['menubar', t('Menu bar')], ['desktop', t('Desktop')], ['both', t('Both')]]} /></Row>
-        <Row title={t('Text next to the icon')}>
-          <Seg value={s.menuBarText || 'value'} onChange={v => set({ menuBarText: v })} options={[['value', t('Value')], ['change', t('Day change')], ['none', t('Icon only')]]} /></Row>
-        <Row title={t('Panel size')} desc={t('Size of the panel that opens from the menu bar.')}>
-          <Seg value={s.popoverSize || 'medium'} onChange={v => set({ popoverSize: v })} options={[['small', t('Small')], ['medium', t('Medium')], ['large', t('Large')], ['rail', t('Rail')]]} /></Row>
-      </Section>}
       <Section label={MAC ? 'macOS' : t('Windows')}>
         <Row title={MAC ? t('Open at login') : t('Start with Windows')} desc={t('Launch the widget when you sign in. Settings and position are remembered.')}><Switch on={s.startWithWindows} onChange={v => set({ startWithWindows: v })} /></Row>
-        <Row title={t('Keep on top')} desc={t('Float above other windows instead of sitting on the desktop.')}><Switch on={s.alwaysOnTop} onChange={v => set({ alwaysOnTop: v })} /></Row>
-        <Row title={t('Lock position')} desc={t('Stops the widget from being dragged by accident.')}><Switch on={s.lockPosition} onChange={v => set({ lockPosition: v })} /></Row>
-        <Row title={t('Widget position')} desc={t('Move it back to the top-right corner of the main screen.')}>
-          <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={() => api.resetPosition()}>{t('Reset position')}</button></Row>
       </Section>
       <Updates s={s} set={set} info={info} />
       <Section label={t('App')}>
-        <Row title={t('Data folder')} desc={info.dataDir}>
-          <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={() => api.openDataFolder()}>{t('Open')}</button></Row>
-        <Row title={`T212 Widget ${info.version}`} desc={t('Unofficial desktop widget using the Trading 212 public API. Read-only.')}>
+        <Row title="T212 Widget" desc={t('Unofficial desktop widget using the Trading 212 public API. Read-only.')}>
           <button type="button" class="btn btn-ghost" style={`font-size:12.5px;color:${DOWN}`} onClick={() => api.quit()}><i class="ph ph-power"></i>{t('Quit app')}</button></Row>
       </Section>
     </>
@@ -455,7 +437,7 @@ function App({ init }) {
           {tab === 'account' && <AccountTab s={s} st={st} set={set} />}
           {tab === 'widget' && <WidgetTab s={s} set={set} />}
           {tab === 'appearance' && <AppearanceTab s={s} set={set} />}
-          {tab === 'data' && <DataTab s={s} set={set} st={st} />}
+          {tab === 'data' && <DataTab s={s} set={set} st={st} info={init} />}
           {tab === 'system' && <SystemTab s={s} set={set} info={init} />}
         </main>
         <footer style="position:relative;display:flex;align-items:center;gap:10px;margin:0 28px;padding:14px 0 18px;border-top:1px solid rgba(var(--ink-rgb),.08)">

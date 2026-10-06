@@ -40,12 +40,15 @@
   window.__emit = (k, v) => ls[k].forEach(f => f(v));
   const noop = () => Promise.resolve(true);
   window.api = {
-    init: () => Promise.resolve({ settings, state, version: '1.3.0', platform: cfg.platform || 'win32', dataDir: 'C:\\Users\\jovan\\AppData\\Roaming\\T212 Widget' }),
+    init: () => Promise.resolve({ settings, state, update: cfg.update || { status: 'none', current: '1.6.3', checkedAt: Date.now() - 120e3 }, version: '1.6.3', platform: cfg.platform || 'win32', dataDir: 'C:\\Users\\jovan\\AppData\\Roaming\\T212 Widget' }),
     setSettings: p => { Object.assign(settings, p); window.__emit('settings', { ...settings }); return Promise.resolve(settings); },
     refresh: noop, openSettings: noop, hideWidget: noop, showWidget: noop, quit: noop, closeSettings: noop, minimizeSettings: noop,
     clearHistory: noop, openDataFolder: noop, openExternal: noop, resetPosition: noop,
     connect: () => new Promise(() => {}), disconnect: noop, getAutostart: () => Promise.resolve(true),
     drag: () => {}, setIgnoreMouse: () => {},
+    checkUpdate: noop, installUpdate: noop, updateAnswer: () => {}, closeUpdate: () => {},
+    getUpdateDialog: () => Promise.resolve(cfg.dialog || null),
+    onUpdate: () => {}, onUpdateDialog: () => {},
     onState: cb => ls.state.push(cb), onSettings: cb => ls.settings.push(cb), onGotoTab: () => {}
   };
 })();

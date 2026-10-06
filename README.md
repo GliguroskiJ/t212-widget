@@ -31,7 +31,7 @@ npm test            # test API klienta proti falešnému T212 serveru
 - V repu ani v CI žádné klíče nejsou (testy používají smyšlené `KEY`/`SECRET`); `.gitignore` navíc blokuje soubory s daty aplikace.
 - Testovací přepínače adres (`T212_BASE`, `T212_UPDATE_API`) fungují jen v testech, v nainstalované aplikaci se ignorují.
 - Okna: sandbox, contextIsolation, přísná CSP, žádná navigace ani nová okna; externí odkazy jen na trading212.com a github.com.
-- Aktualizace: instaluje se jen po potvrzení a jen soubor, jehož SHA-256 sedí s vydáním; GitHub token jde jen na api.github.com.
+- Aktualizace: instaluje se jen po potvrzení a jen soubor, jehož SHA-256 sedí s vydáním. Žádné přihlašovací údaje ke GitHubu aplikace nemá.
 
 ## Aktualizace
 Aplikace sama hlídá GitHub Releases: při spuštění (tedy i po zapnutí počítače), po probuzení ze spánku,
@@ -42,9 +42,9 @@ Stažený soubor se ověří proti velikosti a SHA-256 z vydání, pak:
 - **macOS** — rozbalí se `.zip`, po ukončení aplikace ji skript vymění (stará verze zůstane, dokud není nová na místě) a otevře.
   Aplikace musí běžet ze složky, kam může zapisovat (typicky `Aplikace`), ne přímo ze Stažených.
 
-Dokud je repozitář soukromý, potřebuje GitHub token (fine-grained, *Contents: Read-only* jen pro `t212-widget`)
-v Nastavení → Systém → Aktualizace. Ukládá se šifrovaně vedle API klíčů. U veřejného repa není potřeba.
-`main/updater.js`, test: `node scripts/test-updater.js`, smoke v Electronu: `xvfb-run electron --no-sandbox scripts/smoke-update.js`.
+Aktualizace čtou veřejné GitHub Releases — **repozitář musí být veřejný** (žádný token se v aplikaci nezadává).
+Dotaz i stahování probíhají v okně ve stylu aplikace (pozadí, barva, text podle nastavení).
+`main/updater.js` + `src/update.jsx`, test: `node scripts/test-updater.js`, smoke v Electronu: `xvfb-run electron --no-sandbox scripts/smoke-update.js`.
 
 ## macOS
 Stejná aplikace běží i na Macu: ikona v horní liště (klik = panel s widgetem, pravý klik = menu),
