@@ -1,6 +1,6 @@
 // Autostart against a fake Electron login-item API that mimics the Windows Run key.
 const assert = require('assert');
-const { isEnabled, apply, NAME } = require('../main/autostart');
+const { isEnabled, apply, reconcile, state, NAME } = require('../main/autostart');
 const EXE = 'C:\\Users\\me\\AppData\\Local\\Programs\\t212-widget\\T212 Widget.exe';
 function fakeApp(items) {
   const reg = new Map(items.map(i => [i.name, { ...i }]));
@@ -38,4 +38,16 @@ assert.deepEqual([...app.reg.keys()].sort(), [NAME, 'Spotify'].sort());
 // 6) macOS keeps Electron's own state
 const mac = { getLoginItemSettings: () => ({ openAtLogin: true }), setLoginItemSettings: o => { mac.last = o; } };
 assert.equal(isEnabled(mac, 'darwin'), true); apply(mac, false, 'darwin'); assert.equal(mac.last.openAtLogin, false);
+// 7) the reported bug: an update's uninstaller deleted the entry; user still wants autostart → written again, On
+app = fakeApp([]);
+assert.equal(state(app, 'win32', EXE), 'missing');
+assert.equal(reconcile(app, true, 'win32', EXE), true); assert.deepEqual([...app.reg.keys()], [NAME]);
+// 8) user switched it off in Task Manager → stays off, entry untouched
+app = fakeApp([{ name: NAME, path: EXE, enabled: false }]);
+assert.equal(reconcile(app, true, 'win32', EXE), false); assert.equal(app.reg.get(NAME).enabled, false);
+// 9) not wanted and missing → stays off, nothing written
+app = fakeApp([]); assert.equal(reconcile(app, false, 'win32', EXE), false); assert.equal(app.reg.size, 0);
+// 10) turned on outside the app (old name) → On, tidied to one entry
+app = fakeApp([{ name: 'electron.app.T212 Widget', path: EXE }]);
+assert.equal(reconcile(app, false, 'win32', EXE), true); assert.deepEqual([...app.reg.keys()], [NAME]);
 console.log('AUTOSTART TESTS PASSED');

@@ -544,10 +544,9 @@ app.whenReady().then(() => {
     store.set({ firstLaunchDone: true });
     applyAutostart(store.get('startWithWindows'));
   } else if (app.isPackaged) {
-    // the switch shows what Windows/macOS will really do (it may have been changed in Task Manager)
-    const real = autostart.isEnabled(app);
-    if (real !== store.get('startWithWindows')) store.set({ startWithWindows: real });
-    if (real) applyAutostart(true);   // tidies entries left by older builds under other names
+    // keep the user's choice: re-write a missing entry, but respect "disabled" from Task Manager
+    const on = autostart.reconcile(app, !!store.get('startWithWindows'));
+    if (on !== store.get('startWithWindows')) store.set({ startWithWindows: on });
   }
   setupUpdater();
   registerIpc();
