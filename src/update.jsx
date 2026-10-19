@@ -4,14 +4,13 @@ import { useState, useEffect } from 'preact/hooks';
 import { applyTheme, applyMotion, ditheredBg, UP, DOWN } from './shared.js';
 import { t, setLang } from './i18n.js';
 import { updErr, BLOCKER } from './updtext.js';
+import { Tile } from './ui.jsx';
 
 const api = window.api;
 const F = "'Inter',sans-serif";
 const W = 480, H = 350;
 
-const Tile = () => (
-  <div style="width:22px;height:22px;border-radius:6px;border:1px solid var(--color-accent-700);background:var(--color-accent-900);display:flex;align-items:center;justify-content:center;font:600 9px/1 ui-monospace,Menlo,monospace;color:var(--color-accent-300);flex:none">212</div>
-);
+
 const Eyebrow = ({ children }) => (
   <span style={`font:400 9.5px/1 ${F};letter-spacing:.13em;text-transform:uppercase;color:var(--color-neutral-600)`}>{children}</span>
 );

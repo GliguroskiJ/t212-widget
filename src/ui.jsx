@@ -57,13 +57,29 @@ export function useFlash(value, motion) {
 }
 
 // ── small pieces ─────────────────────────────────────────────
-export function Tile({ px = 22, muted }) {
-  const fs = px <= 20 ? 8.5 : px <= 22 ? 9 : 9.5;
-  const r = px <= 20 ? 5 : 6;
+// The app mark: rising bars with a trend line (same geometry as the app icon, scripts/make-icon.py)
+export function Mark({ size = 18, muted, bar, line }) {
+  const b = bar || (muted ? 'var(--color-neutral-600)' : 'var(--color-accent-400)');
+  const l = line || (muted ? 'var(--color-neutral-400)' : UP);
   return (
-    <div style={`width:${px}px;height:${px}px;border-radius:${r}px;flex:none;display:flex;align-items:center;justify-content:center;font:600 ${fs}px/1 ui-monospace,Menlo,monospace;` +
-      (muted ? 'border:1px solid var(--color-neutral-800);background:rgba(var(--ink-rgb),.04);color:var(--color-neutral-500)'
-        : 'border:1px solid var(--color-accent-700);background:var(--color-accent-900);color:var(--color-accent-300)')}>212</div>
+    <svg viewBox="3 3 18 18" width={size} height={size} style="display:block;flex:none;overflow:visible" aria-hidden="true">
+      <rect x="5" y="12.5" width="3" height="5.5" rx=".9" fill={b} opacity=".8"></rect>
+      <rect x="10.5" y="9.5" width="3" height="8.5" rx=".9" fill={b} opacity=".8"></rect>
+      <rect x="16" y="6.5" width="3" height="11.5" rx=".9" fill={b} opacity=".8"></rect>
+      <path d="M4.6 13.4 L9.4 10.6 L13.4 11.9 L19.4 5.6" fill="none" stroke={l} stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path>
+      <circle cx="19.4" cy="5.6" r="1.7" fill={muted ? 'var(--color-neutral-300)' : '#d9fff0'}></circle>
+    </svg>
+  );
+}
+
+export function Tile({ px = 22, muted }) {
+  const r = px <= 20 ? 5 : px <= 24 ? 6 : 7;
+  return (
+    <div style={`width:${px}px;height:${px}px;border-radius:${r}px;flex:none;display:flex;align-items:center;justify-content:center;box-sizing:border-box;` +
+      (muted ? 'border:1px solid var(--color-neutral-800);background:rgba(var(--ink-rgb),.04)'
+        : 'border:1px solid var(--color-accent-700);background:linear-gradient(150deg,var(--color-accent-800),var(--color-accent-900) 70%);box-shadow:0 0 12px rgba(var(--acc-rgb),.18)')}>
+      <Mark size={Math.round(px * 0.68)} muted={muted} />
+    </div>
   );
 }
 

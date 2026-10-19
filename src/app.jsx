@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useMemo, useContext, useCallback } from 'p
 import { UP, DOWN, applyTheme, ditheredBg, applyMotion, makeFmt, agoStr, hhmm, linePath, accentRamp, tint } from './shared.js';
 import { t, setLang, locale } from './i18n.js';
 import {
-  F, useNow, Tile, Dot, Eyebrow, FillChart, Chart, RangeChips, useModel, Pill, GrowBar, axisLabels, Alloc, Connect, errorCopy
+  F, useNow, Tile, Mark, Dot, Eyebrow, FillChart, Chart, RangeChips, useModel, Pill, GrowBar, axisLabels, Alloc, Connect, errorCopy
 } from './ui.jsx';
 import { SETTINGS_TABS, setMac, Seg, AccountTab, AppearanceTab, DataTab, SystemTab, WidgetTab } from './settings-tabs.jsx';
 
@@ -1003,7 +1003,7 @@ function Boot({ ready, bg }) {
   if (gone) return null;
   return (
     <div class={'boot' + (out ? ' out' : '')} style={`background-image:url(${bg})`}>
-      <div class="boot-logo"><span class="boot-ring"></span><span class="boot-ring r2"></span><span class="boot-tile">212</span></div>
+      <div class="boot-logo"><span class="boot-ring"></span><span class="boot-ring r2"></span><span class="boot-tile"><Mark size={42} /></span></div>
       <span class="boot-name">Trading 212 <span>· Invest</span></span>
       <span class="boot-bar"><i></i></span>
     </div>
