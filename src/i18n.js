@@ -505,4 +505,11 @@ const CS = {
   'Launch in the background when you sign in — the widget appears, the app opens from the tray.': 'Spustit na pozadí po přihlášení — objeví se widget, aplikace se otevře z lišty.',
   'Unofficial desktop app using the Trading 212 public API. Read-only — it can’t place or cancel orders.': 'Neoficiální desktopová aplikace nad veřejným API Trading 212. Jen ke čtení — neumí zadat ani zrušit příkaz.',
   'Open app': 'Otevřít aplikaci',
+  'Hide the widget': 'Skrýt widget',
+  'Show the widget on the desktop': 'Zobrazit widget na ploše',
+  'Widget hidden': 'Widget skrytý',
+  'Widget shown on the desktop': 'Widget je zobrazený na ploše',
+  'Widget shown on the desktop and in the menu bar': 'Widget je zobrazený na ploše i v řádku nabídek',
+  'Syncing history…': 'Synchronizuji historii…',
+  'Report requested': 'Report zažádán',
 };

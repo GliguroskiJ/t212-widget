@@ -212,7 +212,7 @@ function openApp(route) {
   appWin = new BrowserWindow({
     ...b, minWidth: APP_MIN_W, minHeight: APP_MIN_H,
     show: false, backgroundColor: '#12131b', title: 'T212 Widget', icon: ICON,
-    ...(IS_MAC ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 18 } } : { frame: false }),
+    ...(IS_MAC ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 20, y: 25 } } : { frame: false }),
     webPreferences: { preload: path.join(ROOT, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   appWin.loadFile(path.join(ROOT, 'app', 'app.html'), { query: { route: route || '' } });
@@ -584,6 +584,7 @@ const LIB = {
   prices: a => lib.prices({ ticker: str(a.ticker), isin: a.isin ? str(a.isin, 20) : null, range: str(a.range, 4), refPrice: Number(a.refPrice) || null }),
   quotes: a => lib.quotes((Array.isArray(a.positions) ? a.positions : []).slice(0, 200).map(p => ({ ticker: str(p && p.ticker), isin: p && p.isin ? str(p.isin, 20) : null, price: Number(p && p.price) || null }))),
   exports: a => lib.exportsList(!!a.force),
+  logos: a => lib.logos(Array.isArray(a.tickers) ? a.tickers.slice(0, 300).map(x => str(x, 40)) : []),
   requestExport: a => lib.requestExport({ from: Number(a.from), to: Number(a.to), dividends: !!a.dividends, interest: !!a.interest, orders: !!a.orders, transactions: !!a.transactions }),
   download: a => downloadExport(Number(a.id)),
   sync: a => { lib.sync(Array.isArray(a.kinds) ? a.kinds.filter(k => HIST.includes(k)) : HIST); return true; },

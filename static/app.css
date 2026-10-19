@@ -84,3 +84,11 @@ body.m-off .pulse-dot{opacity:0!important}
   .loop,.breathe{animation:none!important}
   .pulse-dot{animation:none!important;opacity:0!important}
 }
+
+/* widget corner menu: compact, never taller than the card (scrolls if it must) */
+.corner + .menu{max-height:calc(100% - 30px);overflow-y:auto;scrollbar-width:none}
+.corner + .menu::-webkit-scrollbar{display:none}
+.corner + .menu .mi{padding:6px 9px}
+.corner + .menu .mlabel{padding:6px 9px 5px}
+.corner + .menu .msz{padding:5px 0}
+.corner + .menu .msep{margin:3px 6px}

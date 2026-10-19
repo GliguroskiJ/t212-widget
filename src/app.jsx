@@ -44,7 +44,7 @@ const Card = ({ title, right, children, style = '', pad = 18, cls = '' }) => (
   <section class={'card ' + cls} style={`padding:${pad}px;${style}`}>
     {(title || right) && (
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;min-height:20px">
-        {title && <Eyebrow size={10}>{title}</Eyebrow>}
+        {title && <span class="card-title">{title}</span>}
         <span style="flex:1"></span>
         {right}
       </div>
@@ -73,7 +73,7 @@ const Spinner = ({ size = 14 }) => <span style={`width:${size}px;height:${size}p
 function Empty({ icon = 'ph-tray', title, text, children }) {
   return (
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:46px 20px;text-align:center">
-      <i class={'ph ' + icon} style="font-size:28px;color:var(--color-accent-400);opacity:.8"></i>
+      <span class="empty-ico"><i class={'ph ' + icon}></i></span>
       <span style={`font:500 13px/1.3 ${F};color:var(--color-neutral-200)`}>{title}</span>
       {text && <span style={`font:400 12px/1.55 ${F};color:var(--color-neutral-500);max-width:52ch`}>{text}</span>}
       {children}
@@ -82,9 +82,9 @@ function Empty({ icon = 'ph-tray', title, text, children }) {
 }
 
 // a section that needs an API permission the key may not have
-function Gate({ status, perm, children, loading, retry }) {
+function Gate({ status, perm, children, loading, retry, inCard }) {
   if (status && status.state === 'forbidden') {
-    return (
+    const body = (
       <Empty icon="ph-lock-simple" title={t('The API key is missing “{p}”', { p: perm })}
         text={t('Create a new key in Trading 212 → Settings → API (Beta) with this permission ticked and paste it in Settings → Account. Everything else keeps working.')}>
         <div style="display:flex;gap:10px;margin-top:6px">
@@ -93,6 +93,7 @@ function Gate({ status, perm, children, loading, retry }) {
         </div>
       </Empty>
     );
+    return inCard ? body : <section class="card gate" style="grid-column:1/-1">{body}</section>;
   }
   if (loading) return <div style="display:flex;justify-content:center;padding:40px"><Spinner size={18} /></div>;
   return children;
@@ -100,6 +101,56 @@ function Gate({ status, perm, children, loading, retry }) {
 
 let navRef = null;
 const useNav = () => navRef;
+
+// distinct colours for charts and allocation (not tied to the accent, so slices are easy to tell apart)
+export const CAT = ['#8b9cff', '#5fd4b0', '#f5b85c', '#f2789f', '#b48cff', '#4fc3e8', '#e8875a', '#a8d672'];
+const OTHER = '#5a5e6e';
+const catColor = i => CAT[i % CAT.length];
+// colour of a holding = its place by value (same as in the allocation donut)
+const holdColor = (ticker, positions) => { const i = positions.findIndex(p => p.ticker === ticker); return i < 0 ? OTHER : i < 5 ? catColor(i) : OTHER; };
+
+// company logos (Trading 212 icon store via main, cached on disk) — batched, shared by all rows
+const logoStore = { map: {}, pending: new Set(), subs: new Set(), timer: null };
+function requestLogo(tk) {
+  if (!tk || tk in logoStore.map || logoStore.pending.has(tk)) return;
+  logoStore.pending.add(tk);
+  clearTimeout(logoStore.timer);
+  logoStore.timer = setTimeout(async () => {
+    const list = [...logoStore.pending];
+    logoStore.pending.clear();
+    const r = await api.lib('logos', { tickers: list });
+    for (const tk of list) logoStore.map[tk] = (r && !r.error && r[tk]) || null;
+    logoStore.subs.forEach(f => f());
+  }, 40);
+}
+function useLogo(tk) {
+  const [, set] = useState(0);
+  useEffect(() => { const f = () => set(x => x + 1); logoStore.subs.add(f); requestLogo(tk); return () => logoStore.subs.delete(f); }, [tk]);
+  return logoStore.map[tk];
+}
+function Logo({ ticker, sym, lg, badge, badgeColor }) {
+  const src = useLogo(ticker);
+  return (
+    <span class={'sym' + (lg ? ' lg' : '') + (src ? ' img' : '')}>
+      {src ? <img src={src} alt="" draggable={false} /> : (sym || '?').slice(0, 4)}
+      {badge && <i class={'sym-badge ph ' + badge} style={badgeColor ? `color:${badgeColor}` : ''}></i>}
+    </span>
+  );
+}
+
+// small toasts (bottom right)
+let toastRef = null;
+const toast = (text, icon = 'ph-check-circle') => toastRef && toastRef(text, icon);
+function Toasts() {
+  const [list, setList] = useState([]);
+  toastRef = (text, icon) => {
+    const id = Math.random();
+    setList(l => [...l.slice(-2), { id, text, icon }]);
+    setTimeout(() => setList(l => l.map(x => (x.id === id ? { ...x, out: true } : x))), 2600);
+    setTimeout(() => setList(l => l.filter(x => x.id !== id)), 3000);
+  };
+  return <div class="toasts">{list.map(x => <div key={x.id} class={'toast' + (x.out ? ' out' : '')}><i class={'ph ' + x.icon}></i>{x.text}</div>)}</div>;
+}
 
 function Sparkline({ values, color, w = 72, h = 20 }) {
   return (
@@ -152,9 +203,6 @@ function lastMonths(n, now = new Date()) {
 
 // donut + legend from any list of {label, value}
 function Donut({ items, fmt, center, centerLabel, size = 170 }) {
-  const { settings } = useApp();
-  const ar = accentRamp(settings.accent || '#9184d9');
-  const RAMP = [ar[3], ar[4], ar[5], ar[6], ar[7], '#4b4f5e'];
   const total = items.reduce((a, x) => a + Math.max(0, x.value), 0) || 1;
   let list = items.filter(x => x.value > 0).sort((a, b) => b.value - a.value).map(x => ({ ...x, weight: (x.value / total) * 100 }));
   if (list.length > 6) {
@@ -164,7 +212,7 @@ function Donut({ items, fmt, center, centerLabel, size = 170 }) {
   const maxS = Math.max(1, ...list.map(s => s.weight));
   const m = {
     fmt, d: { invested: center },
-    slices: list.map((s, i) => ({ sym: s.label, weight: s.weight, color: RAMP[s.other ? 5 : Math.min(i, 5)], allocStr: fmt(s.weight, 1), barW: (s.weight / maxS) * 88 + '%' }))
+    slices: list.map((s, i) => ({ sym: s.label, weight: s.weight, color: s.other ? OTHER : catColor(i), allocStr: fmt(s.weight, 1), barW: (s.weight / maxS) * 88 + '%' }))
   };
   return <div class="donut" style={`--dsize:${size}px`}><Alloc m={m} key={list.map(x => x.label).join()} />{centerLabel && <span class="donut-lbl">{centerLabel}</span>}</div>;
 }
@@ -199,9 +247,10 @@ function sortRows(rows, sort) {
   });
 }
 
-const SymCell = ({ sym, name }) => (
+const SymCell = ({ sym, name, ticker, dot }) => (
   <span style="display:flex;align-items:center;gap:10px;min-width:0">
-    <span class="sym">{(sym || '?').slice(0, 4)}</span>
+    <Logo ticker={ticker} sym={sym} />
+    {dot && <span style={`width:6px;height:6px;border-radius:50%;flex:none;margin-left:-4px;background:${dot}`}></span>}
     <span style="display:flex;flex-direction:column;gap:3px;min-width:0">
       <span style={`font:500 12.5px/1.1 ${F};color:var(--color-neutral-100);overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}>{sym}</span>
       <span style={`font:400 11px/1.1 ${F};color:var(--color-neutral-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap`}>{name}</span>
@@ -281,7 +330,7 @@ function Overview({ m, closed }) {
         <div style="display:flex;flex-direction:column;gap:2px">
           {d.positions.slice(0, 7).map(p => (
             <div class="lrow click" onClick={() => nav.go('instrument', p.ticker)}>
-              <SymCell sym={p.sym} name={p.name} />
+              <SymCell sym={p.sym} name={p.name} ticker={p.ticker} />
               <span style="flex:1"></span>
               <Sparkline values={p.spark} color={p.plPct >= 0 ? UP : DOWN} />
               <span class="num" style="width:110px;text-align:right">{m.fmt(p.value, 0)}</span>
@@ -298,7 +347,7 @@ function Overview({ m, closed }) {
       <Card title={t('Today’s movers')} style="grid-column:span 5" right={quotes.loading && !quotes.data ? <Spinner size={12} /> : <span class="muted">{t('vs. previous close')}</span>}>
         {movers.length ? movers.map(p => (
           <div class="lrow click" onClick={() => nav.go('instrument', p.ticker)}>
-            <SymCell sym={p.sym} name={p.name} />
+            <SymCell sym={p.sym} name={p.name} ticker={p.ticker} />
             <span style="flex:1"></span>
             <span class="num" style="width:96px;text-align:right;color:var(--color-neutral-400)">{m.fmt(q[p.ticker].last, 2)} {q[p.ticker].currency || ''}</span>
             <span style="width:76px;display:flex;justify-content:flex-end"><Chip color={p.day >= 0 ? UP : DOWN} bg={tint(p.day >= 0 ? UP : DOWN)}>{m.fmt.signed(p.day, 2)}%</Chip></span>
@@ -332,7 +381,7 @@ function ActivityRow({ x, fmt, fx, cur, compact }) {
   if (x.kind === 'dividends') {
     return (
       <div class="lrow click" onClick={() => nav.go('instrument', x.ticker)}>
-        <span class="ico" style={`color:${UP}`}><i class="ph ph-coins"></i></span>
+        <Logo ticker={x.ticker} sym={x.sym} badge="ph-coins" badgeColor={UP} />
         <span style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1">
           <span class="t1">{t('Dividend')} · {x.sym}</span>
           <span class="t2">{dfmt(x.time)}{x.qty ? ' · ' + t('{q} shares × {p} {c}', { q: fmt(x.qty, x.qty % 1 ? 3 : 0), p: fmt(x.perShare || 0, 4), c: x.tickerCurrency || '' }) : ''}</span>
@@ -358,7 +407,7 @@ function ActivityRow({ x, fmt, fx, cur, compact }) {
   const fillNote = x.fillType && x.fillType !== 'TRADE' ? ' · ' + x.fillType.replace(/_/g, ' ').toLowerCase() : '';
   return (
     <div class="lrow click" onClick={() => nav.go('instrument', x.ticker)}>
-      <span class="ico" style={`color:${x.side === 'SELL' ? DOWN : UP}`}><i class={'ph ' + (x.side === 'SELL' ? 'ph-arrow-up-right' : 'ph-arrow-down-left')}></i></span>
+      <Logo ticker={x.ticker} sym={x.sym} badge={x.side === 'SELL' ? 'ph-arrow-up-right' : 'ph-arrow-down-left'} badgeColor={x.side === 'SELL' ? DOWN : UP} />
       <span style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1">
         <span class="t1">{x.side === 'SELL' ? t('Sold') : t('Bought')} {x.sym}{!compact && <span style="color:var(--color-neutral-500);font-weight:400"> · {x.name}</span>}</span>
         <span class="t2">{dtfmt(x.time)} · {fmt(x.qty || 0, (x.qty || 0) % 1 ? 4 : 0)} × {fmt(x.price || 0, 2)} {x.instrCur || ''}{x.type ? ' · ' + typeName(x.type) : ''}{fillNote}</span>
@@ -383,7 +432,7 @@ function Holdings({ m }) {
     .map(p => ({ ...p, day: qq[p.ticker] ? qq[p.ticker].pct : null })), sort);
   const totPl = d.positions.reduce((a, p) => a + p.pl, 0);
   const cols = [
-    { label: t('Instrument'), flex: 2.4, sort: 'sym', render: p => <SymCell sym={p.sym} name={p.name} /> },
+    { label: t('Instrument'), flex: 2.4, sort: 'sym', render: p => <SymCell sym={p.sym} name={p.name} ticker={p.ticker} /> },
     { label: t('Qty'), align: 'right', sort: 'qty', render: p => <span class="num">{m.fmt(p.qty, p.qty % 1 ? 4 : 0)}</span> },
     { label: t('Avg price'), align: 'right', sort: 'avg', render: p => <span class="num">{m.fmt(p.avg, 2)} <span class="muted">{p.avgCur}</span></span> },
     { label: t('Price'), align: 'right', sort: 'price', render: p => <span class="num">{m.fmt(p.price, 2)}</span> },
@@ -393,7 +442,7 @@ function Holdings({ m }) {
     { label: '%', w: 74, align: 'right', sort: 'plPct', render: p => <span class="num" style={`color:${p.plPct >= 0 ? UP : DOWN}`}>{m.fmt.signed(p.plPct, 2)}%</span> },
     { label: t('Weight'), w: 92, align: 'right', sort: 'weight', render: p => (
       <span style="display:flex;align-items:center;gap:7px;justify-content:flex-end">
-        <span style="width:34px;height:3px;border-radius:2px;background:rgba(var(--ink-rgb),.07);overflow:hidden"><GrowBar color="var(--color-accent-500)" w={Math.min(100, p.weight * 2.5) + '%'} /></span>
+        <span style="width:34px;height:3px;border-radius:2px;background:rgba(var(--ink-rgb),.07);overflow:hidden"><GrowBar color={holdColor(p.ticker, d.positions)} w={Math.min(100, p.weight * 2.5) + '%'} /></span>
         <span class="num">{m.fmt(p.weight, 1)}%</span></span>) }
   ];
   return (
@@ -461,7 +510,7 @@ function Instrument({ ticker, m }) {
     <div class="grid">
       <Card style="grid-column:1/-1;min-height:360px;display:flex;flex-direction:column" pad={22}>
         <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
-          <span class="sym lg">{sym.slice(0, 4)}</span>
+          <Logo ticker={ticker} sym={sym} lg />
           <div style="display:flex;flex-direction:column;gap:6px;min-width:0">
             <span style={`font:500 17px/1.2 ${F};color:var(--color-neutral-100)`}>{name}</span>
             <span style={`display:flex;gap:8px;align-items:center;flex-wrap:wrap;font:400 11.5px/1 ${F};color:var(--color-neutral-500)`}>
@@ -569,7 +618,7 @@ function Activity({ m, tab: tab0 }) {
           {ks.state === 'syncing' && <Spinner size={11} />}
           {ks.state === 'syncing' ? t('Downloading… {n} so far', { n: ks.count || 0 }) : ks.syncedAt ? t('{n} items · synced {x}', { n: ks.count || 0, x: agoStr(ks.syncedAt, Date.now()) }) : ''}
         </span>
-        <button class="btn btn-secondary" style="font-size:12px;padding:5px 10px" disabled={L.syncing} onClick={() => api.lib('sync', { kinds: [tab] })}><i class="ph ph-arrows-clockwise"></i>{t('Sync')}</button>
+        <button class="btn btn-secondary" style="font-size:12px;padding:5px 10px" disabled={L.syncing} onClick={() => { api.lib('sync', { kinds: [tab] }); toast(t('Syncing history…'), 'ph-arrows-clockwise'); }}><i class="ph ph-arrows-clockwise"></i>{t('Sync')}</button>
       </div>
       <Gate status={ks} perm={permName} retry={() => api.lib('retry', { kind: tab })}>
         {S && tab === 'dividends' && <>
@@ -580,12 +629,12 @@ function Activity({ m, tab: tab0 }) {
             <Kpi label={t('Yield on cost')} value={m.d.totalCost ? m.fmt(S.dividends.last12 * fx / m.d.totalCost * 100, 2) + ' %' : '—'} sub={t('last 12 months ÷ cost')} />
           </div>
           <Card title={t('Dividends by month')} style="grid-column:span 8">
-            <Bars months={months} fmt={m.fmt} cur={cur} series={[{ label: t('Dividends'), color: 'var(--color-accent-400)', get: k => (S.dividends.byMonth[k] || 0) * fx }]} />
+            <Bars months={months} fmt={m.fmt} cur={cur} series={[{ label: t('Dividends'), color: CAT[1], get: k => (S.dividends.byMonth[k] || 0) * fx }]} />
           </Card>
           <Card title={t('Top payers')} style="grid-column:span 4">
             {S.dividends.byTicker.slice(0, 6).map(x => (
               <div class="lrow click" onClick={() => nav.go('instrument', x.ticker)}>
-                <SymCell sym={x.sym} name={x.name} /><span style="flex:1"></span>
+                <SymCell sym={x.sym} name={x.name} ticker={x.ticker} /><span style="flex:1"></span>
                 <span class="num">{m.fmt(x.amount * fx, 0)} {cur}</span>
               </div>))}
           </Card>
@@ -639,7 +688,7 @@ function PendingRow({ o, fmt }) {
   return (
     <div class="lrow click" onClick={() => nav.go('instrument', o.ticker)}>
       <Side side={o.side} />
-      <SymCell sym={o.sym} name={o.name} />
+      <SymCell sym={o.sym} name={o.name} ticker={o.ticker} />
       <span style="flex:1"></span>
       <span class="t2" style="width:120px">{typeName(o.type)}{o.tif ? ' · ' + (o.tif === 'DAY' ? t('day') : 'GTC') : ''}{o.extended ? ' · ' + t('ext.') : ''}</span>
       <span class="num" style="width:110px;text-align:right">{o.qty != null ? fmt(o.qty, o.qty % 1 ? 4 : 0) + ' ' + t('pcs') : o.value != null ? fmt(o.value, 2) : '—'}</span>
@@ -660,7 +709,7 @@ function Orders({ m }) {
       <Card style="grid-column:1/-1" title={t('Pending orders')} right={<>
         <span class="muted">{t('Read-only — manage orders in Trading 212.')}</span>
         <button class="btn btn-secondary" style="font-size:12px;padding:5px 10px" disabled={busy} onClick={refresh}>{busy ? <Spinner size={11} /> : <i class="ph ph-arrows-clockwise"></i>}{t('Refresh')}</button></>}>
-        <Gate status={st.lib && st.lib.pending} perm="Orders – Read" loading={res.loading && !res.data} retry={refresh}>
+        <Gate inCard status={st.lib && st.lib.pending} perm="Orders – Read" loading={res.loading && !res.data} retry={refresh}>
           {res.err && !list.length ? <Empty icon="ph-warning-circle" title={t('Couldn’t load orders')} text={res.err.message} />
             : list.length ? list.map(o => <PendingRow o={o} fmt={m.fmt} />)
               : <Empty icon="ph-check-circle" title={t('No pending orders')} text={t('Limit, stop and other waiting orders show up here.')} />}
@@ -738,14 +787,14 @@ function PieDetail({ id, m }) {
           sub={p.dividendAction ? (p.dividendAction === 'REINVEST' ? t('reinvested') : t('paid to cash')) : ''} />
       </div>
       <Card title={t('Composition')} style="grid-column:span 8" right={<span class="muted">{t('current vs. target share')}</span>}>
-        {p.instruments.map(i => (
+        {p.instruments.map((i, ix) => (
           <div class="lrow click" onClick={() => nav.go('instrument', i.ticker)}>
-            <SymCell sym={i.sym} name={i.name} />
+            <SymCell sym={i.sym} name={i.name} ticker={i.ticker} />
             <span style="flex:1"></span>
             {i.issues.length > 0 && <Chip color={DOWN} bg={tint(DOWN)}><i class="ph ph-warning"></i>{i.issues.map(x => x.name.replace(/_/g, ' ').toLowerCase()).join(', ')}</Chip>}
             <span style="width:150px;display:flex;flex-direction:column;gap:4px">
               <span style="position:relative;height:5px;border-radius:3px;background:rgba(var(--ink-rgb),.07)">
-                <span style={`position:absolute;left:0;top:0;bottom:0;border-radius:3px;width:${Math.min(100, (i.current || 0) * 2)}%;background:var(--color-accent-500)`}></span>
+                <span style={`position:absolute;left:0;top:0;bottom:0;border-radius:3px;width:${Math.min(100, (i.current || 0) * 2)}%;background:${ix < 5 ? catColor(ix) : OTHER}`}></span>
                 <span style={`position:absolute;top:-3px;bottom:-3px;width:2px;border-radius:1px;left:${Math.min(100, (i.expected || 0) * 2)}%;background:var(--color-neutral-200)`} title={t('target')}></span>
               </span>
               <span class="t2" style="display:flex;justify-content:space-between"><span>{m.fmt(i.current || 0, 1)} %</span><span>{t('target {p} %', { p: m.fmt(i.expected || 0, 1) })}</span></span>
@@ -786,7 +835,7 @@ function Reports({ m }) {
     const f = new Date(from + 'T00:00:00').getTime(), tt = new Date(to + 'T23:59:59').getTime();
     const r = await api.lib('requestExport', { from: f, to: tt, ...inc });
     if (r && r.error) setMsg({ ok: false, text: r.error.message });
-    else { setMsg({ ok: true, text: t('Report requested — Trading 212 prepares it in a minute or two.') }); setTimeout(() => { api.lib('exports', { force: true }).then(() => res.reload()); }, 8000); }
+    else { toast(t('Report requested'), 'ph-file-csv'); setMsg({ ok: true, text: t('Report requested — Trading 212 prepares it in a minute or two.') }); setTimeout(() => { api.lib('exports', { force: true }).then(() => res.reload()); }, 8000); }
     setTimeout(() => setBusy(false), 31e3);
   };
   const download = async r => {
@@ -818,7 +867,7 @@ function Reports({ m }) {
         </div>
       </Card>
       <Card title={t('Reports')} style="grid-column:span 7" right={pending ? <span class="muted" style="display:flex;gap:6px;align-items:center"><Spinner size={11} />{t('preparing…')}</span> : null}>
-        <Gate status={st.lib && st.lib.exports} perm="History – Orders / Dividends / Transactions" loading={res.loading && !res.data}>
+        <Gate inCard status={st.lib && st.lib.exports} perm="History – Orders / Dividends / Transactions" loading={res.loading && !res.data}>
           {list.length ? list.map(r => {
             const [sl, sc] = STAT[r.status] || [t('Preparing'), 'var(--color-accent-300)'];
             const inc = r.include || {};
@@ -913,7 +962,7 @@ function Search() {
         <div class="menu sres">
           {res.map((r, i) => (
             <button class={'mi' + (i === sel ? ' on' : '')} onMouseEnter={() => setSel(i)} onClick={() => pick(r)}>
-              <span class="sym">{(r.sym || '?').slice(0, 4)}</span>
+              <Logo ticker={r.ticker} sym={r.sym} />
               <span style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1">
                 <span style="color:var(--color-neutral-100);font-weight:500">{r.sym}</span>
                 <span style="color:var(--color-neutral-500);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{r.name}</span>
@@ -932,10 +981,27 @@ function Search() {
 function WinControls() {
   if (MAC) return null;
   return (
-    <div class="winctl">
+    <div class="winctl nodrag">
       <button class="tb" title={t('Minimise')} onClick={() => api.appWindow('minimize')}><i class="ph ph-minus"></i></button>
       <button class="tb" title={t('Maximise')} onClick={() => api.appWindow('maximize')}><i class="ph ph-square"></i></button>
       <button class="tb close" title={t('Close')} onClick={() => api.appWindow('close')}><i class="ph ph-x"></i></button>
+    </div>
+  );
+}
+
+// boot: logo with a pulse while the first data arrives, then it lifts away
+function Boot({ ready, bg }) {
+  const [min, setMin] = useState(false);
+  const [gone, setGone] = useState(false);
+  useEffect(() => { const h = setTimeout(() => setMin(true), 1100); return () => clearTimeout(h); }, []);
+  const out = ready && min;
+  useEffect(() => { if (!out) return; const h = setTimeout(() => setGone(true), 700); return () => clearTimeout(h); }, [out]);
+  if (gone) return null;
+  return (
+    <div class={'boot' + (out ? ' out' : '')} style={`background-image:url(${bg})`}>
+      <div class="boot-logo"><span class="boot-ring"></span><span class="boot-ring r2"></span><span class="boot-tile">212</span></div>
+      <span class="boot-name">Trading 212 <span>· Invest</span></span>
+      <span class="boot-bar"><i></i></span>
     </div>
   );
 }
@@ -1048,6 +1114,8 @@ function App({ init }) {
   else body = <Overview m={m} closed={closed} />;
 
   const ctx = { st: stFull, settings, set, setAppRange, nav, libTick, init };
+  const widgetOn = !!settings.showWidget && (!MAC || settings.macMode !== 'menubar');
+  const ready = !!st.data || !st.connected || st.status === 'error';
   return (
     <Ctx.Provider value={ctx}>
       <div class={'appwin' + (MAC ? ' mac' : '')} style={`background-image:url(${bg})`}>
@@ -1067,8 +1135,14 @@ function App({ init }) {
               </button>
             ))}
             <span style="flex:1"></span>
+            <button class={'nav-i' + (widgetOn ? ' w-on' : '')} title={widgetOn ? t('Hide the widget') : t('Show the widget on the desktop')} onClick={() => {
+              if (widgetOn) { api.hideWidget(); toast(t('Widget hidden'), 'ph-eye-slash'); }
+              else { api.showWidget(); toast(MAC && settings.macMode === 'menubar' ? t('Widget shown on the desktop and in the menu bar') : t('Widget shown on the desktop'), 'ph-app-window'); }
+            }}>
+              <i class="ph ph-app-window"></i><span>{t('Widget')}</span>
+              <span class={'sw mini' + (widgetOn ? ' on' : '')} aria-hidden="true"><span class="knob"></span></span>
+            </button>
             <button class={'nav-i' + (page === 'settings' ? ' on' : '')} onClick={() => go('settings', 'account')}><i class="ph ph-gear-six"></i><span>{t('Settings')}</span></button>
-            <button class="nav-i" onClick={() => api.showWidget()} title={t('Show widget')}><i class="ph ph-app-window"></i><span>{t('Widget')}</span></button>
           </nav>
           <SideStatus st={stFull} now={now} />
         </aside>
@@ -1081,10 +1155,12 @@ function App({ init }) {
               {st.connected && <Search />}
               <button class="tb" title={t('Refresh now')} onClick={() => { api.refresh(); api.lib('sync'); }}><i class="ph ph-arrow-clockwise"></i></button>
             </div>
-            <div class="nodrag"><WinControls /></div>
+            <WinControls />
           </header>
           <main class="main-scroll scroll" key={page + ':' + (page === 'settings' ? '' : arg)}>{body}</main>
         </div>
+        <Toasts />
+        {settings.motion !== 'off' && <Boot ready={ready} bg={bg} />}
       </div>
     </Ctx.Provider>
   );

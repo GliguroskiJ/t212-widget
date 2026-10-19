@@ -110,6 +110,7 @@
     exports: () => [{ id: 9, status: 'Finished', from: now - 280 * DAY, to: now, link: 'https://x', include: { includeOrders: true, includeDividends: true, includeTransactions: true } },
       { id: 8, status: 'Processing', from: now - 30 * DAY, to: now, include: { includeDividends: true } },
       { id: 7, status: 'Failed', from: now - 700 * DAY, to: now - 365 * DAY, include: { includeOrders: true } }],
+    logos: a => Object.fromEntries(a.tickers.map((tk, i) => [tk, i % 3 === 2 ? null : 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="14" fill="' + ['#76b900', '#0a66c2', '#111', '#e31937', '#d62d20'][i % 5] + '"/><text x="32" y="40" font-family="Arial" font-weight="700" font-size="20" fill="#fff" text-anchor="middle">' + tk.slice(0, 2) + '</text></svg>')])),
     requestExport: () => ({ id: 10 }), download: () => ({ saved: true }), sync: () => true, retry: () => true, wipe: () => true
   };
 })();

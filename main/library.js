@@ -22,6 +22,7 @@ const KINDS = {
 const PRICE_RANGES = { '1D': ['1d', '5m'], '1W': ['5d', '30m'], '1M': ['1mo', '1d'], '3M': ['3mo', '1d'], '1Y': ['1y', '1d'], '5Y': ['5y', '1wk'], 'MAX': ['max', '1mo'] };
 const PRICE_TTL = { '1D': 120e3, '1W': 600e3 };
 const DAY = 86400e3;
+const LOGO_BASE = 'https://trading212equities.s3.eu-central-1.amazonaws.com/';
 
 function atomicWrite(file, data) {
   const tmp = file + '.tmp';
@@ -126,7 +127,10 @@ class Library extends EventEmitter {
     this.fetch = fetchImpl || fetch;
     this.now = now || Date.now;
     this.limiter = limiter || new Limiter();
-    this.file = path.join(dir || store.dir, 'activity.json');
+    this.dir = dir || store.dir;
+    this.file = path.join(this.dir, 'activity.json');
+    this.dayCache = {};         // symbol → today's quote (previous close, day range)
+    this.logoMiss = null;       // ticker → time Trading 212 had no logo for it
     this.metaFile = path.join(dir || store.dir, 'metadata.json');
     this.data = this.load();
     this.meta = readJson(this.metaFile, null) || { instruments: null, exchanges: null };
@@ -642,12 +646,60 @@ class Library extends EventEmitter {
     const [r, iv] = PRICE_RANGES[range];
     let res = null;
     try { res = await chart(this.fetch, sym, r, iv); } catch {}
-    const data = res ? { ticker, range, symbol: sym, pts: res.pts, last: res.last, meta: res.meta } : { ticker, range, symbol: sym, pts: [] };
+    // the chart's own "previous close" is the close before the whole range (a year ago on 1Y) →
+    // take the real last session close (and today's range) from the 1-day chart
+    const dq = await this.dayQuote(sym);
+    const qmeta = res ? { ...res.meta, prevClose: dq ? dq.prevClose : null, dayHigh: dq ? dq.dayHigh : res.meta.dayHigh, dayLow: dq ? dq.dayLow : res.meta.dayLow } : null;
+    const data = res ? { ticker, range, symbol: sym, pts: res.pts, last: dq && dq.last ? dq.last : res.last, meta: qmeta } : { ticker, range, symbol: sym, pts: [] };
     if (res) this.mem.prices[key] = { at: this.now(), data };
     // keep the cache small
     const keys = Object.keys(this.mem.prices);
     if (keys.length > 120) for (const k of keys.slice(0, keys.length - 120)) delete this.mem.prices[k];
     return data;
+  }
+
+  async dayQuote(sym) {
+    const c = this.dayCache[sym];
+    if (c && this.now() - c.at < 120e3) return c.q;
+    let q = null;
+    try {
+      const r = await chart(this.fetch, sym, '1d', '5m');
+      if (r && r.meta && r.meta.prevClose) q = { last: r.last, prevClose: r.meta.prevClose, dayHigh: r.meta.dayHigh, dayLow: r.meta.dayLow, currency: r.meta.currency };
+    } catch {}
+    this.dayCache[sym] = { at: this.now(), q };
+    return q;
+  }
+
+  // company logos from Trading 212's public icon store, cached on disk (misses retried after a week)
+  async logos(tickers) {
+    const dir = path.join(this.dir, 'logos');
+    const missFile = path.join(dir, '_missing.json');
+    if (!this.logoMiss) this.logoMiss = readJson(missFile, {}) || {};
+    const out = {};
+    let missChanged = false;
+    for (const tk of [...new Set(tickers)].slice(0, 300)) {
+      if (!/^[A-Za-z0-9._-]{1,40}$/.test(tk)) { out[tk] = null; continue; }
+      const f = path.join(dir, tk + '.png');
+      try { out[tk] = 'data:image/png;base64,' + fs.readFileSync(f).toString('base64'); continue; } catch {}
+      if (this.logoMiss[tk] && this.now() - this.logoMiss[tk] < 7 * DAY) { out[tk] = null; continue; }
+      out[tk] = null;
+      try {
+        const r = await this.fetch(LOGO_BASE + encodeURIComponent(tk) + '.png');
+        const type = (r.headers && r.headers.get && r.headers.get('content-type')) || '';
+        if (r.ok && /^image\//.test(type)) {
+          const buf = Buffer.from(await r.arrayBuffer());
+          if (buf.length > 64 && buf.length < 400e3) {
+            fs.mkdirSync(dir, { recursive: true });
+            fs.writeFileSync(f, buf);
+            out[tk] = 'data:' + type.split(';')[0] + ';base64,' + buf.toString('base64');
+            continue;
+          }
+        }
+        this.logoMiss[tk] = this.now(); missChanged = true;
+      } catch { /* offline: try again next time */ }
+    }
+    if (missChanged) { try { fs.mkdirSync(dir, { recursive: true }); fs.writeFileSync(missFile, JSON.stringify(this.logoMiss)); } catch {} }
+    return out;
   }
 
   // today's move of each held position (previous close from Yahoo) — for "movers"
@@ -659,9 +711,8 @@ class Library extends EventEmitter {
       try {
         const sym = await this.resolveSymbol(p.ticker, p.isin, p.price);
         if (!sym) { map[p.ticker] = null; continue; }
-        const c = await chart(this.fetch, sym, '1d', '5m');
-        const prev = c && c.meta && c.meta.prevClose;
-        map[p.ticker] = c && prev ? { last: c.last, prevClose: prev, pct: (c.last / prev - 1) * 100, symbol: sym, currency: c.meta.currency } : null;
+        const q = await this.dayQuote(sym);
+        map[p.ticker] = q ? { last: q.last, prevClose: q.prevClose, pct: (q.last / q.prevClose - 1) * 100, symbol: sym, currency: q.currency } : null;
       } catch { map[p.ticker] = null; }
       await new Promise(r => setTimeout(r, 120));
     }

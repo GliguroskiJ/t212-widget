@@ -170,6 +170,20 @@ srv.listen(0, async () => {
   await assert.rejects(lib.requestExport({ from: now, to: now - 1 }));
   console.log('pending/pies/meta/exports ok');
 
+  // 9b) logos: fetched once, cached on disk, misses remembered
+  let logoCalls = 0;
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(200, 1)]);
+  const lf = async u => { logoCalls++; return u.includes('AAPL') ? new Response(png, { headers: { 'content-type': 'image/png' } }) : new Response('no', { status: 403 }); };
+  const ldir = fs.mkdtempSync(path.join(os.tmpdir(), 't212logo-'));
+  const ll = new Library({ store, fetchImpl: lf, limiter: fast(), dir: ldir });
+  let lg = await ll.logos(['AAPL_US_EQ', 'NOPE_US_EQ', '../evil']);
+  assert.ok(lg.AAPL_US_EQ.startsWith('data:image/png;base64,')); assert.equal(lg.NOPE_US_EQ, null); assert.equal(lg['../evil'], null);
+  assert.equal(logoCalls, 2);
+  const ll2 = new Library({ store, fetchImpl: lf, limiter: fast(), dir: ldir });
+  lg = await ll2.logos(['AAPL_US_EQ', 'NOPE_US_EQ']);
+  assert.ok(lg.AAPL_US_EQ); assert.equal(logoCalls, 2);
+  console.log('logos ok');
+
   // 9) limiter spacing really spaces calls per key, keys are independent
   const L = new Limiter({ intervals: { a: 60, b: 0 } });
   const t0 = Date.now(); const times = [];
