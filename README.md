@@ -1,7 +1,20 @@
 # T212 Widget
 
-Desktopový widget pro Windows 10/11, který čte účet Trading 212 přes veřejné API (klíč + secret, jen čtení).
-Design: Nocturne, směr **1a · Glass slate** (small, medium, large, rail + stavy loading / closed / error / first run).
+Desktopový widget a aplikace pro Windows 10/11 a macOS, které čtou účet Trading 212 přes veřejné API (klíč + secret, **jen čtení**).
+Design: Nocturne, směr **1a · Glass slate** — widget i aplikace sdílí stejné komponenty, motiv, barvu i text.
+
+## Aplikace (od 1.8.0)
+Otevře se z tray (*Otevřít aplikaci*, dvojklik), z menu widgetu nebo druhým spuštěním programu. Nic neobjednává ani neruší.
+- **Přehled** — hodnota portfolia s grafem (vlastní období 1D–ALL, hover), hotovost, investováno, nerealizovaný/realizovaný zisk,
+  dividendy letos, čisté vklady, top pozice, alokace (pozice / měna / trh), dnešní pohyby, poslední aktivita.
+- **Pozice** — řaditelná tabulka (počet, průměrná cena, cena, dnes, hodnota, zisk, váha), filtr. Klik → **detail instrumentu**:
+  cenový graf z Yahoo Finance (1D–MAX) s čarou průměrné nákupní ceny, burza a obchodní hodiny, vaše obchody, dividendy, čekající příkazy.
+- **Aktivita** — obchody (poplatky, realizovaný zisk), dividendy (po měsících, největší plátci, výnos z nákladů), vklady a výběry.
+- **Příkazy** — čekající příkazy (jen zobrazení). **Koláče** — výsledek, cíl, složení aktuální vs. cílové. **Reporty** — CSV export z Trading 212 se stažením.
+- **Nastavení** celé aplikace (Účet, Vzhled, Data, Systém) + záložka **Widget** jen pro widget. Hledání instrumentů: Ctrl/⌘ K.
+
+Potřebná oprávnění klíče: Account data, Portfolio; volitelně History – Orders / Dividends / Transactions, Orders – Read, Pies – Read, Metadata.
+Co klíč nemá, to se ukáže jen jako zamčená sekce. *Orders – Execute* a *Pies – Write* nezaškrtávejte.
 
 ## Build
 ```bash
@@ -13,13 +26,16 @@ npm test            # test API klienta proti falešnému T212 serveru
 
 ## Struktura
 - `main/` – Electron main process: okna, tray, autostart, nastavení, šifrované klíče (DPAPI), API poller, historie grafu
-- `src/` – UI (Preact): `widget.jsx`, `settings.jsx`, `shared.js` (tokeny, motivy, grafy)
+- `main/library.js` – historie (inkrementální sync do `activity.json`), příkazy, koláče, metadata, reporty, ceny z Yahoo; `main/limiter.js` – limity API po endpointech
+- `src/` – UI (Preact): `widget.jsx`, `app.jsx` (okno aplikace), `ui.jsx` (sdílené komponenty), `settings-tabs.jsx`, `shared.js` (tokeny, motivy, grafy)
 - `static/` – HTML, Nocturne CSS, lokální fonty/ikony se kopírují do `app/` při buildu
 - `scripts/` – build UI, ikona, afterPack (ikona exe přes resedit), testy, náhledy
 
 ## Data
 - `/api/v0/equity/account/summary` (hodnota, cash, P/L), `/api/v0/equity/positions`, `/api/v0/equity/history/dividends`
-- Nastavení, historie grafu a šifrované klíče: `%APPDATA%\T212 Widget\`
+- Aplikace navíc: `/equity/history/orders|transactions|exports`, `/equity/orders`, `/equity/pies`, `/equity/metadata/instruments|exchanges`
+  — každý endpoint má vlastní frontu podle limitu Trading 212, 429 se počká a zopakuje. Historie se stahuje jednou, pak jen nové položky.
+- Nastavení, historie grafu, stažená historie účtu (`activity.json`, `metadata.json`) a šifrované klíče: `%APPDATA%\T212 Widget\`
 - API nemá historii hodnoty portfolia → graf se nahrává lokálně od první synchronizace; denní P/L se počítá od poslední hodnoty před půlnocí.
 - Změna u hodnoty se řídí zvoleným obdobím grafu (1D/1W/1M/1Y/ALL) a počítá se z rozdílu P/L, takže vklady a výběry ji nezkreslí. Když historie ještě nesahá tak daleko, ukazuje se „od <datum>“. ALL = celkový P/L.
 - Najetím myší na graf se ukáže hodnota portfolia v danou chvíli a změna od začátku období (body doplněné z tržních cen jsou označené „odhad“).
@@ -31,6 +47,8 @@ npm test            # test API klienta proti falešnému T212 serveru
 - V repu ani v CI žádné klíče nejsou (testy používají smyšlené `KEY`/`SECRET`); `.gitignore` navíc blokuje soubory s daty aplikace.
 - Testovací přepínače adres (`T212_BASE`, `T212_UPDATE_API`) fungují jen v testech, v nainstalované aplikaci se ignorují.
 - Okna: sandbox, contextIsolation, přísná CSP, žádná navigace ani nová okna; externí odkazy jen na trading212.com a github.com.
+- Aplikace volá jen čtecí endpointy (test to hlídá); jediný POST je žádost o CSV report. Data z API smí číst jen okno aplikace, metody jsou na whitelistu.
+  CSV se stahuje z předpodepsaného odkazu bez API klíče a ukládá jen tam, kam ho uložíte.
 - Aktualizace: instaluje se jen po potvrzení a jen soubor, jehož SHA-256 sedí s vydáním. Žádné přihlašovací údaje ke GitHubu aplikace nemá.
 
 ## Aktualizace

@@ -30,6 +30,9 @@ const DEFAULTS = {
   popoverSize: 'medium',       // size of the menu-bar panel
   menuBarText: 'value',        // macOS menu-bar title: 'value' | 'change' | 'none'
   firstLaunchDone: false,
+  appRange: '1M',              // chart range on the app's overview (separate from the widget's)
+  appBounds: null,             // app window position/size
+  appMaximized: false,
   autoUpdate: true,            // check GitHub Releases on start, after sleep and daily at 12:00 — always asks first
   skippedVersion: null         // "Skip this version" → no automatic prompt for it
 };

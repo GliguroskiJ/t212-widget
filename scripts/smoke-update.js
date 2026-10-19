@@ -37,7 +37,7 @@ app.whenReady().then(async () => {
   const widget = findWin('widget.html');
   await widget.webContents.executeJavaScript("window.api.connect({env:'live',key:'K',secret:'S'})");
   await widget.webContents.executeJavaScript("window.api.openSettings('system')");
-  const settings = await until(() => findWin('settings.html'));
+  const settings = await until(() => findWin('app.html'));
   await wait(1500);
 
   // 1) manual check from settings → themed update window, "available"

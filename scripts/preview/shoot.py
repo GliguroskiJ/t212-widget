@@ -32,7 +32,7 @@ with sync_playwright() as p:
     for tab in (['system'] if not only or 'settings' in only else []):
         pg = b.new_page(viewport={'width': 760, 'height': 680}, device_scale_factor=1.5)
         pg.add_init_script('window.__MOCK=' + json.dumps({'platform': 'darwin', 'settings': {'theme': 'acrylic'}}) + ';' + mock)
-        pg.goto('file://' + ROOT + '/app/settings.html?tab=' + tab)
+        pg.goto('file://' + ROOT + '/app/app.html?route=settings/' + tab)
         pg.add_style_tag(content=':root:root{background:%s!important}' % WALL)
         pg.wait_for_timeout(1300)
         pg.screenshot(path=f'{OUT}/settings-{tab}.png')

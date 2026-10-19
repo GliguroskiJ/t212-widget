@@ -1,0 +1,711 @@
+'use strict';
+// Everything the full app shows beyond the live widget data: trade / dividend / cash history,
+// pending orders, pies, instrument metadata, CSV reports and price charts.
+// Read-only: no order or pie is ever created, changed or cancelled.
+//
+// History is synced incrementally into userData/activity.json (newest pages first until a known
+// item shows up, then the rest of the first full download continues from a saved cursor), so after
+// the first run only a page or two is fetched. All of it stays on this computer.
+
+const { EventEmitter } = require('events');
+const fs = require('fs');
+const path = require('path');
+const { apiRequest, shortTicker, marketOf } = require('./t212');
+const { Limiter } = require('./limiter');
+const { candidates, searchIsin, chart, plausible } = require('./backfill');
+
+const KINDS = {
+  orders: { path: '/equity/history/orders', limit: 'hOrders', scope: 'History – orders' },
+  dividends: { path: '/equity/history/dividends', limit: 'hDividends', scope: 'History – dividends' },
+  transactions: { path: '/equity/history/transactions', limit: 'hTransactions', scope: 'History – transactions' }
+};
+const PRICE_RANGES = { '1D': ['1d', '5m'], '1W': ['5d', '30m'], '1M': ['1mo', '1d'], '3M': ['3mo', '1d'], '1Y': ['1y', '1d'], '5Y': ['5y', '1wk'], 'MAX': ['max', '1mo'] };
+const PRICE_TTL = { '1D': 120e3, '1W': 600e3 };
+const DAY = 86400e3;
+
+function atomicWrite(file, data) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, data);
+  fs.renameSync(tmp, file);
+}
+function readJson(file, fallback) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
+}
+const num = v => (v == null || v === '' || !isFinite(Number(v)) ? null : Number(v));
+const ts = v => { const t = Date.parse(v); return isFinite(t) ? t : null; };
+
+// ── normalisers: API item → compact row for the renderer ─────────
+function instr(i, ticker) {
+  const tk = (i && i.ticker) || ticker || '';
+  return { ticker: tk, sym: shortTicker(tk), name: (i && i.name) || tk, isin: (i && i.isin) || null, instrCur: (i && i.currency) || null };
+}
+
+function normOrder(it) {
+  const o = it.order || it;
+  const f = it.fill || null;
+  const w = (f && f.walletImpact) || {};
+  const taxes = Array.isArray(w.taxes) ? w.taxes : [];
+  const qty = num(f && f.quantity) ?? num(o.filledQuantity) ?? num(o.quantity);
+  const side = o.side || (qty != null && qty < 0 ? 'SELL' : 'BUY');
+  return {
+    key: `${o.id}:${(f && f.id) || ''}`,
+    id: o.id,
+    ...instr(o.instrument, o.ticker),
+    side,
+    type: o.type || null,
+    status: o.status || null,
+    fillType: (f && f.type) || null,
+    qty: qty == null ? null : Math.abs(qty),
+    price: num(f && f.price) ?? num(o.limitPrice) ?? num(o.stopPrice),
+    value: num(w.netValue) ?? num(o.filledValue) ?? num(o.value),
+    currency: w.currency || o.currency || null,
+    fxRate: num(w.fxRate),
+    realized: num(w.realisedProfitLoss),
+    fees: taxes.reduce((a, x) => a + (num(x.quantity) || 0), 0),
+    taxes: taxes.map(x => ({ name: x.name, amount: num(x.quantity), currency: x.currency })),
+    time: ts(f && f.filledAt) ?? ts(o.createdAt),
+    created: ts(o.createdAt),
+    from: o.initiatedFrom || null,
+    tif: o.timeInForce || null,
+    extended: !!o.extendedHours
+  };
+}
+
+function normDividend(it) {
+  const t = ts(it.paidOn);
+  return {
+    key: it.reference || `${it.ticker}:${it.paidOn}:${it.amount}`,
+    ...instr(it.instrument, it.ticker),
+    amount: num(it.amount),
+    amountEur: num(it.amountInEuro),
+    perShare: num(it.grossAmountPerShare),
+    qty: num(it.quantity),
+    tickerCurrency: it.tickerCurrency || null,
+    type: it.type || null,
+    time: t
+  };
+}
+
+function normTransaction(it) {
+  return {
+    key: it.reference || `${it.type}:${it.dateTime}:${it.amount}`,
+    type: it.type || 'OTHER',
+    amount: num(it.amount),
+    currency: it.currency || null,
+    time: ts(it.dateTime)
+  };
+}
+
+function normPending(o) {
+  return {
+    id: o.id,
+    ...instr(o.instrument, o.ticker),
+    side: o.side || (num(o.quantity) < 0 ? 'SELL' : 'BUY'),
+    type: o.type, status: o.status,
+    qty: num(o.quantity) == null ? null : Math.abs(num(o.quantity)),
+    filledQty: num(o.filledQuantity),
+    value: num(o.value),
+    limitPrice: num(o.limitPrice), stopPrice: num(o.stopPrice),
+    currency: o.currency || null,
+    tif: o.timeInForce || null,
+    extended: !!o.extendedHours,
+    strategy: o.strategy || null,
+    from: o.initiatedFrom || null,
+    created: ts(o.createdAt)
+  };
+}
+
+const NORM = { orders: normOrder, dividends: normDividend, transactions: normTransaction };
+
+function monthKey(t) { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+
+class Library extends EventEmitter {
+  constructor({ store, fetchImpl, dir, limiter, now }) {
+    super();
+    this.store = store;
+    this.fetch = fetchImpl || fetch;
+    this.now = now || Date.now;
+    this.limiter = limiter || new Limiter();
+    this.file = path.join(dir || store.dir, 'activity.json');
+    this.metaFile = path.join(dir || store.dir, 'metadata.json');
+    this.data = this.load();
+    this.meta = readJson(this.metaFile, null) || { instruments: null, exchanges: null };
+    this.status = {};           // kind → { state, error, code, at, progress }
+    for (const k of [...Object.keys(KINDS), 'pending', 'pies', 'instruments', 'exports']) this.status[k] = { state: 'idle' };
+    this.syncing = null;
+    this.mem = { pending: null, pies: null, exports: null, prices: {}, quotes: null };
+    this.pieDetailRunning = false;
+    this._saveT = null;
+  }
+
+  empty(account) {
+    return { v: 1, account: account || null, orders: [], dividends: [], transactions: [],
+      cursor: {}, complete: {}, syncedAt: {}, pies: {} };
+  }
+  load() {
+    const d = readJson(this.file, null);
+    if (!d || d.v !== 1) return this.empty();
+    for (const k of Object.keys(KINDS)) if (!Array.isArray(d[k])) d[k] = [];
+    d.cursor = d.cursor || {}; d.complete = d.complete || {}; d.syncedAt = d.syncedAt || {}; d.pies = d.pies || {};
+    return d;
+  }
+  save() { try { atomicWrite(this.file, JSON.stringify(this.data)); } catch {} }
+  saveSoon() { clearTimeout(this._saveT); this._saveT = setTimeout(() => this.save(), 1000); }
+  saveMeta() { try { atomicWrite(this.metaFile, JSON.stringify(this.meta)); } catch {} }
+
+  creds() { return this.store.getCreds(); }
+  env() { return this.store.get('env'); }
+  call(limitKey, method, p, body) {
+    const creds = this.creds();
+    if (!creds) return Promise.reject(Object.assign(new Error('Not connected'), { status: 401 }));
+    const env = this.env();
+    return this.limiter.run(limitKey, () => apiRequest(this.fetch, env, creds, method, p, body));
+  }
+
+  // The cache belongs to one account: a different key/env/account starts from scratch.
+  setAccount(env, id) {
+    const acc = `${env}:${id}`;
+    if (this.data.account === acc) return false;
+    const fresh = !this.data.account;
+    this.data = this.empty(acc);
+    this.mem = { pending: null, pies: null, exports: null, prices: this.mem.prices, quotes: null };
+    for (const k of Object.keys(this.status)) this.status[k] = { state: 'idle' };
+    this.save();
+    if (!fresh) this.emitChange('account');
+    return true;
+  }
+  reset() {
+    this.data = this.empty(null);
+    this.mem = { pending: null, pies: null, exports: null, prices: {}, quotes: null };
+    for (const k of Object.keys(this.status)) this.status[k] = { state: 'idle' };
+    try { fs.unlinkSync(this.file); } catch {}
+    this.emitChange('account');
+  }
+
+  emitChange(what) { this.emit('change', { what, status: this.statusPayload() }); }
+
+  fail(kind, e) {
+    const code = (e && e.status) || 0;
+    this.status[kind] = {
+      state: code === 401 || code === 403 ? 'forbidden' : 'error',
+      code, error: (e && e.message) || String(e), at: this.now()
+    };
+  }
+
+  // ── history sync ─────────────────────────────────────────────
+  sync(kinds = Object.keys(KINDS)) {
+    if (this.syncing) { this.syncing.want = [...new Set([...this.syncing.want, ...kinds])]; return this.syncing.p; }
+    const job = { want: kinds.slice() };
+    job.p = (async () => {
+      while (job.want.length) {
+        const k = job.want.shift();
+        if (KINDS[k]) await this.syncKind(k);
+      }
+    })().finally(() => { this.syncing = null; this.emitChange('sync-done'); });
+    this.syncing = job;
+    return job.p;
+  }
+
+  async syncKind(kind) {
+    const def = KINDS[kind];
+    const list = this.data[kind];
+    const known = new Set(list.map(x => x.key));
+    const st = this.status[kind] = { state: 'syncing', progress: list.length, at: this.now() };
+    this.emitChange(kind);
+    const add = items => {
+      let fresh = 0, hitKnown = false;
+      for (const it of items) {
+        const row = NORM[kind](it);
+        if (known.has(row.key)) { hitKnown = true; continue; }
+        known.add(row.key);
+        list.push(row);
+        fresh++;
+      }
+      return { fresh, hitKnown };
+    };
+    try {
+      // 1) newest pages until we reach something we already have
+      let next = `${def.path}?limit=50`;
+      let pages = 0;
+      const firstEver = !this.data.complete[kind] && !this.data.cursor[kind] && !list.length;
+      while (next) {
+        const res = await this.call(def.limit, 'GET', next);
+        const items = (res && res.items) || [];
+        const { hitKnown } = add(items);
+        pages++;
+        next = res && res.nextPagePath ? res.nextPagePath : null;
+        if (firstEver) this.data.cursor[kind] = next; // first download: remember where we stopped
+        st.progress = list.length;
+        this.sortKind(kind);
+        this.saveSoon();
+        this.emitChange(kind);
+        if (!next) { if (firstEver) this.data.complete[kind] = true; break; }
+        if (hitKnown && !firstEver) break;
+      }
+      // 2) the rest of an interrupted first download
+      while (!this.data.complete[kind] && this.data.cursor[kind]) {
+        const res = await this.call(def.limit, 'GET', this.data.cursor[kind]);
+        add((res && res.items) || []);
+        this.data.cursor[kind] = (res && res.nextPagePath) || null;
+        if (!this.data.cursor[kind]) this.data.complete[kind] = true;
+        st.progress = list.length;
+        this.sortKind(kind);
+        this.saveSoon();
+        this.emitChange(kind);
+      }
+      if (!this.data.cursor[kind]) this.data.complete[kind] = true;
+      this.data.syncedAt[kind] = this.now();
+      this.status[kind] = { state: 'done', at: this.now(), count: list.length, pages };
+      this.save();
+    } catch (e) {
+      this.fail(kind, e);
+      this.save();
+    }
+    this.emitChange(kind);
+  }
+
+  sortKind(kind) { this.data[kind].sort((a, b) => (b.time || 0) - (a.time || 0)); }
+
+  // has the dividend list reached back to `since` (so a sum from it is complete)?
+  covers(kind, since) {
+    if (this.data.complete[kind]) return true;
+    const l = this.data[kind];
+    return l.length > 0 && (l[l.length - 1].time || Infinity) < since;
+  }
+
+  dividendsSince(since) {
+    if (!this.covers('dividends', since)) return null;
+    return this.data.dividends.reduce((a, d) => a + (d.time >= since ? d.amount || 0 : 0), 0);
+  }
+
+  // ── queries for the renderer ─────────────────────────────────
+  statusPayload() {
+    const out = {};
+    for (const [k, v] of Object.entries(this.status)) out[k] = { ...v };
+    for (const k of Object.keys(KINDS)) {
+      out[k].count = this.data[k].length;
+      out[k].complete = !!this.data.complete[k];
+      out[k].syncedAt = this.data.syncedAt[k] || null;
+    }
+    out.syncing = !!this.syncing;
+    out.pendingCount = this.mem.pending ? this.mem.pending.list.length : 0;
+    return out;
+  }
+
+  // newest items of all three histories, merged (overview "Recent activity")
+  recent(limit = 8) {
+    const n = Math.max(1, Math.min(50, Number(limit) || 8));
+    const all = [];
+    for (const k of Object.keys(KINDS)) for (const x of this.data[k].slice(0, n)) all.push({ ...x, kind: k });
+    return all.filter(x => !(x.kind === 'orders' && x.fillType && x.fillType !== 'TRADE')).sort((a, b) => (b.time || 0) - (a.time || 0)).slice(0, n);
+  }
+
+  // forget the downloaded history (Settings → Data); the next sync starts from scratch
+  wipe() {
+    const acc = this.data.account;
+    this.data = this.empty(acc);
+    for (const k of Object.keys(KINDS)) this.status[k] = { state: 'idle' };
+    this.save();
+    this.emitChange('account');
+  }
+
+  activity({ kind, ticker, q, type, from, to, offset = 0, limit = 100 } = {}) {
+    if (!KINDS[kind]) return { items: [], total: 0 };
+    let l = this.data[kind];
+    if (ticker) l = l.filter(x => x.ticker === ticker);
+    if (type) l = l.filter(x => (kind === 'orders' ? x.side === type : x.type === type));
+    if (from) l = l.filter(x => (x.time || 0) >= from);
+    if (to) l = l.filter(x => (x.time || 0) < to);
+    if (q) {
+      const s = String(q).toLowerCase();
+      l = l.filter(x => (x.sym && x.sym.toLowerCase().includes(s)) || (x.name && x.name.toLowerCase().includes(s)) ||
+        (x.isin && x.isin.toLowerCase() === s) || (x.type && x.type.toLowerCase().includes(s)));
+    }
+    return { items: l.slice(offset, offset + Math.min(500, limit)), total: l.length };
+  }
+
+  // totals and monthly buckets for the overview / activity charts
+  stats() {
+    const now = new Date(this.now());
+    const yearStart = new Date(now.getFullYear(), 0, 1).getTime();
+    const d = { total: 0, ytd: 0, last12: 0, byMonth: {}, byTicker: {}, count: this.data.dividends.length };
+    const since12 = this.now() - 365 * DAY;
+    for (const x of this.data.dividends) {
+      const a = x.amount || 0;
+      d.total += a;
+      if (x.time >= yearStart) d.ytd += a;
+      if (x.time >= since12) d.last12 += a;
+      if (x.time) d.byMonth[monthKey(x.time)] = (d.byMonth[monthKey(x.time)] || 0) + a;
+      const t = d.byTicker[x.ticker] || (d.byTicker[x.ticker] = { ticker: x.ticker, sym: x.sym, name: x.name, amount: 0, count: 0 });
+      t.amount += a; t.count++;
+    }
+    const c = { deposits: 0, withdrawals: 0, interest: 0, fees: 0, transfers: 0, byMonth: {} };
+    for (const x of this.data.transactions) {
+      const a = x.amount || 0;
+      if (x.type === 'DEPOSIT') c.deposits += Math.abs(a);
+      else if (x.type === 'WITHDRAW') c.withdrawals += Math.abs(a);
+      else if (x.type === 'INTEREST_ON_FREE_CASH' || x.type === 'LENDING_INTEREST') c.interest += a;
+      else if (x.type === 'FEE') c.fees += Math.abs(a);
+      else if (x.type === 'TRANSFER') c.transfers += a;
+      if (x.time && (x.type === 'DEPOSIT' || x.type === 'WITHDRAW')) {
+        const m = c.byMonth[monthKey(x.time)] || (c.byMonth[monthKey(x.time)] = { in: 0, out: 0 });
+        if (x.type === 'DEPOSIT') m.in += Math.abs(a); else m.out += Math.abs(a);
+      }
+    }
+    c.net = c.deposits - c.withdrawals;
+    const o = { count: 0, buys: 0, sells: 0, realized: 0, fees: 0, bought: 0, sold: 0, byMonth: {} };
+    for (const x of this.data.orders) {
+      if (x.fillType && x.fillType !== 'TRADE') continue;
+      o.count++;
+      if (x.side === 'SELL') { o.sells++; o.sold += Math.abs(x.value || 0); } else { o.buys++; o.bought += Math.abs(x.value || 0); }
+      o.realized += x.realized || 0;
+      o.fees += x.fees || 0;
+      if (x.time) o.byMonth[monthKey(x.time)] = (o.byMonth[monthKey(x.time)] || 0) + 1;
+    }
+    d.byTicker = Object.values(d.byTicker).sort((a, b) => b.amount - a.amount);
+    return {
+      dividends: { ...d, complete: !!this.data.complete.dividends },
+      cash: { ...c, complete: !!this.data.complete.transactions },
+      orders: { ...o, complete: !!this.data.complete.orders },
+      firstActivity: Math.min(...['orders', 'dividends', 'transactions'].map(k => {
+        const l = this.data[k]; return l.length ? l[l.length - 1].time || Infinity : Infinity;
+      }))
+    };
+  }
+
+  // ── pending orders (1 / 5 s) ─────────────────────────────────
+  async pending(force) {
+    const m = this.mem.pending;
+    if (m && !force && this.now() - m.at < 15e3) return m.list;
+    try {
+      const res = await this.call('orders', 'GET', '/equity/orders');
+      const list = (Array.isArray(res) ? res : (res && res.items) || []).map(normPending).sort((a, b) => (b.created || 0) - (a.created || 0));
+      this.mem.pending = { at: this.now(), list };
+      this.status.pending = { state: 'done', at: this.now() };
+      return list;
+    } catch (e) {
+      this.fail('pending', e);
+      if (m) return m.list;
+      throw e;
+    }
+  }
+
+  // ── pies (list 1 / 30 s, detail 1 / 5 s) ─────────────────────
+  // The list has no names, so details are fetched one by one in the background and cached.
+  async pies(force) {
+    const m = this.mem.pies;
+    if (!m || force || this.now() - m.at > 60e3) {
+      try {
+        const res = await this.call('pies', 'GET', '/equity/pies');
+        this.mem.pies = { at: this.now(), list: Array.isArray(res) ? res : [] };
+        this.status.pies = { state: 'done', at: this.now() };
+        this.loadPieDetails();
+      } catch (e) {
+        this.fail('pies', e);
+        if (!m) throw e;
+      }
+    }
+    return this.piesPayload();
+  }
+
+  piesPayload() {
+    const list = (this.mem.pies && this.mem.pies.list) || [];
+    return list.map(p => {
+      const det = this.data.pies[p.id];
+      const s = (det && det.settings) || {};
+      const r = p.result || {};
+      return {
+        id: p.id,
+        name: s.name || null,
+        icon: s.icon || null,
+        goal: num(s.goal),
+        endDate: ts(s.endDate),
+        created: ts(s.creationDate),
+        dividendAction: s.dividendCashAction || null,
+        cash: num(p.cash),
+        progress: num(p.progress),
+        status: p.status || null,
+        invested: num(r.priceAvgInvestedValue),
+        value: num(r.priceAvgValue),
+        result: num(r.priceAvgResult),
+        resultPct: num(r.priceAvgResultCoef) == null ? null : num(r.priceAvgResultCoef) * 100,
+        dividends: p.dividendDetails ? { gained: num(p.dividendDetails.gained), inCash: num(p.dividendDetails.inCash), reinvested: num(p.dividendDetails.reinvested) } : null,
+        count: det && Array.isArray(det.instruments) ? det.instruments.length : null,
+        detailAt: det ? det.at : null
+      };
+    });
+  }
+
+  async loadPieDetails() {
+    if (this.pieDetailRunning) return;
+    this.pieDetailRunning = true;
+    try {
+      const list = (this.mem.pies && this.mem.pies.list) || [];
+      for (const p of list) {
+        const det = this.data.pies[p.id];
+        if (det && this.now() - det.at < 30 * 60e3) continue;
+        try { await this.pieDetail(p.id, true); } catch (e) { if (e.status === 401 || e.status === 403) break; }
+      }
+      // forget pies that no longer exist
+      for (const id of Object.keys(this.data.pies)) if (!list.some(p => String(p.id) === id)) delete this.data.pies[id];
+      this.saveSoon();
+    } finally {
+      this.pieDetailRunning = false;
+      this.emitChange('pies');
+    }
+  }
+
+  async pieDetail(id, force) {
+    id = Number(id);
+    if (!Number.isFinite(id)) throw new Error('Bad pie id');
+    const det = this.data.pies[id];
+    if (!det || force || this.now() - det.at > 5 * 60e3) {
+      const res = await this.call('pie', 'GET', `/equity/pies/${id}`);
+      this.data.pies[id] = { at: this.now(), settings: res.settings || {}, instruments: res.instruments || [] };
+      this.saveSoon();
+      this.emitChange('pies');
+    }
+    const d = this.data.pies[id];
+    const base = this.piesPayload().find(p => p.id === id) || { id, name: d.settings.name || null };
+    const names = this.instrumentIndex();
+    return {
+      ...base,
+      instruments: d.instruments.map(i => {
+        const r = i.result || {};
+        const meta = names[i.ticker];
+        return {
+          ticker: i.ticker, sym: shortTicker(i.ticker), name: (meta && meta.name) || shortTicker(i.ticker),
+          current: num(i.currentShare) == null ? null : num(i.currentShare) * 100,
+          expected: num(i.expectedShare) == null ? null : num(i.expectedShare) * 100,
+          qty: num(i.ownedQuantity),
+          invested: num(r.priceAvgInvestedValue), value: num(r.priceAvgValue), result: num(r.priceAvgResult),
+          resultPct: num(r.priceAvgResultCoef) == null ? null : num(r.priceAvgResultCoef) * 100,
+          issues: (i.issues || []).map(x => ({ name: x.name, severity: x.severity }))
+        };
+      }).sort((a, b) => (b.value || 0) - (a.value || 0)),
+      publicUrl: d.settings.publicUrl || null,
+      initialInvestment: num(d.settings.initialInvestment)
+    };
+  }
+
+  // ── instrument metadata (instruments 1 / 50 s, exchanges 1 / 30 s) — refreshed daily ──
+  async loadMetadata(force) {
+    const fresh = x => x && this.now() - x.at < DAY;
+    if (!force && fresh(this.meta.instruments) && fresh(this.meta.exchanges)) return true;
+    if (this.metaRunning) return this.metaRunning;
+    this.status.instruments = { state: 'syncing', at: this.now() };
+    this.metaRunning = (async () => {
+      try {
+        if (force || !fresh(this.meta.instruments)) {
+          const list = await this.call('instruments', 'GET', '/equity/metadata/instruments');
+          this.meta.instruments = { at: this.now(), list: (Array.isArray(list) ? list : []).map(i => ({
+            ticker: i.ticker, name: i.name, shortName: i.shortName, isin: i.isin, currency: i.currencyCode,
+            type: i.type, schedule: i.workingScheduleId, ext: !!i.extendedHours, added: ts(i.addedOn), maxQty: num(i.maxOpenQuantity)
+          })) };
+          this._index = null;
+        }
+        if (force || !fresh(this.meta.exchanges)) {
+          const ex = await this.call('exchanges', 'GET', '/equity/metadata/exchanges');
+          this.meta.exchanges = { at: this.now(), list: Array.isArray(ex) ? ex : [] };
+        }
+        this.saveMeta();
+        this.status.instruments = { state: 'done', at: this.now(), count: this.meta.instruments.list.length };
+        return true;
+      } catch (e) {
+        this.fail('instruments', e);
+        return false;
+      } finally {
+        this.metaRunning = null;
+        this.emitChange('instruments');
+      }
+    })();
+    return this.metaRunning;
+  }
+
+  instrumentIndex() {
+    if (this._index) return this._index;
+    const idx = {};
+    for (const i of (this.meta.instruments && this.meta.instruments.list) || []) idx[i.ticker] = i;
+    this._index = idx;
+    return idx;
+  }
+
+  search(q, held = []) {
+    const s = String(q || '').trim().toLowerCase();
+    if (!s) return [];
+    const heldSet = new Set(held);
+    const list = (this.meta.instruments && this.meta.instruments.list) || [];
+    const scored = [];
+    for (const i of list) {
+      const sh = (i.shortName || '').toLowerCase(), nm = (i.name || '').toLowerCase();
+      let score = 0;
+      if (sh === s) score = 100;
+      else if ((i.isin || '').toLowerCase() === s) score = 95;
+      else if (sh.startsWith(s)) score = 80;
+      else if (nm.startsWith(s)) score = 60;
+      else if (nm.includes(s)) score = 40;
+      else if (sh.includes(s)) score = 30;
+      if (!score) continue;
+      if (heldSet.has(i.ticker)) score += 50;
+      if (i.type === 'STOCK' || i.type === 'ETF') score += 5;
+      scored.push([score, i]);
+    }
+    // nothing downloaded yet (no Metadata permission) → at least search what we hold / traded
+    if (!list.length) {
+      const seen = new Set();
+      for (const r of [...this.data.orders, ...this.data.dividends]) {
+        if (seen.has(r.ticker)) continue;
+        if ((r.sym || '').toLowerCase().includes(s) || (r.name || '').toLowerCase().includes(s)) {
+          seen.add(r.ticker);
+          scored.push([heldSet.has(r.ticker) ? 90 : 40, { ticker: r.ticker, shortName: r.sym, name: r.name, isin: r.isin, currency: r.instrCur }]);
+        }
+      }
+    }
+    return scored.sort((a, b) => b[0] - a[0]).slice(0, 20).map(([, i]) => ({
+      ticker: i.ticker, sym: i.shortName || shortTicker(i.ticker), name: i.name, isin: i.isin, currency: i.currency, type: i.type || null, held: heldSet.has(i.ticker)
+    }));
+  }
+
+  // trading hours of an instrument: next open / close from the exchange schedule
+  hours(scheduleId) {
+    for (const ex of (this.meta.exchanges && this.meta.exchanges.list) || []) {
+      for (const ws of ex.workingSchedules || []) {
+        if (ws.id !== scheduleId) continue;
+        const now = this.now();
+        const evs = (ws.timeEvents || []).map(e => ({ t: ts(e.date), type: e.type })).filter(e => e.t).sort((a, b) => a.t - b.t);
+        const past = evs.filter(e => e.t <= now);
+        const last = past[past.length - 1];
+        const open = !!last && (last.type === 'OPEN' || last.type === 'BREAK_END');
+        const nextChange = evs.find(e => e.t > now && (open ? (e.type === 'CLOSE' || e.type === 'BREAK_START') : (e.type === 'OPEN' || e.type === 'BREAK_END')));
+        return { exchange: ex.name, open, next: nextChange ? nextChange.t : null };
+      }
+    }
+    return null;
+  }
+
+  instrument(ticker) {
+    const meta = this.instrumentIndex()[ticker] || null;
+    const orders = this.data.orders.filter(x => x.ticker === ticker);
+    const dividends = this.data.dividends.filter(x => x.ticker === ticker);
+    const pend = ((this.mem.pending && this.mem.pending.list) || []).filter(x => x.ticker === ticker);
+    const sample = orders[0] || dividends[0] || null;
+    return {
+      ticker,
+      sym: (meta && meta.shortName) || shortTicker(ticker),
+      name: (meta && meta.name) || (sample && sample.name) || shortTicker(ticker),
+      isin: (meta && meta.isin) || (sample && sample.isin) || null,
+      currency: (meta && meta.currency) || (sample && sample.instrCur) || null,
+      type: (meta && meta.type) || null,
+      extended: meta ? meta.ext : null,
+      added: meta ? meta.added : null,
+      market: marketOf(ticker),
+      hours: meta ? this.hours(meta.schedule) : null,
+      orders: orders.slice(0, 200),
+      dividends: dividends.slice(0, 200),
+      pending: pend,
+      dividendTotal: dividends.reduce((a, d) => a + (d.amount || 0), 0),
+      realized: orders.reduce((a, o) => a + (o.realized || 0), 0),
+      fees: orders.reduce((a, o) => a + (o.fees || 0), 0)
+    };
+  }
+
+  // ── price history from Yahoo Finance (the API has no candles) ──
+  async resolveSymbol(ticker, isin, refPrice) {
+    const h = this.store.history;
+    h.symbols = h.symbols || {};
+    const cache = h.symbols;
+    if (cache[ticker]) return cache[ticker];
+    const list = candidates(ticker);
+    const tried = new Set();
+    for (const pass of [0, 1]) {
+      for (const sym of list) {
+        if (tried.has(sym)) continue;
+        tried.add(sym);
+        try {
+          const c = await chart(this.fetch, sym, '5d', '1d');
+          if (c && plausible(c.last, refPrice)) { cache[ticker] = sym; this.store.saveHistorySoon && this.store.saveHistorySoon(); return sym; }
+        } catch {}
+      }
+      if (pass === 0) list.push(...(await searchIsin(this.fetch, isin)));
+    }
+    return null;
+  }
+
+  async prices({ ticker, isin, range = '1M', refPrice } = {}) {
+    if (!PRICE_RANGES[range]) range = '1M';
+    const meta = this.instrumentIndex()[ticker];
+    const sym = await this.resolveSymbol(ticker, isin || (meta && meta.isin), refPrice);
+    if (!sym) return { ticker, range, symbol: null, pts: [] };
+    const key = sym + ':' + range;
+    const c = this.mem.prices[key];
+    if (c && this.now() - c.at < (PRICE_TTL[range] || 30 * 60e3)) return c.data;
+    const [r, iv] = PRICE_RANGES[range];
+    let res = null;
+    try { res = await chart(this.fetch, sym, r, iv); } catch {}
+    const data = res ? { ticker, range, symbol: sym, pts: res.pts, last: res.last, meta: res.meta } : { ticker, range, symbol: sym, pts: [] };
+    if (res) this.mem.prices[key] = { at: this.now(), data };
+    // keep the cache small
+    const keys = Object.keys(this.mem.prices);
+    if (keys.length > 120) for (const k of keys.slice(0, keys.length - 120)) delete this.mem.prices[k];
+    return data;
+  }
+
+  // today's move of each held position (previous close from Yahoo) — for "movers"
+  async quotes(positions) {
+    const m = this.mem.quotes;
+    if (m && this.now() - m.at < 5 * 60e3 && positions.every(p => p.ticker in m.map)) return m.map;
+    const map = {};
+    for (const p of positions) {
+      try {
+        const sym = await this.resolveSymbol(p.ticker, p.isin, p.price);
+        if (!sym) { map[p.ticker] = null; continue; }
+        const c = await chart(this.fetch, sym, '1d', '5m');
+        const prev = c && c.meta && c.meta.prevClose;
+        map[p.ticker] = c && prev ? { last: c.last, prevClose: prev, pct: (c.last / prev - 1) * 100, symbol: sym, currency: c.meta.currency } : null;
+      } catch { map[p.ticker] = null; }
+      await new Promise(r => setTimeout(r, 120));
+    }
+    this.mem.quotes = { at: this.now(), map };
+    return map;
+  }
+
+  // ── CSV reports (list 1 / min, request 1 / 30 s) ──────────────
+  async exportsList(force) {
+    const m = this.mem.exports;
+    if (m && !force && this.now() - m.at < 61e3) return m.list;
+    try {
+      const res = await this.call('exportsList', 'GET', '/equity/history/exports');
+      const list = (Array.isArray(res) ? res : []).map(r => ({
+        id: r.reportId, status: r.status, from: ts(r.timeFrom), to: ts(r.timeTo),
+        link: r.downloadLink || null, include: r.dataIncluded || {}
+      })).sort((a, b) => (b.id || 0) - (a.id || 0));
+      this.mem.exports = { at: this.now(), list };
+      this.status.exports = { state: 'done', at: this.now() };
+      return list;
+    } catch (e) {
+      this.fail('exports', e);
+      if (m) return m.list;
+      throw e;
+    }
+  }
+
+  async requestExport({ from, to, dividends = true, interest = true, orders = true, transactions = true } = {}) {
+    const f = Number(from), t = Number(to);
+    if (!isFinite(f) || !isFinite(t) || t <= f) throw new Error('Bad date range');
+    const body = {
+      dataIncluded: { includeDividends: !!dividends, includeInterest: !!interest, includeOrders: !!orders, includeTransactions: !!transactions },
+      timeFrom: new Date(f).toISOString(), timeTo: new Date(t).toISOString()
+    };
+    const res = await this.call('exportsRequest', 'POST', '/equity/history/exports', body);
+    this.mem.exports = null;
+    return { id: res && res.reportId };
+  }
+
+  exportLink(id) {
+    const r = ((this.mem.exports && this.mem.exports.list) || []).find(x => x.id === id);
+    if (!r || !r.link) return null;
+    try { const u = new URL(r.link); return u.protocol === 'https:' ? { url: r.link, row: r } : null; } catch { return null; }
+  }
+}
+
+module.exports = { Library, normOrder, normDividend, normTransaction, normPending, KINDS, PRICE_RANGES };

@@ -1,8 +1,10 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, Tray, Menu, screen, shell, safeStorage, nativeTheme, net, nativeImage, powerMonitor } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, screen, shell, safeStorage, nativeTheme, net, nativeImage, powerMonitor, dialog } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const { Store } = require('./store');
 const { Poller } = require('./t212');
+const { Library } = require('./library');
 const { Updater, installWindows, installMac, macBundle, macCanReplace } = require('./updater');
 const autostart = require('./autostart');
 
@@ -13,12 +15,12 @@ const SIZES = {
   rail: { w: 320, h: 704 }
 };
 const MARGIN = 28;            // transparent room around the card for its shadow
-const SETTINGS_W = 760, SETTINGS_H = 680;
+const APP_W = 1280, APP_H = 820, APP_MIN_W = 980, APP_MIN_H = 640;
 
 app.setAppUserModelId('cz.jovan.t212widget');
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
-let store, poller, widget, settingsWin, tray, popover, updater;
+let store, poller, lib, widget, appWin, tray, popover, updater;
 const IS_MAC = process.platform === 'darwin';
 let lastState = null;
 let quitting = false;
@@ -52,7 +54,7 @@ function defaultPos(w, h) {
 }
 
 function broadcast(ch, payload) {
-  for (const w of [widget, settingsWin, popover]) if (w && !w.isDestroyed()) w.webContents.send(ch, payload);
+  for (const w of [widget, appWin, popover]) if (w && !w.isDestroyed()) w.webContents.send(ch, payload);
 }
 
 // ── widget window ────────────────────────────────────────────
@@ -182,26 +184,57 @@ function updateTrayTitle() {
   tray.setTitle(' ' + txt, { fontType: 'monospacedDigit' });
 }
 
-// ── settings window ──────────────────────────────────────────
-function openSettings(tab) {
-  if (settingsWin && !settingsWin.isDestroyed()) {
-    if (tab) settingsWin.webContents.send('goto-tab', tab);
-    if (settingsWin.isMinimized()) settingsWin.restore();
-    settingsWin.show(); settingsWin.focus();
+// ── app window (overview, holdings, activity, … and Settings) ──
+function boundsOk(b) {
+  if (!b || !(b.width >= APP_MIN_W) || !(b.height >= APP_MIN_H)) return false;
+  return screen.getAllDisplays().some(d => {
+    const a = d.workArea;
+    return b.x < a.x + a.width - 80 && b.x + b.width > a.x + 80 && b.y >= a.y - 10 && b.y < a.y + a.height - 60;
+  });
+}
+function saveAppBounds() {
+  if (!appWin || appWin.isDestroyed()) return;
+  const max = appWin.isMaximized();
+  store.set({ appMaximized: max, ...(max || appWin.isMinimized() ? {} : { appBounds: appWin.getBounds() }) });
+}
+function openApp(route) {
+  if (appWin && !appWin.isDestroyed()) {
+    if (route) appWin.webContents.send('app-goto', route);
+    if (appWin.isMinimized()) appWin.restore();
+    appWin.show(); appWin.focus();
+    if (IS_MAC) app.focus({ steal: true });
     return;
   }
   const a = screen.getPrimaryDisplay().workArea;
-  settingsWin = new BrowserWindow({
-    width: SETTINGS_W, height: SETTINGS_H,
-    x: Math.round(a.x + (a.width - SETTINGS_W) / 2), y: Math.round(a.y + (a.height - SETTINGS_H) / 2),
-    frame: false, transparent: true, resizable: false, maximizable: false, fullscreenable: false,
-    hasShadow: false, show: false, backgroundColor: '#00000000', title: 'T212 Widget — Settings', icon: ICON,
+  const saved = store.get('appBounds');
+  const w = Math.min(APP_W, a.width - 40), h = Math.min(APP_H, a.height - 40);
+  const b = boundsOk(saved) ? saved : { width: w, height: h, x: Math.round(a.x + (a.width - w) / 2), y: Math.round(a.y + (a.height - h) / 2) };
+  appWin = new BrowserWindow({
+    ...b, minWidth: APP_MIN_W, minHeight: APP_MIN_H,
+    show: false, backgroundColor: '#12131b', title: 'T212 Widget', icon: ICON,
+    ...(IS_MAC ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 18, y: 18 } } : { frame: false }),
     webPreferences: { preload: path.join(ROOT, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
-  settingsWin.loadFile(path.join(ROOT, 'app', 'settings.html'), { query: { tab: tab || '' } });
-  settingsWin.once('ready-to-show', () => { settingsWin.show(); if (IS_MAC) app.focus({ steal: true }); });
-  settingsWin.on('closed', () => { settingsWin = null; });
+  appWin.loadFile(path.join(ROOT, 'app', 'app.html'), { query: { route: route || '' } });
+  appWin.once('ready-to-show', () => {
+    if (store.get('appMaximized')) appWin.maximize();
+    appWin.show();
+    if (IS_MAC) { if (app.dock) app.dock.show(); app.focus({ steal: true }); }
+  });
+  let bt;
+  const later = () => { clearTimeout(bt); bt = setTimeout(saveAppBounds, 400); };
+  appWin.on('resize', later); appWin.on('move', later);
+  appWin.on('maximize', saveAppBounds); appWin.on('unmaximize', saveAppBounds);
+  appWin.on('close', saveAppBounds);
+  appWin.on('closed', () => { appWin = null; if (IS_MAC && app.dock) app.dock.hide(); });
+  // fresh data for the pages: history (incremental), instrument list (daily), pending orders
+  if (store.getCreds()) {
+    lib.loadMetadata();
+    lib.sync();
+    lib.pending().then(() => lib.emitChange('pending')).catch(() => lib.emitChange('pending'));
+  }
 }
+function openSettings(tab) { openApp('settings/' + (tab || 'account')); }
 
 // ── settings side effects ────────────────────────────────────
 function applySettings(patch) {
@@ -235,6 +268,7 @@ function applyAutostart(on) {
 
 // ── tray ─────────────────────────────────────────────────────
 const TRAY_CS = {
+  'Open app': 'Otevřít aplikaci',
   'Hide widget': 'Skrýt widget', 'Show widget': 'Zobrazit widget', 'Refresh now': 'Obnovit', 'Size': 'Velikost',
   'Small  1×1': 'Malý  1×1', 'Medium  2×1': 'Střední  2×1', 'Large  2×2': 'Velký  2×2', 'Rail': 'Panel',
   'Always on top': 'Vždy navrchu', 'Lock position': 'Zamknout pozici', 'Start with Windows': 'Spouštět s Windows',
@@ -266,6 +300,7 @@ function rebuildTrayMenu() {
     { label: tr('Lock position'), type: 'checkbox', checked: !!s.lockPosition, click: m => applySettings({ lockPosition: m.checked }) },
     { label: IS_MAC ? tr('Open at login') : tr('Start with Windows'), type: 'checkbox', checked: !!s.startWithWindows, click: m => applySettings({ startWithWindows: m.checked }) },
     { type: 'separator' },
+    { label: tr('Open app'), click: () => openApp() },
     { label: tr('Settings…'), click: () => openSettings() },
     updateMenuItem(),
     { label: tr('Quit'), click: () => { quitting = true; app.quit(); } }
@@ -286,7 +321,7 @@ function createTray() {
     tray.on('right-click', () => tray.popUpContextMenu(tray.__menu));
   } else {
     tray.on('click', () => ((widget && widget.isVisible()) ? hideWidget() : showWidget()));
-    tray.on('double-click', () => openSettings());
+    tray.on('double-click', () => openApp());
   }
   rebuildTrayMenu();
 }
@@ -424,8 +459,24 @@ async function promptUpdate(manual) {
 
 // ── IPC ──────────────────────────────────────────────────────
 function registerIpc() {
-  ipcMain.handle('init', () => ({ settings: store.all(), state: poller.payload(), version: app.getVersion(), dataDir: app.getPath('userData'), platform: process.platform,
-    update: updater ? updater.state : null, packaged: app.isPackaged }));
+  ipcMain.handle('init', e => ({ settings: store.all(), state: poller.payload(), version: app.getVersion(), dataDir: app.getPath('userData'), platform: process.platform,
+    update: updater ? updater.state : null, packaged: app.isPackaged,
+    ...(appWin && e.sender === appWin.webContents ? { lib: lib.statusPayload(), route: new URL(e.sender.getURL()).searchParams.get('route') || '' } : {}) }));
+  ipcMain.handle('lib', async (e, method, args) => {
+    if (!appWin || e.sender !== appWin.webContents) return { error: { code: 0, message: 'not allowed' } };
+    const fn = Object.prototype.hasOwnProperty.call(LIB, method) ? LIB[method] : null;
+    if (!fn) return { error: { code: 0, message: 'unknown method' } };
+    try { const r = await fn(args && typeof args === 'object' ? args : {}); return r === undefined ? null : r; }
+    catch (err) { return { error: { code: err.status || 0, message: err.message || String(err) } }; }
+  });
+  ipcMain.handle('open-app', (_e, route) => { openApp(typeof route === 'string' ? route : ''); return true; });
+  ipcMain.handle('app-window', (e, action) => {
+    if (!appWin || e.sender !== appWin.webContents) return false;
+    if (action === 'minimize') appWin.minimize();
+    else if (action === 'maximize') (appWin.isMaximized() ? appWin.unmaximize() : appWin.maximize());
+    else if (action === 'close') appWin.close();
+    return true;
+  });
   ipcMain.handle('update-check', () => manualCheck(false));
   ipcMain.handle('update-install', () => { promptUpdate(true); return true; });
   ipcMain.handle('update-dialog', () => updDialog);
@@ -443,8 +494,6 @@ function registerIpc() {
   ipcMain.handle('hide-widget', () => { hideWidget(); return true; });
   ipcMain.handle('show-widget', () => { showWidget(); return true; });
   ipcMain.handle('quit', () => { quitting = true; app.quit(); return true; });
-  ipcMain.handle('close-settings', () => { if (settingsWin) settingsWin.close(); return true; });
-  ipcMain.handle('minimize-settings', () => { if (settingsWin) settingsWin.minimize(); return true; });
   ipcMain.handle('clear-history', () => { store.clearHistory(); poller.emitState(); return true; });
   ipcMain.handle('open-data-folder', () => { shell.openPath(app.getPath('userData')); return true; });
   ipcMain.handle('open-external', (_e, url) => { if (externalAllowed(url)) shell.openExternal(url); return true; });
@@ -488,7 +537,7 @@ function registerIpc() {
       const sameAccount = prevCreds && prevEnv === useEnv && poller.raw && poller.raw.summary && poller.raw.summary.id === info.id;
       store.setCreds({ key, secret });
       store.set({ env: useEnv });
-      if (!sameAccount) poller.resetForNewAccount();
+      if (!sameAccount) { poller.resetForNewAccount(); lib.reset(); }
       else poller.recheckDividends();
       poller.status = 'loading';
       applyWidgetSize();
@@ -507,12 +556,62 @@ function registerIpc() {
   });
   ipcMain.handle('disconnect', () => {
     store.clearCreds();
+    lib.reset();
     poller.resetForNewAccount();
     poller.cycle();
     applyWidgetSize();
     return true;
   });
   ipcMain.handle('get-autostart', () => (app.isPackaged ? autostart.isEnabled(app) : store.get('startWithWindows')));
+}
+
+// ── app data (library) — the only methods the app window may call ──
+const RANGES = ['1D', '1W', '1M', '1Y', 'ALL'];
+const str = (v, n = 64) => String(v == null ? '' : v).slice(0, n);
+const HIST = ['orders', 'dividends', 'transactions'];
+const LIB = {
+  status: () => lib.statusPayload(),
+  series: a => poller.seriesFor(RANGES.includes(a.range) ? a.range : '1M'),
+  stats: () => lib.stats(),
+  recent: a => lib.recent(a.limit),
+  activity: a => lib.activity({ kind: str(a.kind, 20), ticker: a.ticker ? str(a.ticker) : null, q: a.q ? str(a.q) : '', type: a.type ? str(a.type, 40) : '',
+    from: Number(a.from) || null, to: Number(a.to) || null, offset: Math.max(0, Number(a.offset) || 0), limit: Math.max(1, Number(a.limit) || 100) }),
+  pending: async a => { const r = await lib.pending(!!a.force); lib.emitChange('pending'); return r; },
+  pies: a => lib.pies(!!a.force),
+  pie: a => lib.pieDetail(Number(a.id)),
+  search: a => lib.search(str(a.q, 60), Array.isArray(a.held) ? a.held.slice(0, 500).map(x => str(x)) : []),
+  instrument: a => { lib.loadMetadata(); return lib.instrument(str(a.ticker)); },
+  prices: a => lib.prices({ ticker: str(a.ticker), isin: a.isin ? str(a.isin, 20) : null, range: str(a.range, 4), refPrice: Number(a.refPrice) || null }),
+  quotes: a => lib.quotes((Array.isArray(a.positions) ? a.positions : []).slice(0, 200).map(p => ({ ticker: str(p && p.ticker), isin: p && p.isin ? str(p.isin, 20) : null, price: Number(p && p.price) || null }))),
+  exports: a => lib.exportsList(!!a.force),
+  requestExport: a => lib.requestExport({ from: Number(a.from), to: Number(a.to), dividends: !!a.dividends, interest: !!a.interest, orders: !!a.orders, transactions: !!a.transactions }),
+  download: a => downloadExport(Number(a.id)),
+  sync: a => { lib.sync(Array.isArray(a.kinds) ? a.kinds.filter(k => HIST.includes(k)) : HIST); return true; },
+  retry: a => {
+    const k = str(a.kind, 20);
+    if (k === 'dividends') poller.recheckDividends();
+    else if (HIST.includes(k)) lib.sync([k]);
+    else if (k === 'pending') return LIB.pending({ force: true });
+    else if (k === 'pies') return lib.pies(true);
+    else if (k === 'instruments') return lib.loadMetadata(true);
+    return true;
+  },
+  wipe: () => { lib.wipe(); lib.sync(); return true; }
+};
+
+const isoDay = ts => new Date(ts).toISOString().slice(0, 10);
+async function downloadExport(id) {
+  const l = lib.exportLink(id);
+  if (!l) return { error: { code: 0, message: 'This report has no download link (yet).' } };
+  const name = `trading212-${l.row.from ? isoDay(l.row.from) : 'from'}_${l.row.to ? isoDay(l.row.to) : 'to'}.csv`;
+  const r = await dialog.showSaveDialog(appWin, { defaultPath: path.join(app.getPath('downloads'), name), filters: [{ name: 'CSV', extensions: ['csv'] }] });
+  if (r.canceled || !r.filePath) return { saved: false };
+  // the link is a pre-signed file URL: fetched without the API key
+  const res = await net.fetch(l.url);
+  if (!res.ok) return { error: { code: res.status, message: 'Download failed (HTTP ' + res.status + ')' } };
+  fs.writeFileSync(r.filePath, Buffer.from(await res.arrayBuffer()));
+  shell.showItemInFolder(r.filePath);
+  return { saved: true };
 }
 
 // ── hardening ────────────────────────────────────────────────
@@ -531,15 +630,18 @@ app.on('web-contents-created', (_e, wc) => {
 });
 
 // ── boot ─────────────────────────────────────────────────────
-app.on('second-instance', () => openSettings());
+app.on('second-instance', () => openApp());
 app.on('window-all-closed', e => { /* keep running in tray */ });
-app.on('before-quit', () => { quitting = true; try { store.saveHistory(); } catch {} });
+app.on('before-quit', () => { quitting = true; try { store.saveHistory(); } catch {} try { lib && lib.save(); } catch {} });
 
 app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark';
   if (IS_MAC && app.dock) app.dock.hide();          // menu-bar app: no Dock icon
   store = new Store(app.getPath('userData'), safeStorage);
   poller = new Poller({ store, fetchImpl: (u, o) => net.fetch(u, o) });
+  lib = new Library({ store, fetchImpl: (u, o) => net.fetch(u, o) });
+  poller.useLibrary(lib);
+  lib.on('change', e => { if (appWin && !appWin.isDestroyed()) appWin.webContents.send('lib', e); });
   if (!store.get('firstLaunchDone')) {
     store.set({ firstLaunchDone: true });
     applyAutostart(store.get('startWithWindows'));

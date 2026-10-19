@@ -25,12 +25,16 @@ function baseFor(env) {
   return devEnv('T212_BASE') || BASES[env] || BASES.live;
 }
 
-async function apiGet(fetchImpl, env, creds, pathAndQuery) {
+// Read-only use only: the app never calls order/pie write endpoints. The single POST is the
+// CSV report request (/equity/history/exports), which only prepares a file to download.
+async function apiRequest(fetchImpl, env, creds, method, pathAndQuery, body) {
   const url = baseFor(env) + (pathAndQuery.startsWith('/api/') ? pathAndQuery : '/api/v0' + pathAndQuery);
   const auth = 'Basic ' + Buffer.from(`${creds.key}:${creds.secret}`).toString('base64');
+  const headers = { Authorization: auth, Accept: 'application/json' };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
   let res;
   try {
-    res = await fetchImpl(url, { headers: { Authorization: auth, Accept: 'application/json' } });
+    res = await fetchImpl(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch (e) {
     throw new ApiError(0, 'Network error — ' + (e && e.message ? e.message : 'no connection'));
   }
@@ -47,6 +51,7 @@ async function apiGet(fetchImpl, env, creds, pathAndQuery) {
   }
   return res.json();
 }
+const apiGet = (fetchImpl, env, creds, pathAndQuery) => apiRequest(fetchImpl, env, creds, 'GET', pathAndQuery);
 
 // "AAPL_US_EQ" → "AAPL", "VWCEd_EQ" → "VWCE"
 function shortTicker(t) {
@@ -177,7 +182,11 @@ class Poller extends EventEmitter {
       this.error = null;
       this.nextRetryAt = null;
       this.status = (this.market.open || !settings.pauseWhenClosed) ? 'live' : 'closed';
-      if (Date.now() - this.divFetchedAt > 30 * 60e3) this.fetchDividends(settings.env, creds);
+      if (this.library) {
+        this.library.setAccount(settings.env, summary.id);
+        // trade / dividend / cash history: incremental, so usually one page per kind
+        if (Date.now() - this.divFetchedAt > 30 * 60e3) { this.divFetchedAt = Date.now(); this.library.sync(); }
+      } else if (Date.now() - this.divFetchedAt > 30 * 60e3) this.fetchDividends(settings.env, creds);
       const openish = this.market.open || !settings.pauseWhenClosed;
       this.schedule(openish ? Math.max(10, settings.refreshSeconds) * 1000 : 10 * 60e3);
     } catch (e) {
@@ -295,9 +304,27 @@ class Poller extends EventEmitter {
     }
   }
 
+  // The app's history library owns the dividends endpoint (shared rate limit) → YTD comes from it.
+  useLibrary(lib) {
+    this.library = lib;
+    lib.on('change', ({ what }) => {
+      if (what !== 'dividends' && what !== 'account') return;
+      const st = lib.status.dividends;
+      if (st.state === 'forbidden' || st.state === 'error') {
+        this.divError = { code: st.code || 0, message: st.error, at: st.at };
+      } else {
+        const ytd = lib.dividendsSince(new Date(new Date().getFullYear(), 0, 1).getTime());
+        if (ytd != null && this.raw) { this.raw.dividendsYTD = ytd; this.store.history.last = this.raw; this.store.saveHistorySoon(); }
+        if (st.state === 'done') this.divError = null;
+      }
+      this.emitState();
+    });
+  }
+
   // new key / manual recheck: forget the old dividend result and ask again now
   recheckDividends() {
     this.divError = null;
+    if (this.library) { this.divFetchedAt = Date.now(); if (this.creds()) this.library.sync(['dividends']); this.emitState(); return; }
     this.divFetchedAt = 0;
     const creds = this.creds();
     if (creds) this.fetchDividends(this.store.get('env'), creds);
@@ -327,14 +354,30 @@ class Poller extends EventEmitter {
 
   // ── payload for the renderer ─────────────────────────────────
   // [time, value, P/L, estimated?] — P/L lets the chart tooltip show the change at any point
-  series(range, fx) {
+  fxRate() {
+    const accCur = (this.raw && this.raw.summary && this.raw.summary.currency) || 'EUR';
+    return this.fx.pair && this.fx.pair.startsWith(accCur) ? this.fx.rate : 1;
+  }
+
+  // chart + change for any range (the app picks its own range, independent of the widget)
+  seriesFor(range, max = 320) {
+    if (!this.raw || !this.raw.summary) return null;
+    const fx = this.fxRate();
+    const { summary } = this.raw;
+    const inv = summary.investments || {};
+    const pl = (inv.unrealizedProfitLoss || 0) + (inv.realizedProfitLoss || 0);
+    const p = this.period(range, pl, summary.totalValue || 0, inv.totalCost ? (pl / inv.totalCost) * 100 : 0);
+    return { range, series: this.series(range, fx, max), period: { ...p, abs: p.abs * fx, basePl: p.basePl * fx } };
+  }
+
+  series(range, fx, max = 160) {
     const pts = this.store.history.points;
     const now = Date.now();
     const from = rangeStart(range, now);
     let sel = pts.filter(p => p[0] >= from);
     if (range === '1D' && sel.length < 2) sel = pts.filter(p => p[0] >= now - 86400e3);
     if (sel.length < 2 && pts.length) sel = pts.slice(-2);
-    sel = downsample(sel, 160);
+    sel = downsample(sel, max);
     return sel.map(p => [p[0], p[1] * fx, Number.isFinite(p[2]) ? p[2] * fx : null, p[3] ? 1 : 0]);
   }
 
@@ -410,6 +453,12 @@ class Poller extends EventEmitter {
         avg: p.averagePricePaid,
         avgCur: ins.currency || '',
         weight: ((w.currentValue || 0) / sumVal) * 100,
+        price: p.currentPrice,
+        isin: ins.isin || null,
+        cost: cost * fx,
+        fxImpact: w.fxImpact == null ? null : w.fxImpact * fx,
+        inPies: p.quantityInPies || 0,
+        opened: p.createdAt ? Date.parse(p.createdAt) : null,
         spark: posHist[ins.ticker] || []
       };
     }).sort((a, b) => b.value - a.value);
@@ -419,6 +468,12 @@ class Poller extends EventEmitter {
       data: {
         currency,
         accountCurrency: accCur,
+        fx,
+        reserved: (cash.reservedForOrders || 0) * fx,
+        inPies: (cash.inPies || 0) * fx,
+        totalCost: (inv.totalCost || 0) * fx,
+        realizedPL: (inv.realizedProfitLoss || 0) * fx,
+        unrealizedPL: (inv.unrealizedProfitLoss || 0) * fx,
         accountId: summary.id,
         value: value * fx,
         cash: (cash.availableToTrade || 0) * fx,
@@ -443,4 +498,4 @@ class Poller extends EventEmitter {
   emitState() { this.emit('state', this.payload()); }
 }
 
-module.exports = { Poller, apiGet, ApiError, shortTicker, marketOf, baseFor };
+module.exports = { Poller, apiGet, apiRequest, ApiError, shortTicker, marketOf, baseFor, localDate };

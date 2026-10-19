@@ -40,7 +40,13 @@ async function chart(fetchImpl, symbol, range, interval) {
   const pts = [];
   r.timestamp.forEach((ts, i) => { if (close[i] != null && isFinite(close[i])) pts.push([ts * 1000, close[i]]); });
   if (pts.length < 2) return null;
-  return { pts, last: (r.meta && r.meta.regularMarketPrice) || pts[pts.length - 1][1] };
+  const m = r.meta || {};
+  return {
+    pts, last: m.regularMarketPrice || pts[pts.length - 1][1],
+    meta: { currency: m.currency || null, prevClose: m.chartPreviousClose ?? m.previousClose ?? null, exchange: m.fullExchangeName || m.exchangeName || null,
+      name: m.longName || m.shortName || null, dayHigh: m.regularMarketDayHigh ?? null, dayLow: m.regularMarketDayLow ?? null,
+      high52: m.fiftyTwoWeekHigh ?? null, low52: m.fiftyTwoWeekLow ?? null, volume: m.regularMarketVolume ?? null, tz: m.exchangeTimezoneName || null }
+  };
 }
 
 // price sanity: Yahoo vs Trading 212 price should agree (allowing GBX/GBP ×100)
@@ -118,4 +124,4 @@ async function reconstruct({ fetchImpl, summary, positions, from, to, symbolCach
   return out;
 }
 
-module.exports = { reconstruct, candidates, pickRange, plausible };
+module.exports = { reconstruct, candidates, pickRange, plausible, chart, searchIsin };

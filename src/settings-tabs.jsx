@@ -1,5 +1,6 @@
-import { render } from 'preact';
-import { useState, useEffect, useRef } from 'preact/hooks';
+// Settings of the whole app — rendered as the Settings page of the app window.
+// The Widget tab holds what only concerns the desktop widget / menu-bar panel.
+import { useState, useEffect } from 'preact/hooks';
 import { THEMES, UP, DOWN, applyTheme, applyMotion, agoStr, ACCENT_PRESETS, DEFAULT_ACCENT, ditheredBg, TEXT_PRESETS, resolveText } from './shared.js';
 import { t, setLang } from './i18n.js';
 import { updErr } from './updtext.js';
@@ -7,11 +8,12 @@ import { marketStatus } from '../main/market.js';
 
 const api = window.api;
 let MAC = false;
+export const setMac = v => { MAC = !!v; };
 const F = "'Inter',sans-serif";
-const TABS = () => [['account', t('Account')], ['widget', t('Widget')], ['appearance', t('Appearance')], ['data', t('Data')], ['system', t('System')]];
+export const SETTINGS_TABS = () => [['account', t('Account'), 'ph-key'], ['appearance', t('Appearance'), 'ph-palette'], ['data', t('Data'), 'ph-database'], ['system', t('System'), 'ph-desktop'], ['widget', t('Widget'), 'ph-squares-four']];
 
 // ── primitives (Nocturne) ────────────────────────────────────
-function Seg({ value, options, onChange, size = 11.5 }) {
+export function Seg({ value, options, onChange, size = 11.5 }) {
   return (
     <div style="display:inline-flex;gap:4px;padding:3px;border-radius:7px;background:rgba(var(--ink-rgb),.045);box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.05)">
       {options.map(([v, label]) => {
@@ -26,7 +28,7 @@ function Seg({ value, options, onChange, size = 11.5 }) {
   );
 }
 
-function Switch({ on, onChange, label }) {
+export function Switch({ on, onChange, label }) {
   return (
     <button type="button" role="switch" aria-checked={on} aria-label={label} class={'sw' + (on ? ' on' : '')} onClick={() => onChange(!on)}>
       <span class="knob"></span>
@@ -34,7 +36,7 @@ function Switch({ on, onChange, label }) {
   );
 }
 
-function Row({ title, desc, children, top }) {
+export function Row({ title, desc, children, top }) {
   return (
     <div class="row" style={top ? 'align-items:flex-start' : ''}>
       <div style="display:flex;flex-direction:column;gap:4px;min-width:0;flex:1">
@@ -46,7 +48,7 @@ function Row({ title, desc, children, top }) {
   );
 }
 
-const Section = ({ label, children }) => (
+export const Section = ({ label, children }) => (
   <div style="display:flex;flex-direction:column;gap:2px">
     <span style={`font:400 9.5px/1 ${F};letter-spacing:.13em;text-transform:uppercase;color:var(--color-neutral-600);margin:6px 0 6px`}>{label}</span>
     {children}
@@ -55,10 +57,10 @@ const Section = ({ label, children }) => (
 
 const Dot = ({ color, breathe }) => <span class={breathe ? 'breathe' : ''} style={`width:6px;height:6px;border-radius:50%;flex:none;background:${color}`}></span>;
 
-const Perm = ({ on, name, why, warn, err }) => {
+const Perm = ({ on, name, why, warn, err, recheck }) => {
   const [busy, setBusy] = useState(false);
   const msg = err ? (err.code === 401 || err.code === 403
-    ? t('Trading 212 refused it ({c}) — tick \u201cHistory – Dividends\u201d on the key', { c: err.code })
+    ? t('Trading 212 refused it ({c}) — tick \u201c{p}\u201d on the key', { c: err.code, p: name })
     : t('couldn\u2019t load ({c}) — will retry', { c: err.code ? err.code : t('network') })) : why;
   return (
     <div style="display:flex;align-items:flex-start;gap:8px">
@@ -66,14 +68,14 @@ const Perm = ({ on, name, why, warn, err }) => {
       <div style="display:flex;flex-direction:column;gap:2px;min-width:0">
         <span style={`font:500 12px/1.3 ${F};color:${on ? 'var(--color-neutral-200)' : 'var(--color-neutral-500)'}`}>{name}</span>
         <span title={err ? err.message : ''} style={`font:400 11px/1.3 ${F};color:${warn ? DOWN : 'var(--color-neutral-500)'}`}>{msg}</span>
-        {err && <a href="#" style="font-size:11px;margin-top:2px" onClick={async e => { e.preventDefault(); setBusy(true); await api.recheckDividends(); setTimeout(() => setBusy(false), 1500); }}>{busy ? t('Checking…') : t('Check again')}</a>}
+        {err && recheck && <a href="#" style="font-size:11px;margin-top:2px" onClick={async e => { e.preventDefault(); setBusy(true); await recheck(); setTimeout(() => setBusy(false), 1500); }}>{busy ? t('Checking…') : t('Check again')}</a>}
       </div>
     </div>
   );
 };
 
 // ── tabs ─────────────────────────────────────────────────────
-function AccountTab({ s, st, set }) {
+export function AccountTab({ s, st, set, lib }) {
   const [env, setEnv] = useState(s.env);
   const [key, setKey] = useState('');
   const [secret, setSecret] = useState('');
@@ -104,12 +106,18 @@ function AccountTab({ s, st, set }) {
       <Section label={t('API key pair')}>
         <div class="perm">
           <span style={`font:500 12px/1.3 ${F};color:var(--color-neutral-200)`}>{t('Which API key permissions to tick')}</span>
-          <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>{t('Trading 212 → Settings → API (Beta) → Generate API key. The widget only reads data.')}</span>
+          <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>{t('Trading 212 → Settings → API (Beta) → Generate API key. The app only reads data — never tick anything that can trade.')}</span>
           <div class="perm-grid">
             <Perm on name="Account data" why={t('total value, cash, P/L')} />
             <Perm on name="Portfolio" why={t('positions and allocation')} />
-            <Perm on name="History – Dividends" why={t('Dividends YTD (optional)')} warn={st && st.divError} err={st && st.divError} />
-            <Perm name={t('Everything else')} why={t('Orders, Pies, Metadata, other History — leave off')} />
+            {[['History – Orders', 'orders', t('trades, fills, fees (Activity)')], ['History – Dividends', 'dividends', t('dividends, Dividends YTD')],
+              ['History – Transactions', 'transactions', t('deposits, withdrawals, interest')], ['Orders – Read', 'pending', t('pending orders')],
+              ['Pies – Read', 'pies', t('your pies')], ['Metadata', 'instruments', t('instrument search, trading hours')]].map(([name, k, why]) => {
+              const x = lib && lib[k];
+              const bad = x && (x.state === 'forbidden' || x.state === 'error') ? x : null;
+              return <Perm on={!x || x.state !== 'forbidden'} name={name} why={why} warn={!!bad} err={bad} recheck={() => api.lib('retry', { kind: k })} />;
+            })}
+            <Perm name={t('Everything else')} why={t('Orders – Execute, Pies – Write — leave off')} />
           </div>
           <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>
             {st && st.encrypted ? (MAC ? t('Keys are encrypted in the macOS Keychain.') : t('Keys are encrypted on this PC with Windows DPAPI.')) : t('Keys are stored locally on this PC.')}
@@ -154,7 +162,7 @@ const SIZE_CARDS = [
   ['rail', 'Rail', 'side panel', 320, 704]
 ];
 
-function WidgetTab({ s, set }) {
+export function WidgetTab({ s, set }) {
   return (
     <>
       <Section label={MAC ? t('Desktop widget size') : t('Size')}>
@@ -175,13 +183,13 @@ function WidgetTab({ s, set }) {
         </div>
       </Section>
       <Section label={t('What it shows')}>
-        <Row title={t('Chart range')} desc={t('Also sets the period of the change next to the value. Switchable right on the widget too.')}>
+        <Row title={t('Chart range')} desc={t('Of the widget only — also sets the period of the change next to the value. The app has its own.')}>
           <Seg value={s.range} onChange={v => set({ range: v })} options={[['1D', '1D'], ['1W', '1W'], ['1M', '1M'], ['1Y', '1Y'], ['ALL', 'ALL']]} size={11} /></Row>
         <Row title={t('Large widget opens on')} desc={t('The view shown in the 2 × 2 widget.')}>
           <Seg value={s.largeView} onChange={v => set({ largeView: v })} options={[['chart', t('Chart')], ['positions', t('Positions')], ['alloc', t('Allocation')]]} /></Row>
-        <Row title={t('Display currency')} desc={t('Account = no conversion. Others use daily ECB rates (frankfurter.dev).')}>
-          <Seg value={s.displayCurrency} onChange={v => set({ displayCurrency: v })} options={[['account', t('Account')], ['CZK', 'CZK'], ['EUR', 'EUR'], ['USD', 'USD'], ['GBP', 'GBP']]} size={11} /></Row>
-        <Row title={t('Number format')}><Seg value={s.numberFormat} onChange={v => set({ numberFormat: v })} options={[['en', '1,284,640.50'], ['cs', '1 284 640,50']]} /></Row>
+        <Row title={t('Widget opacity')} desc={t('Lets the desktop show through the whole widget, text included.')}>
+          <input type="range" class="rng" min="50" max="100" step="5" value={Math.round((s.opacity || 1) * 100)} onInput={e => set({ opacity: Number(e.currentTarget.value) / 100 })} style={`--p:${(Math.round((s.opacity || 1) * 100) - 50) * 2}%`} />
+          <span class="tnum" style={`width:36px;text-align:right;font:400 12px/1 ${F};color:var(--color-neutral-300)`}>{Math.round((s.opacity || 1) * 100)}%</span></Row>
       </Section>
       {MAC && <Section label={t('Menu bar')}>
         <Row title={t('Show portfolio in')} desc={t('Menu bar = click the icon at the top of the screen. Desktop = floating widget like on Windows.')}>
@@ -249,7 +257,7 @@ function TextColour({ s, set }) {
     <div class="row" style="flex-direction:column;align-items:stretch;gap:12px">
       <div style="display:flex;flex-direction:column;gap:4px">
         <span style={`font:500 12.5px/1.2 ${F};color:var(--color-neutral-200)`}>{t('Text colour')}</span>
-        <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>{t('Auto picks dark text on light backgrounds. Applies to the widget, its menu and this window.')}</span>
+        <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>{t('Auto picks dark text on light backgrounds. Applies to the app, the widget and its menu.')}</span>
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
         {TEXT_PRESETS.map(([c, name]) => {
@@ -272,8 +280,7 @@ function TextColour({ s, set }) {
   );
 }
 
-function AppearanceTab({ s, set }) {
-  const pct = Math.round((s.opacity || 1) * 100);
+export function AppearanceTab({ s, set }) {
   return (
     <>
       <Section label={t('Background')}>
@@ -301,9 +308,6 @@ function AppearanceTab({ s, set }) {
         <TextColour s={s} set={set} />
       </Section>
       <Section label={t('Effects')}>
-        <Row title={t('Widget opacity')} desc={t('Lets the desktop show through the whole widget, text included.')}>
-          <input type="range" class="rng" min="50" max="100" step="5" value={pct} onInput={e => set({ opacity: Number(e.currentTarget.value) / 100 })} style={`--p:${(pct - 50) * 2}%`} />
-          <span class="tnum" style={`width:36px;text-align:right;font:400 12px/1 ${F};color:var(--color-neutral-300)`}>{pct}%</span></Row>
         <Row title={t('Motion')} desc={t('Subtle keeps number roll-ups but stops breathing and pulsing; Off shows final values immediately.')}>
           <Seg value={s.motion} onChange={v => set({ motion: v })} options={[['full', t('Full')], ['subtle', t('Subtle')], ['off', t('Off')]]} /></Row>
       </Section>
@@ -311,11 +315,18 @@ function AppearanceTab({ s, set }) {
   );
 }
 
-function DataTab({ s, set, st, info }) {
+export function DataTab({ s, set, st, info, lib }) {
   const [cleared, setCleared] = useState(false);
+  const [wiped, setWiped] = useState(false);
   const mk = marketStatus(new Date(), st && st.marketCodes);
+  const kinds = [['orders', t('Trades')], ['dividends', t('Dividends')], ['transactions', t('Deposits & withdrawals')]];
   return (
     <>
+      <Section label={t('Numbers')}>
+        <Row title={t('Display currency')} desc={t('Account = no conversion. Others use daily ECB rates (frankfurter.dev).')}>
+          <Seg value={s.displayCurrency} onChange={v => set({ displayCurrency: v })} options={[['account', t('Account')], ['CZK', 'CZK'], ['EUR', 'EUR'], ['USD', 'USD'], ['GBP', 'GBP']]} size={11} /></Row>
+        <Row title={t('Number format')}><Seg value={s.numberFormat} onChange={v => set({ numberFormat: v })} options={[['en', '1,284,640.50'], ['cs', '1 284 640,50']]} /></Row>
+      </Section>
       <Section label={t('Sync')}>
         <Row title={t('Refresh every')} desc={t('Trading 212 allows one account request per 5 s — 30 s keeps well inside the limit.')}>
           <Seg value={s.refreshSeconds} onChange={v => set({ refreshSeconds: v })} options={[[10, '10 s'], [30, '30 s'], [60, '1 min'], [120, '2 min'], [300, '5 min']]} size={11} /></Row>
@@ -325,9 +336,21 @@ function DataTab({ s, set, st, info }) {
       <Section label={t('Chart history')}>
         <Row title={t('Fill gaps in the chart')} desc={t('When the PC was off, the missing part is rebuilt from market prices (Yahoo Finance) using your current holdings.')}>
           <Switch on={s.fillGaps !== false} onChange={v => set({ fillGaps: v })} /></Row>
-        <Row title={t('Clear history')} desc={t('Stored on this PC — about 1 MB even after years. The day change is measured from the last value before midnight.')}>
+        <Row title={t('Clear chart history')} desc={t('Stored on this PC — about 1 MB even after years. The day change is measured from the last value before midnight.')}>
           <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={async () => { await api.clearHistory(); setCleared(true); setTimeout(() => setCleared(false), 2000); }}>
             {cleared ? <><i class="ph ph-check" style={`color:${UP}`}></i>{t('Cleared')}</> : t('Clear history')}</button></Row>
+      </Section>
+      <Section label={t('Account history')}>
+        <Row title={t('Downloaded history')} desc={<span>{kinds.map(([k, label], i) => {
+          const x = lib && lib[k];
+          const txt = !x ? '—' : x.state === 'forbidden' ? t('no permission') : x.state === 'syncing' ? t('{n} · downloading…', { n: x.count || 0 }) : t('{n} items', { n: x.count || 0 });
+          return <span>{i ? ' · ' : ''}{label} <span style="color:var(--color-neutral-300)">{txt}</span></span>;
+        })}<br />{t('Synced in the background (Trading 212 allows 20 history requests a minute), then only new items are fetched.')}</span>}>
+          <button type="button" class="btn btn-secondary" style="font-size:12.5px" disabled={lib && lib.syncing} onClick={() => api.lib('sync')}>
+            {lib && lib.syncing ? <span style="width:12px;height:12px;border-radius:50%;border:1.5px solid var(--color-accent-500);border-top-color:transparent;animation:nspin .9s linear infinite;box-sizing:border-box"></span> : <i class="ph ph-arrows-clockwise"></i>}{t('Sync now')}</button></Row>
+        <Row title={t('Delete downloaded history')} desc={t('Removes trades, dividends and transactions saved on this computer. They are downloaded again on the next sync.')}>
+          <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={async () => { await api.lib('wipe'); setWiped(true); setTimeout(() => setWiped(false), 2000); }}>
+            {wiped ? <><i class="ph ph-check" style={`color:${UP}`}></i>{t('Deleted')}</> : t('Delete')}</button></Row>
       </Section>
       <Section label={t('Stored on this computer')}>
         <Row title={t('Data folder')} desc={info.dataDir}>
@@ -381,80 +404,21 @@ function Updates({ s, set, info }) {
   );
 }
 
-function SystemTab({ s, set, info }) {
+export function SystemTab({ s, set, info }) {
   return (
     <>
       <Section label={t('Language')}>
-        <Row title={t('Language')} desc={t('Widget, menus and this window.')}><Seg value={s.language || 'cs'} onChange={v => set({ language: v })} options={[['cs', 'Čeština'], ['en', 'English']]} /></Row>
+        <Row title={t('Language')} desc={t('App, widget and menus.')}><Seg value={s.language || 'cs'} onChange={v => set({ language: v })} options={[['cs', 'Čeština'], ['en', 'English']]} /></Row>
       </Section>
       <Section label={MAC ? 'macOS' : t('Windows')}>
-        <Row title={MAC ? t('Open at login') : t('Start with Windows')} desc={t('Launch the widget when you sign in. Settings and position are remembered.')}><Switch on={s.startWithWindows} onChange={v => set({ startWithWindows: v })} /></Row>
+        <Row title={MAC ? t('Open at login') : t('Start with Windows')} desc={t('Launch in the background when you sign in — the widget appears, the app opens from the tray.')}><Switch on={s.startWithWindows} onChange={v => set({ startWithWindows: v })} /></Row>
       </Section>
       <Updates s={s} set={set} info={info} />
       <Section label={t('App')}>
-        <Row title="T212 Widget" desc={t('Unofficial desktop widget using the Trading 212 public API. Read-only.')}>
+        <Row title="T212 Widget" desc={t('Unofficial desktop app using the Trading 212 public API. Read-only — it can\u2019t place or cancel orders.')}>
           <button type="button" class="btn btn-ghost" style={`font-size:12.5px;color:${DOWN}`} onClick={() => api.quit()}><i class="ph ph-power"></i>{t('Quit app')}</button></Row>
       </Section>
     </>
   );
 }
 
-// ── shell ────────────────────────────────────────────────────
-function App({ init }) {
-  const [s, setS] = useState(init.settings);
-  const [st, setSt] = useState(init.state);
-  const q = new URLSearchParams(location.search).get('tab');
-  const [tab, setTab] = useState(TABS().some(x => x[0] === q) ? q : (init.state && !init.state.connected ? 'account' : 'widget'));
-  useEffect(() => { api.onSettings(setS); api.onState(setSt); api.onGotoTab(t => t && setTab(t)); }, []);
-  const themeKey = [s.theme, s.accent, s.tint, s.textColor].join('|');
-  const applied = useRef('');
-  if (applied.current !== themeKey) { applied.current = themeKey; applyTheme(s.theme, s.accent, s.tint, s.textColor); }
-  setLang(s.language || 'cs');
-  useEffect(() => applyMotion(s.motion), [s.motion]);
-  useEffect(() => { api.getAutostart().then(v => { if (typeof v === 'boolean' && v !== s.startWithWindows) setS(x => ({ ...x, startWithWindows: v })); }); }, []);
-  const set = patch => { setS(x => ({ ...x, ...patch })); api.setSettings(patch); };
-  useEffect(() => {
-    const esc = e => { if (e.key === 'Escape') api.closeSettings(); };
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, []);
-  return (
-    <div class="stage">
-      <div class="wg" style={`width:704px;height:624px;display:flex;flex-direction:column;background:url(${ditheredBg(s.theme, s.accent, s.tint || 0, 704, 624, 0.07, 0.35)}) 0 0/100% 100% no-repeat`}>
-        <div class="loop" style="position:absolute;width:300px;height:300px;left:-110px;top:-160px;border-radius:50%;background:radial-gradient(circle,rgba(var(--acc-rgb),.18),transparent 70%);filter:blur(14px);animation:nglow 8s ease-in-out infinite;pointer-events:none"></div>
-        <header class="titlebar">
-          <div style="width:24px;height:24px;border-radius:6px;border:1px solid var(--color-accent-700);background:var(--color-accent-900);display:flex;align-items:center;justify-content:center;font:600 9.5px/1 ui-monospace,Menlo,monospace;color:var(--color-accent-300)">212</div>
-          <span style={`font:500 13px/1 ${F};color:var(--color-neutral-200)`}>{t('Settings')}</span>
-          <span style={`font:400 11px/1 ${F};color:var(--color-neutral-600)`}>T212 Widget · v{init.version}</span>
-          <span style="flex:1"></span>
-          <button type="button" class="tb" title={t('Minimise')} onClick={() => api.minimizeSettings()}><i class="ph ph-minus"></i></button>
-          <button type="button" class="tb" title={t('Close')} onClick={() => api.closeSettings()}><i class="ph ph-x"></i></button>
-        </header>
-        <nav style="position:relative;padding:0 28px">
-          <Seg value={tab} onChange={setTab} options={TABS()} />
-        </nav>
-        <main key={tab} class="scroll" style="position:relative;flex:1;min-height:0;padding:16px 28px 18px;display:flex;flex-direction:column;gap:14px;animation:nfade .4s ease both">
-          {tab === 'account' && <AccountTab s={s} st={st} set={set} />}
-          {tab === 'widget' && <WidgetTab s={s} set={set} />}
-          {tab === 'appearance' && <AppearanceTab s={s} set={set} />}
-          {tab === 'data' && <DataTab s={s} set={set} st={st} info={init} />}
-          {tab === 'system' && <SystemTab s={s} set={set} info={init} />}
-        </main>
-        <footer style="position:relative;display:flex;align-items:center;gap:10px;margin:0 28px;padding:14px 0 18px;border-top:1px solid rgba(var(--ink-rgb),.08)">
-          <i class="ph ph-check-circle" style="font-size:13px;color:var(--color-accent-400)"></i>
-          <span style={`font:400 11px/1 ${F};color:var(--color-neutral-500)`}>{t('Changes apply instantly and are remembered.')}</span>
-          <span style="flex:1"></span>
-          <button type="button" class="btn btn-primary" style="font-size:13px;padding:6px 16px" onClick={() => api.closeSettings()}>{t('Done')}</button>
-        </footer>
-      </div>
-    </div>
-  );
-}
-
-api.init().then(init => {
-  applyTheme(init.settings.theme, init.settings.accent, init.settings.tint, init.settings.textColor);
-  setLang(init.settings.language || 'cs');
-  MAC = init.platform === 'darwin';
-  applyMotion(init.settings.motion);
-  render(<App init={init} />, document.getElementById('root'));
-});

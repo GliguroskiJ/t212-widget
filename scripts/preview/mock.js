@@ -12,11 +12,12 @@
     ['AAPL_US_EQ', 'Apple Inc', 145240, 9.8, 11.3, 64, 186.70, 'USD', 29],
     ['CEZ_CZ_EQ', 'ČEZ a.s.', 118190, 7.7, 9.2, 124, 892.00, 'CZK', 37],
     ['TSLA_US_EQ', 'Tesla Inc', 87350, -6.6, 6.8, 38, 241.30, 'USD', 43]
-  ].map(p => ({ ticker: p[0], sym: p[0].replace(/_EQ$/, '').replace(/_[A-Z]{2}$/, '').replace(/[a-z]+$/, ''), name: p[1], value: p[2], plPct: p[3], pl: p[2] * p[3] / (100 + p[3]), weight: p[4], qty: p[5], avg: p[6], avgCur: p[7], spark: series(14, 100, p[3] >= 0 ? 0.02 : 0.024, p[8]) }));
+  ].map(p => ({ ticker: p[0], sym: p[0].replace(/_EQ$/, '').replace(/_[A-Z]{2}$/, '').replace(/[a-z]+$/, ''), name: p[1], value: p[2], plPct: p[3], pl: p[2] * p[3] / (100 + p[3]), weight: p[4], qty: p[5], avg: p[6], avgCur: p[7], price: p[6] * (1 + p[3] / 100), isin: 'X' + p[8], spark: series(14, 100, p[3] >= 0 ? 0.02 : 0.024, p[8]) }));
   const data = {
     currency: 'CZK', accountCurrency: 'CZK', accountId: 4812093,
     value: 1284640.5, cash: 42180, invested: 1242460, allTimePL: 184220, allTimePct: 16.72,
-    dayAbs: 8412.4, dayPct: 0.66, dividendsYTD: 11640, holdings: 6, markets: 3,
+    dayAbs: 8412.4, dayPct: 0.66, dividendsYTD: 11640, holdings: 6, markets: 3, fx: 1,
+    reserved: 1800, inPies: 820, totalCost: 1058240, realizedPL: 21400, unrealizedPL: 162820,
     positions: POS, series: S.map((v, i) => [now - (47 - i) * 9 * 60e3, v])
   };
   // range-aware series with P/L per point + the period change, like main/t212.js sends it
@@ -40,7 +41,7 @@
   window.__emit = (k, v) => ls[k].forEach(f => f(v));
   const noop = () => Promise.resolve(true);
   window.api = {
-    init: () => Promise.resolve({ settings, state, update: cfg.update || { status: 'none', current: '1.6.3', checkedAt: Date.now() - 120e3 }, version: '1.6.3', platform: cfg.platform || 'win32', dataDir: 'C:\\Users\\jovan\\AppData\\Roaming\\T212 Widget' }),
+    init: () => Promise.resolve({ settings, state, update: cfg.update || { status: 'none', current: '1.6.3', checkedAt: Date.now() - 120e3 }, version: '1.6.3', platform: cfg.platform || 'win32', route: cfg.route || '', lib: lstat, dataDir: 'C:\\Users\\jovan\\AppData\\Roaming\\T212 Widget' }),
     setSettings: p => { Object.assign(settings, p); window.__emit('settings', { ...settings }); return Promise.resolve(settings); },
     refresh: noop, openSettings: noop, hideWidget: noop, showWidget: noop, quit: noop, closeSettings: noop, minimizeSettings: noop,
     clearHistory: noop, openDataFolder: noop, openExternal: noop, resetPosition: noop,
@@ -49,6 +50,66 @@
     checkUpdate: noop, installUpdate: noop, updateAnswer: () => {}, closeUpdate: () => {},
     getUpdateDialog: () => Promise.resolve(cfg.dialog || null),
     onUpdate: () => {}, onUpdateDialog: () => {},
-    onState: cb => ls.state.push(cb), onSettings: cb => ls.settings.push(cb), onGotoTab: () => {}
+    onState: cb => ls.state.push(cb), onSettings: cb => ls.settings.push(cb), onGotoTab: () => {},
+    openApp: noop, appWindow: noop, onLib: () => {}, onAppGoto: () => {},
+    lib: (m, a) => Promise.resolve(LIB[m] ? LIB[m](a || {}) : null)
+  };
+  // ── app window library mock ──
+  const DAY = 86400e3;
+  const rnd = (() => { let s = 42; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
+  const orders = [], dividends = [], txs = [];
+  for (let i = 0; i < 90; i++) {
+    const p = POS[i % POS.length], sell = i % 7 === 3, qty = Math.round(rnd() * 12 + 1);
+    orders.push({ key: 'o' + i, id: i, ticker: p.ticker, sym: p.sym, name: p.name, instrCur: p.avgCur, side: sell ? 'SELL' : 'BUY', type: i % 5 ? 'MARKET' : 'LIMIT', fillType: 'TRADE',
+      qty, price: p.avg * (0.8 + rnd() * 0.4), value: qty * p.avg * 23, realized: sell ? (rnd() - 0.3) * 4000 : null, fees: rnd() * 30, time: now - i * 4.3 * DAY - 3600e3 * 5 });
+  }
+  for (let i = 0; i < 40; i++) { const p = POS[[0, 3, 4, 2][i % 4]]; dividends.push({ key: 'd' + i, ticker: p.ticker, sym: p.sym, name: p.name, amount: 120 + rnd() * 900, qty: p.qty, perShare: 0.2 + rnd(), tickerCurrency: p.avgCur, time: now - i * 17 * DAY }); }
+  for (let i = 0; i < 30; i++) txs.push({ key: 't' + i, type: i % 9 === 4 ? 'WITHDRAW' : i % 5 === 2 ? 'INTEREST_ON_FREE_CASH' : 'DEPOSIT', amount: i % 5 === 2 ? 40 + rnd() * 60 : 15000 + Math.round(rnd() * 20) * 1000, currency: 'CZK', time: now - i * 24 * DAY });
+  const L = { orders, dividends, transactions: txs };
+  const mk = t => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+  const stats = () => {
+    const ys = new Date(new Date().getFullYear(), 0, 1).getTime();
+    const d = { total: 0, ytd: 0, last12: 0, byMonth: {}, byTicker: {}, count: dividends.length, complete: true };
+    for (const x of dividends) { d.total += x.amount; if (x.time >= ys) d.ytd += x.amount; if (x.time > now - 365 * DAY) d.last12 += x.amount; d.byMonth[mk(x.time)] = (d.byMonth[mk(x.time)] || 0) + x.amount; const b = d.byTicker[x.ticker] || (d.byTicker[x.ticker] = { ticker: x.ticker, sym: x.sym, name: x.name, amount: 0, count: 0 }); b.amount += x.amount; b.count++; }
+    d.byTicker = Object.values(d.byTicker).sort((a, b) => b.amount - a.amount);
+    const c = { deposits: 0, withdrawals: 0, interest: 0, fees: 0, byMonth: {}, complete: true };
+    for (const x of txs) { if (x.type === 'DEPOSIT') c.deposits += x.amount; else if (x.type === 'WITHDRAW') c.withdrawals += x.amount; else c.interest += x.amount;
+      if (x.type !== 'INTEREST_ON_FREE_CASH') { const b = c.byMonth[mk(x.time)] || (c.byMonth[mk(x.time)] = { in: 0, out: 0 }); if (x.type === 'DEPOSIT') b.in += x.amount; else b.out += x.amount; } }
+    c.net = c.deposits - c.withdrawals;
+    const o = { count: orders.length, buys: orders.filter(x => x.side === 'BUY').length, sells: orders.filter(x => x.side === 'SELL').length, realized: orders.reduce((a, x) => a + (x.realized || 0), 0), fees: orders.reduce((a, x) => a + x.fees, 0),
+      bought: orders.filter(x => x.side === 'BUY').reduce((a, x) => a + x.value, 0), sold: orders.filter(x => x.side === 'SELL').reduce((a, x) => a + x.value, 0), complete: true };
+    return { dividends: d, cash: c, orders: o };
+  };
+  const pricePts = (n, base, vol, seed, span) => series(n, base, vol, seed).map((v, i) => [now - (n - 1 - i) * span, v]);
+  const lstat = { orders: { state: 'done', count: orders.length, complete: true, syncedAt: now - 60e3 }, dividends: { state: 'done', count: dividends.length, complete: true, syncedAt: now - 60e3 },
+    transactions: { state: 'done', count: txs.length, complete: true, syncedAt: now - 60e3 }, pending: { state: 'done' }, pies: { state: 'done' }, instruments: { state: 'done' }, exports: { state: 'done' }, syncing: false, pendingCount: 2 };
+  Object.assign(lstat, cfg.lib || {});
+  const PIES = [
+    { id: 1, name: 'Dividendový koláč', status: 'AHEAD', goal: 500000, progress: 0.62, value: 310400, invested: 268000, result: 42400, resultPct: 15.8, cash: 820, dividends: { gained: 9120 }, count: 4, endDate: now + 900 * DAY },
+    { id: 2, name: 'Tech růst', status: 'BEHIND', goal: 0, progress: 0, value: 128900, invested: 141000, result: -12100, resultPct: -8.6, cash: 120, dividends: { gained: 210 }, count: 5 },
+    { id: 3, name: null, status: 'ON_TRACK', goal: 100000, progress: 0.31, value: 31000, invested: 29500, result: 1500, resultPct: 5.1, cash: 0, dividends: null, count: 3 }
+  ];
+  const LIB = {
+    status: () => lstat,
+    series: a => ({ range: a.range, series: data.series, period: data.period }),
+    stats, recent: a => [...orders.slice(0, 4).map(x => ({ ...x, kind: 'orders' })), ...dividends.slice(0, 2).map(x => ({ ...x, kind: 'dividends' })), ...txs.slice(0, 2).map(x => ({ ...x, kind: 'transactions' }))].sort((a, b) => b.time - a.time).slice(0, a.limit || 8),
+    activity: a => { let l = L[a.kind] || []; if (a.type) l = l.filter(x => (a.kind === 'orders' ? x.side : x.type) === a.type); if (a.q) l = l.filter(x => (x.sym + x.name).toLowerCase().includes(a.q.toLowerCase())); return { items: l.slice(0, a.limit || 100), total: l.length }; },
+    pending: () => [
+      { id: 1, ticker: 'NVDA_US_EQ', sym: 'NVDA', name: 'NVIDIA Corp', side: 'BUY', type: 'LIMIT', status: 'NEW', qty: 5, limitPrice: 118.5, instrCur: 'USD', tif: 'GOOD_TILL_CANCEL', created: now - 2 * DAY },
+      { id: 2, ticker: 'TSLA_US_EQ', sym: 'TSLA', name: 'Tesla Inc', side: 'SELL', type: 'STOP', status: 'CONFIRMED', qty: 10, stopPrice: 210, instrCur: 'USD', tif: 'DAY', created: now - 3 * 3600e3 }],
+    pies: () => PIES,
+    pie: a => ({ ...PIES.find(p => p.id === a.id), created: now - 400 * DAY, dividendAction: 'REINVEST', instruments: POS.slice(0, 4).map((p, i) => ({ ticker: p.ticker, sym: p.sym, name: p.name, current: [32, 27, 22, 19][i], expected: 25, value: [99300, 83800, 68300, 59000][i], result: [5000, 2000, -800, 1200][i], resultPct: [5.3, 2.4, -1.2, 2.1][i], issues: i === 3 ? [{ name: 'DELISTED', severity: 'IRREVERSIBLE' }] : [] })) }),
+    search: a => POS.filter(p => (p.sym + p.name).toLowerCase().includes(a.q.toLowerCase())).map(p => ({ ticker: p.ticker, sym: p.sym, name: p.name, type: 'STOCK', currency: p.avgCur, held: true })),
+    instrument: a => ({ ticker: a.ticker, isin: 'US67066G1040', type: 'STOCK', currency: 'USD', hours: { exchange: 'NASDAQ', open: true, next: now + 4 * 3600e3 },
+      orders: orders.filter(x => x.ticker === a.ticker).slice(0, 12), dividends: dividends.filter(x => x.ticker === a.ticker), pending: [], dividendTotal: 1820, realized: 3400, fees: 42 }),
+    prices: a => { const pos = POS.find(p => p.ticker === a.ticker) || POS[1]; const span = { '1D': 5 * 60e3, '1W': 1800e3, '1M': DAY, '3M': DAY, '1Y': DAY, '5Y': 7 * DAY, 'MAX': 30 * DAY }[a.range] || DAY;
+      const n = a.range === '1D' ? 78 : a.range === '1W' ? 65 : a.range === '1M' ? 22 : a.range === '3M' ? 64 : a.range === '1Y' ? 252 : 260;
+      const pts = pricePts(n, pos.avg * 1.05, 0.018, 7, span); const last = pts[pts.length - 1][1];
+      return { ticker: a.ticker, range: a.range, symbol: pos.sym, pts, last, meta: { currency: pos.avgCur, prevClose: pts[0][1], dayLow: last * 0.98, dayHigh: last * 1.01, low52: last * 0.7, high52: last * 1.2, volume: 18234000, exchange: 'NasdaqGS' } }; },
+    quotes: () => Object.fromEntries(POS.map((p, i) => [p.ticker, { last: p.avg * 1.1, prevClose: p.avg, pct: [0.42, 2.81, -0.66, 1.12, -1.4, -3.2][i], currency: p.avgCur }])),
+    exports: () => [{ id: 9, status: 'Finished', from: now - 280 * DAY, to: now, link: 'https://x', include: { includeOrders: true, includeDividends: true, includeTransactions: true } },
+      { id: 8, status: 'Processing', from: now - 30 * DAY, to: now, include: { includeDividends: true } },
+      { id: 7, status: 'Failed', from: now - 700 * DAY, to: now - 365 * DAY, include: { includeOrders: true } }],
+    requestExport: () => ({ id: 10 }), download: () => ({ saved: true }), sync: () => true, retry: () => true, wipe: () => true
   };
 })();
