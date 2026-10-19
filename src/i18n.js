@@ -526,4 +526,9 @@ const CS = {
   'Transfers out': 'Převody ven',
   'Withdrawals & card': 'Výběry a karta',
   'Transfers': 'Převody',
+  'from another Trading 212 account': 'z jiného účtu Trading 212',
+  'to another Trading 212 account': 'na jiný účet Trading 212',
+  'to bank or card payment': 'do banky nebo platba kartou',
+  'incl. transfers from other accounts': 'vč. převodů z jiných účtů',
+  'incl. card payments and transfers': 'vč. plateb kartou a převodů',
 };

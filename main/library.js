@@ -120,6 +120,15 @@ function normPending(o) {
 
 const NORM = { orders: normOrder, dividends: normDividend, transactions: normTransaction };
 
+// money movement direction of a cash transaction: 'IN' (deposit / transfer in), 'OUT' (withdrawal,
+// card payment, transfer out) or null (interest, fees)
+function txDir(x) {
+  if (x.type === 'DEPOSIT') return 'IN';
+  if (x.type === 'WITHDRAW') return 'OUT';
+  if (x.type === 'TRANSFER') return (x.amount || 0) >= 0 ? 'IN' : 'OUT';
+  return null;
+}
+
 function monthKey(t) { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 
 class Library extends EventEmitter {
@@ -319,7 +328,7 @@ class Library extends EventEmitter {
     if (!KINDS[kind]) return { items: [], total: 0 };
     let l = this.data[kind];
     if (ticker) l = l.filter(x => x.ticker === ticker);
-    if (type) l = l.filter(x => (kind === 'orders' ? x.side === type : x.type === type));
+    if (type) l = l.filter(x => (kind === 'orders' ? x.side === type : type === 'IN' || type === 'OUT' ? txDir(x) === type : x.type === type));
     if (from) l = l.filter(x => (x.time || 0) >= from);
     if (to) l = l.filter(x => (x.time || 0) < to);
     if (q) {
@@ -345,22 +354,20 @@ class Library extends EventEmitter {
       const t = d.byTicker[x.ticker] || (d.byTicker[x.ticker] = { ticker: x.ticker, sym: x.sym, name: x.name, amount: 0, count: 0 });
       t.amount += a; t.count++;
     }
-    // money in/out of this account: bank deposits/withdrawals plus TRANSFERs between your Trading 212
-    // accounts (e.g. Cash/card ↔ Invest) — a transfer's sign says the direction
-    const c = { deposits: 0, withdrawals: 0, transfersIn: 0, transfersOut: 0, interest: 0, fees: 0, byMonth: {} };
+    // Deposits = everything that came in (bank deposits and transfers from your other Trading 212
+    // accounts, e.g. CFD); withdrawals = everything that went out (bank withdrawals, card payments,
+    // transfers to other accounts). A transfer's sign says which one it is.
+    const c = { deposits: 0, withdrawals: 0, interest: 0, fees: 0, byMonth: {} };
     for (const x of this.data.transactions) {
       const a = x.amount || 0;
-      const k = x.time ? monthKey(x.time) : null;
-      const m = k ? (c.byMonth[k] || (c.byMonth[k] = { in: 0, out: 0, tin: 0, tout: 0 })) : { in: 0, out: 0, tin: 0, tout: 0 };
-      if (x.type === 'DEPOSIT') { c.deposits += Math.abs(a); m.in += Math.abs(a); }
-      else if (x.type === 'WITHDRAW') { c.withdrawals += Math.abs(a); m.out += Math.abs(a); }
-      else if (x.type === 'TRANSFER') { if (a >= 0) { c.transfersIn += a; m.tin += a; } else { c.transfersOut -= a; m.tout -= a; } }
-      else if (x.type === 'INTEREST_ON_FREE_CASH' || x.type === 'LENDING_INTEREST') c.interest += a;
+      const dir = txDir(x);
+      if (dir) {
+        const m = x.time ? (c.byMonth[monthKey(x.time)] || (c.byMonth[monthKey(x.time)] = { in: 0, out: 0 })) : { in: 0, out: 0 };
+        if (dir === 'IN') { c.deposits += Math.abs(a); m.in += Math.abs(a); } else { c.withdrawals += Math.abs(a); m.out += Math.abs(a); }
+      } else if (x.type === 'INTEREST_ON_FREE_CASH' || x.type === 'LENDING_INTEREST') c.interest += a;
       else if (x.type === 'FEE') c.fees += Math.abs(a);
     }
-    c.totalIn = c.deposits + c.transfersIn;
-    c.totalOut = c.withdrawals + c.transfersOut;
-    c.net = c.totalIn - c.totalOut;
+    c.net = c.deposits - c.withdrawals;
     const o = { count: 0, buys: 0, sells: 0, realized: 0, fees: 0, bought: 0, sold: 0, byMonth: {} };
     for (const x of this.data.orders) {
       if (x.fillType && x.fillType !== 'TRADE') continue;

@@ -322,7 +322,7 @@ function Overview({ m, closed }) {
         <Kpi label={t('Realised P/L')} value={(d.realizedPL >= 0 ? '+' : '') + money(d.realizedPL)} color={d.realizedPL >= 0 ? UP : DOWN} sub={t('all-time {v} · {p} %', { v: m.allTimeStr, p: m.allTimePctStr })} onClick={() => nav.go('activity', 'orders')} />
         <Kpi label={t('Dividends YTD')} value={m.divStr} title={m.divTitle} sub={S && S.dividends.count ? t('{v} in total', { v: money(S.dividends.total * fx) }) : t('this calendar year')} onClick={() => nav.go('activity', 'dividends')} />
         <Kpi label={t('Net deposits')} value={S && S.cash.complete ? money(S.cash.net * fx) : S && S.cash.net ? money(S.cash.net * fx) : '—'}
-          sub={S && (S.cash.totalIn || S.cash.totalOut) ? t('in {a} · out {b}', { a: m.fmt(S.cash.totalIn * fx, 0), b: m.fmt(S.cash.totalOut * fx, 0) }) : (st.lib && st.lib.transactions && st.lib.transactions.state === 'forbidden' ? t('needs History – Transactions') : t('loading history…'))}
+          sub={S && (S.cash.deposits || S.cash.withdrawals) ? t('in {a} · out {b}', { a: m.fmt(S.cash.deposits * fx, 0), b: m.fmt(S.cash.withdrawals * fx, 0) }) : (st.lib && st.lib.transactions && st.lib.transactions.state === 'forbidden' ? t('needs History – Transactions') : t('loading history…'))}
           onClick={() => nav.go('activity', 'transactions')} />
       </div>
 
@@ -374,7 +374,7 @@ function marketName(ticker) {
 }
 
 // one row of the activity feed (trade, dividend or cash movement)
-const TX_LABEL = () => ({ DEPOSIT: t('Deposit'), WITHDRAW: t('Withdrawal / card payment'), FEE: t('Fee'), TRANSFER: t('Transfer'), INTEREST_ON_FREE_CASH: t('Interest on cash'), LENDING_INTEREST: t('Lending interest') });
+const TX_LABEL = () => ({ DEPOSIT: t('Deposit'), WITHDRAW: t('Withdrawal'), FEE: t('Fee'), TRANSFER: t('Transfer'), INTEREST_ON_FREE_CASH: t('Interest on cash'), LENDING_INTEREST: t('Lending interest') });
 function ActivityRow({ x, fmt, fx, cur, compact }) {
   const nav = useNav();
   const conv = v => (v == null ? null : v * fx);
@@ -392,13 +392,13 @@ function ActivityRow({ x, fmt, fx, cur, compact }) {
   }
   if (x.kind === 'transactions') {
     const neg = x.type === 'WITHDRAW' || x.type === 'FEE' || x.amount < 0;
-    const icon = { DEPOSIT: 'ph-arrow-down-left', WITHDRAW: 'ph-arrow-up-right', FEE: 'ph-receipt', TRANSFER: 'ph-arrows-left-right' }[x.type] || 'ph-percent';
+    const icon = x.type === 'DEPOSIT' || (x.type === 'TRANSFER' && x.amount >= 0) ? 'ph-arrow-down-left' : x.type === 'WITHDRAW' || x.type === 'TRANSFER' ? 'ph-arrow-up-right' : x.type === 'FEE' ? 'ph-receipt' : 'ph-percent';
     return (
       <div class="lrow">
         <span class="ico"><i class={'ph ' + icon}></i></span>
         <span style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1">
-          <span class="t1">{x.type === 'TRANSFER' ? (x.amount >= 0 ? t('Transfer in (between your accounts)') : t('Transfer out (between your accounts)')) : (TX_LABEL()[x.type] || x.type)}</span>
-          <span class="t2">{dtfmt(x.time)}</span>
+          <span class="t1">{x.type === 'TRANSFER' ? (x.amount >= 0 ? t('Deposit') : t('Withdrawal')) : (TX_LABEL()[x.type] || x.type)}</span>
+          <span class="t2">{dtfmt(x.time)}{x.type === 'TRANSFER' ? ' · ' + (x.amount >= 0 ? t('from another Trading 212 account') : t('to another Trading 212 account')) : x.type === 'WITHDRAW' ? ' · ' + t('to bank or card payment') : ''}</span>
         </span>
         <span class="num" style={`color:${neg ? 'var(--color-neutral-300)' : UP}`}>{neg ? '−' : '+'}{fmt(Math.abs(x.currency && x.currency !== cur ? x.amount : conv(x.amount)), 2)} {x.currency && x.currency !== cur && fx === 1 ? x.currency : cur}</span>
       </div>
@@ -610,7 +610,7 @@ function Activity({ m, tab: tab0 }) {
   const money = (v, d = 0) => m.fmt(v * fx, d) + ' ' + cur;
   const months = lastMonths(24);
   const typeOpts = tab === 'orders' ? [['', t('All')], ['BUY', t('Buys')], ['SELL', t('Sells')]]
-    : tab === 'transactions' ? [['', t('All')], ['DEPOSIT', t('Deposits')], ['WITHDRAW', t('Withdrawals & card')], ['TRANSFER', t('Transfers')], ['INTEREST_ON_FREE_CASH', t('Interest')]] : null;
+    : tab === 'transactions' ? [['', t('All')], ['IN', t('Deposits')], ['OUT', t('Withdrawals')], ['INTEREST_ON_FREE_CASH', t('Interest')]] : null;
   const permName = { orders: 'History – Orders', dividends: 'History – Dividends', transactions: 'History – Transactions' }[tab];
   return (
     <div class="grid">
@@ -644,17 +644,15 @@ function Activity({ m, tab: tab0 }) {
         </>}
         {S && tab === 'transactions' && <>
           <div class="kpis" style="grid-column:1/-1">
-            <Kpi label={t('Money in')} value={money(S.cash.totalIn)} sub={t('deposits {a} · transfers {b}', { a: m.fmt(S.cash.deposits * fx, 0), b: m.fmt(S.cash.transfersIn * fx, 0) })} />
-            <Kpi label={t('Money out')} value={money(S.cash.totalOut)} sub={t('withdrawals & card {a} · transfers {b}', { a: m.fmt(S.cash.withdrawals * fx, 0), b: m.fmt(S.cash.transfersOut * fx, 0) })} />
+            <Kpi label={t('Deposited')} value={money(S.cash.deposits)} sub={t('incl. transfers from other accounts')} />
+            <Kpi label={t('Withdrawn')} value={money(S.cash.withdrawals)} sub={t('incl. card payments and transfers')} />
             <Kpi label={t('Net deposits')} value={money(S.cash.net)} sub={t('portfolio now {v}', { v: m.fmt(m.d.value, 0) })} />
             <Kpi label={t('Interest')} value={money(S.cash.interest)} color={S.cash.interest > 0 ? UP : undefined} sub={S.cash.fees ? t('fees {v}', { v: money(S.cash.fees, 2) }) : ''} />
           </div>
           <Card title={t('Deposits & withdrawals by month')} style="grid-column:1/-1">
             <Bars months={months} fmt={m.fmt} cur={cur} series={[
               { label: t('Deposits'), color: UP, get: k => (S.cash.byMonth[k] ? S.cash.byMonth[k].in : 0) * fx },
-              { label: t('Transfers in'), color: 'color-mix(in srgb,' + UP + ' 45%,transparent)', get: k => (S.cash.byMonth[k] ? S.cash.byMonth[k].tin || 0 : 0) * fx },
-              { label: t('Withdrawals & card'), color: DOWN, get: k => (S.cash.byMonth[k] ? S.cash.byMonth[k].out : 0) * fx },
-              { label: t('Transfers out'), color: 'color-mix(in srgb,' + DOWN + ' 45%,transparent)', get: k => (S.cash.byMonth[k] ? S.cash.byMonth[k].tout || 0 : 0) * fx }]} />
+              { label: t('Withdrawals'), color: DOWN, get: k => (S.cash.byMonth[k] ? S.cash.byMonth[k].out : 0) * fx }]} />
           </Card>
         </>}
         {S && tab === 'orders' && (

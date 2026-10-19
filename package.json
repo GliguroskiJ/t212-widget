@@ -1,6 +1,6 @@
 {
   "name": "t212-widget",
-  "version": "1.8.4",
+  "version": "1.8.5",
   "description": "Trading 212 desktop widget and read-only portfolio app",
   "main": "main/main.js",
   "scripts": {
