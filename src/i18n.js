@@ -512,4 +512,7 @@ const CS = {
   'Widget shown on the desktop and in the menu bar': 'Widget je zobrazený na ploše i v řádku nabídek',
   'Syncing history…': 'Synchronizuji historii…',
   'Report requested': 'Report zažádán',
+  'Watch only — not in Trading 212': 'Jen ke sledování — není v Trading 212',
+  'watch only': 'jen sledování',
+  'Search any stock, ETF or index': 'Hledat libovolnou akcii, ETF nebo index',
 };

@@ -174,3 +174,4 @@ input[type=date].input{color-scheme:dark;font-size:12.5px;min-height:34px}
 .kpis:has(> :nth-child(6)){grid-template-columns:repeat(6,minmax(0,1fr))}
 @container main (max-width:820px){ .grid > .card[style*="span"]{grid-column:1/-1!important}
   .kpis,.kpis:has(> :nth-child(5)),.kpis:has(> :nth-child(6)){grid-template-columns:repeat(3,minmax(0,1fr))} }
+@container main (max-width:1060px){ .kpis:has(> :nth-child(6)){grid-template-columns:repeat(3,minmax(0,1fr))} }

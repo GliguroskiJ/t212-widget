@@ -184,6 +184,23 @@ srv.listen(0, async () => {
   assert.ok(lg.AAPL_US_EQ); assert.equal(logoCalls, 2);
   console.log('logos ok');
 
+  // 9c) search beyond Trading 212 (Yahoo) — de-duplicated, watch-only tickers
+  const yf = async (u, o) => u.includes('query2.finance.yahoo.com/v1/finance/search')
+    ? new Response(JSON.stringify({ quotes: [{ symbol: 'AAPL', quoteType: 'EQUITY', longname: 'Apple Inc.' }, { symbol: 'APC.DE', quoteType: 'EQUITY', shortname: 'APPLE INC' }, { symbol: 'X;rm', quoteType: 'EQUITY' }, { symbol: 'AAPL260116C', quoteType: 'OPTION' }] }), { headers: { 'content-type': 'application/json' } })
+    : fetch(u, o);
+  const ly = new Library({ store, fetchImpl: yf, limiter: fast(), dir: fs.mkdtempSync(path.join(os.tmpdir(), 't212y-')) });
+  ly.meta = lib.meta; ly._index = null;
+  const found2 = await ly.searchAll('apple');
+  assert.ok(found2.some(r => r.ticker === 'AAPL_US_EQ'));
+  assert.ok(!found2.some(r => r.ticker === 'yf:AAPL'), 'AAPL already offered by Trading 212');
+  assert.ok(found2.some(r => r.ticker === 'yf:APC.DE' && r.external));
+  assert.ok(!found2.some(r => /X;rm|C$/.test(r.sym || '')));
+  const exI = ly.instrument('yf:APC.DE');
+  assert.equal(exI.external, true); assert.equal(exI.name, 'APPLE INC');
+  assert.equal(await ly.resolveSymbol('yf:APC.DE'), 'APC.DE');
+  assert.equal(await ly.resolveSymbol('yf:bad;x'), null);
+  console.log('external search ok');
+
   // 9) limiter spacing really spaces calls per key, keys are independent
   const L = new Limiter({ intervals: { a: 60, b: 0 } });
   const t0 = Date.now(); const times = [];

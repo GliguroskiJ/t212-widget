@@ -579,7 +579,7 @@ const LIB = {
   pending: async a => { const r = await lib.pending(!!a.force); lib.emitChange('pending'); return r; },
   pies: a => lib.pies(!!a.force),
   pie: a => lib.pieDetail(Number(a.id)),
-  search: a => lib.search(str(a.q, 60), Array.isArray(a.held) ? a.held.slice(0, 500).map(x => str(x)) : []),
+  search: a => lib.searchAll(str(a.q, 60), Array.isArray(a.held) ? a.held.slice(0, 500).map(x => str(x)) : []),
   instrument: a => { lib.loadMetadata(); return lib.instrument(str(a.ticker)); },
   prices: a => lib.prices({ ticker: str(a.ticker), isin: a.isin ? str(a.isin, 20) : null, range: str(a.range, 4), refPrice: Number(a.refPrice) || null }),
   quotes: a => lib.quotes((Array.isArray(a.positions) ? a.positions : []).slice(0, 200).map(p => ({ ticker: str(p && p.ticker), isin: p && p.isin ? str(p.isin, 20) : null, price: Number(p && p.price) || null }))),

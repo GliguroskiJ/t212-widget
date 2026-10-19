@@ -502,7 +502,8 @@ function Instrument({ ticker, m }) {
     return <g><line x1="0" y1={y} x2={w} y2={y} stroke="var(--color-accent-400)" stroke-opacity=".55" stroke-dasharray="4 4"></line>
       <text x={w - 4} y={y - 5} text-anchor="end" style={`font:400 10px ${F};fill:var(--color-accent-300)`}>{t('avg {p}', { p: m.fmt(pos.avg, 2) })}</text></g>;
   };
-  const name = (pos && pos.name) || (I && I.name) || ticker;
+  const ext = String(ticker).startsWith('yf:');
+  const name = (pos && pos.name) || (ext && P && P.meta && P.meta.name) || (I && I.name) || ticker;
   const sym = (pos && pos.sym) || (I && I.sym) || ticker;
   const fx = d.fx || 1;
   const meta = P && P.meta;
@@ -519,7 +520,9 @@ function Instrument({ ticker, m }) {
               {I && I.type && <Chip>{I.type}</Chip>}
               {I && I.hours && <Chip color={I.hours.open ? UP : 'var(--color-neutral-400)'} bg={I.hours.open ? tint(UP) : undefined}>
                 <i class={'ph ' + (I.hours.open ? 'ph-circle' : 'ph-moon')} style="font-size:9px"></i>{I.hours.exchange} · {I.hours.open ? t('open') : t('closed')}{I.hours.next ? ' · ' + (I.hours.open ? t('closes {t}', { t: hhmm(I.hours.next) }) : t('opens {t}', { t: dfmt(I.hours.next, { weekday: 'short' }) + ' ' + hhmm(I.hours.next) })) : ''}</Chip>}
-              {!I || !I.hours ? <Chip>{marketName(ticker)}</Chip> : null}
+              {ext ? <>{(I && I.exchange) || (P && P.meta && P.meta.exchange) ? <Chip>{(I && I.exchange) || P.meta.exchange}</Chip> : null}
+                <Chip color="var(--color-accent-300)" bg="var(--color-accent-900)"><i class="ph ph-eye" style="font-size:10px"></i>{t('Watch only — not in Trading 212')}</Chip></>
+                : !I || !I.hours ? <Chip>{marketName(ticker)}</Chip> : null}
             </span>
           </div>
           <span style="flex:1"></span>
@@ -570,14 +573,14 @@ function Instrument({ ticker, m }) {
       {I && I.pending && I.pending.length > 0 && (
         <Card title={t('Pending orders')} style="grid-column:1/-1">{I.pending.map(o => <PendingRow o={o} fmt={m.fmt} />)}</Card>
       )}
-      <Card title={t('Your trades')} style="grid-column:span 7">
+      {!ext && <Card title={t('Your trades')} style="grid-column:span 7">
         {I && I.orders.length ? I.orders.slice(0, 40).map(x => <ActivityRow x={{ ...x, kind: 'orders' }} fmt={m.fmt} fx={fx} cur={m.cur} compact />)
           : <Empty icon="ph-swap" title={info.loading ? t('Loading…') : t('No trades in the downloaded history')} />}
-      </Card>
-      <Card title={t('Dividends')} style="grid-column:span 5">
+      </Card>}
+      {!ext && <Card title={t('Dividends')} style="grid-column:span 5">
         {I && I.dividends.length ? I.dividends.slice(0, 40).map(x => <ActivityRow x={{ ...x, kind: 'dividends' }} fmt={m.fmt} fx={fx} cur={m.cur} compact />)
           : <Empty icon="ph-coins" title={info.loading ? t('Loading…') : t('No dividends from this instrument yet')} />}
-      </Card>
+      </Card>}
     </div>
   );
 }
@@ -949,7 +952,7 @@ function Search() {
   return (
     <div ref={ref} class="search" style="width:340px;position:relative">
       <i class="ph ph-magnifying-glass"></i>
-      <input class="input" placeholder={t('Search instruments')} value={q} onFocus={() => setOpen(true)}
+      <input class="input" placeholder={t('Search any stock, ETF or index')} value={q} onFocus={() => setOpen(true)}
         onInput={e => { setQ(e.currentTarget.value); setOpen(true); }}
         onKeyDown={e => {
           if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(res.length - 1, s + 1)); }
@@ -968,10 +971,11 @@ function Search() {
                 <span style="color:var(--color-neutral-500);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{r.name}</span>
               </span>
               {r.held && <Chip color="var(--color-accent-300)" bg="var(--color-accent-900)">{t('held')}</Chip>}
-              <span class="muted" style="font-size:10.5px">{r.type || ''} {r.currency || ''}</span>
+              {r.external && <Chip>{t('watch only')}</Chip>}
+              <span class="muted" style="font-size:10.5px;white-space:nowrap">{r.type || ''} {r.external ? (r.exchange || '') : (r.currency || '')}</span>
             </button>
           ))}
-          {!res.length && <div class="mlabel" style="text-transform:none;letter-spacing:0;font-size:11.5px;line-height:1.5">{st.lib && st.lib.instruments && st.lib.instruments.state === 'forbidden' ? t('Only your holdings and past trades are searchable — tick “Metadata” on the API key to search all instruments.') : t('No match')}</div>}
+          {!res.length && <div class="mlabel" style="text-transform:none;letter-spacing:0;font-size:11.5px;line-height:1.5">{t('No match')}</div>}
         </div>
       )}
     </div>
@@ -1028,7 +1032,7 @@ function titleFor(route, m) {
   const [p, a] = route;
   if (p === 'instrument') {
     const pos = m.d && m.d.positions.find(x => x.ticker === a);
-    return pos ? pos.sym : (a || '').replace(/_EQ$/, '').replace(/_[A-Z]{2}$/, '');
+    return pos ? pos.sym : (a || '').replace(/^yf:/, '').replace(/_EQ$/, '').replace(/_[A-Z]{2}$/, '');
   }
   if (p === 'settings') return t('Settings');
   if (p === 'pies' && a != null) return t('Pie');
@@ -1129,7 +1133,7 @@ function App({ init }) {
           </div>
           <nav class="nav">
             {NAV().map(([k, label, icon]) => (
-              <button class={'nav-i' + (page === k || (k === 'holdings' && page === 'instrument') ? ' on' : '')} onClick={() => go(k)}>
+              <button class={'nav-i' + (page === k || (k === 'holdings' && page === 'instrument' && !String(arg).startsWith('yf:')) ? ' on' : '')} onClick={() => go(k)}>
                 <i class={'ph ' + icon}></i><span>{label}</span>
                 {k === 'orders' && libStatus.pendingCount ? <span class="badge">{libStatus.pendingCount}</span> : null}
               </button>

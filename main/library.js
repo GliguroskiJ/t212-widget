@@ -22,6 +22,8 @@ const KINDS = {
 const PRICE_RANGES = { '1D': ['1d', '5m'], '1W': ['5d', '30m'], '1M': ['1mo', '1d'], '3M': ['3mo', '1d'], '1Y': ['1y', '1d'], '5Y': ['5y', '1wk'], 'MAX': ['max', '1mo'] };
 const PRICE_TTL = { '1D': 120e3, '1W': 600e3 };
 const DAY = 86400e3;
+const YF_TYPES = ['EQUITY', 'ETF', 'INDEX', 'MUTUALFUND', 'CRYPTOCURRENCY', 'CURRENCY', 'FUTURE'];
+const YF_SYMBOL = /^[A-Za-z0-9.^=\-]{1,24}$/;
 const LOGO_BASE = 'https://trading212equities.s3.eu-central-1.amazonaws.com/';
 
 function atomicWrite(file, data) {
@@ -534,6 +536,39 @@ class Library extends EventEmitter {
     return idx;
   }
 
+  // any stock / ETF / index on Yahoo Finance — for watching instruments Trading 212 doesn't offer
+  // (or that the key can't list). Such instruments get the ticker "yf:<Yahoo symbol>".
+  async yahooSearch(q) {
+    const key = String(q || '').trim().toLowerCase();
+    if (key.length < 1) return [];
+    this.ySearch = this.ySearch || {};
+    const c = this.ySearch[key];
+    if (c && this.now() - c.at < 10 * 60e3) return c.list;
+    let list = [];
+    try {
+      const r = await this.fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(key)}&quotesCount=12&newsCount=0&listsCount=0`, { headers: { Accept: 'application/json' } });
+      if (r.ok) {
+        const j = await r.json();
+        list = (j.quotes || [])
+          .filter(x => x.symbol && YF_TYPES.includes(x.quoteType) && YF_SYMBOL.test(x.symbol))
+          .map(x => ({ ticker: 'yf:' + x.symbol, sym: x.symbol, name: x.longname || x.shortname || x.symbol, type: x.quoteType === 'EQUITY' ? 'STOCK' : x.quoteType,
+            exchange: x.exchDisp || x.exchange || null, currency: null, external: true }));
+      }
+    } catch {}
+    this.ySearch[key] = { at: this.now(), list };
+    this.extNames = this.extNames || {};
+    for (const x of list) this.extNames[x.ticker] = { name: x.name, type: x.type, exchange: x.exchange };
+    return list;
+  }
+
+  // Trading 212 matches first, then everything else Yahoo knows (without the ones already listed)
+  async searchAll(q, held = []) {
+    const own = this.search(q, held);
+    const ext = await this.yahooSearch(q);
+    const have = new Set(own.map(r => (candidates(r.ticker)[0] || '').toUpperCase()).concat(own.map(r => this.store.history.symbols && this.store.history.symbols[r.ticker]).filter(Boolean).map(x => x.toUpperCase())));
+    return own.concat(ext.filter(x => !have.has(x.sym.toUpperCase()))).slice(0, 24);
+  }
+
   search(q, held = []) {
     const s = String(q || '').trim().toLowerCase();
     if (!s) return [];
@@ -588,6 +623,12 @@ class Library extends EventEmitter {
   }
 
   instrument(ticker) {
+    if (String(ticker).startsWith('yf:')) {
+      const e = (this.extNames && this.extNames[ticker]) || {};
+      const sym = ticker.slice(3);
+      return { ticker, sym, name: e.name || sym, isin: null, currency: null, type: e.type || null, external: true, exchange: e.exchange || null,
+        market: null, hours: null, orders: [], dividends: [], pending: [], dividendTotal: 0, realized: 0, fees: 0 };
+    }
     const meta = this.instrumentIndex()[ticker] || null;
     const orders = this.data.orders.filter(x => x.ticker === ticker);
     const dividends = this.data.dividends.filter(x => x.ticker === ticker);
@@ -618,6 +659,7 @@ class Library extends EventEmitter {
     const h = this.store.history;
     h.symbols = h.symbols || {};
     const cache = h.symbols;
+    if (String(ticker).startsWith('yf:')) { const y = ticker.slice(3); return YF_SYMBOL.test(y) ? y : null; }
     if (cache[ticker]) return cache[ticker];
     const list = candidates(ticker);
     const tried = new Set();
