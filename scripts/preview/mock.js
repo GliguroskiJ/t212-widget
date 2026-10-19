@@ -75,7 +75,7 @@
     const c = { deposits: 0, withdrawals: 0, interest: 0, fees: 0, byMonth: {}, complete: true };
     for (const x of txs) { if (x.type === 'DEPOSIT') c.deposits += x.amount; else if (x.type === 'WITHDRAW') c.withdrawals += x.amount; else c.interest += x.amount;
       if (x.type !== 'INTEREST_ON_FREE_CASH') { const b = c.byMonth[mk(x.time)] || (c.byMonth[mk(x.time)] = { in: 0, out: 0 }); if (x.type === 'DEPOSIT') b.in += x.amount; else b.out += x.amount; } }
-    c.net = c.deposits - c.withdrawals;
+    c.transfersIn = 0; c.transfersOut = 0; c.totalIn = c.deposits; c.totalOut = c.withdrawals; c.net = c.deposits - c.withdrawals;
     const o = { count: orders.length, buys: orders.filter(x => x.side === 'BUY').length, sells: orders.filter(x => x.side === 'SELL').length, realized: orders.reduce((a, x) => a + (x.realized || 0), 0), fees: orders.reduce((a, x) => a + x.fees, 0),
       bought: orders.filter(x => x.side === 'BUY').reduce((a, x) => a + x.value, 0), sold: orders.filter(x => x.side === 'SELL').reduce((a, x) => a + x.value, 0), complete: true };
     return { dividends: d, cash: c, orders: o };
