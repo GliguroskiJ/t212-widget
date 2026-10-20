@@ -248,7 +248,7 @@ function sortRows(rows, sort) {
 }
 
 const SymCell = ({ sym, name, ticker, dot }) => (
-  <span style="display:flex;align-items:center;gap:10px;min-width:0">
+  <span class="sc" style="display:flex;align-items:center;gap:10px;min-width:0">
     <Logo ticker={ticker} sym={sym} />
     {dot && <span style={`width:6px;height:6px;border-radius:50%;flex:none;margin-left:-4px;background:${dot}`}></span>}
     <span style="display:flex;flex-direction:column;gap:3px;min-width:0">
@@ -331,7 +331,6 @@ function Overview({ m, closed }) {
           {d.positions.slice(0, 7).map(p => (
             <div class="lrow click" onClick={() => nav.go('instrument', p.ticker)}>
               <SymCell sym={p.sym} name={p.name} ticker={p.ticker} />
-              <span style="flex:1"></span>
               <Sparkline values={p.spark} color={p.plPct >= 0 ? UP : DOWN} />
               <span class="num" style="width:110px;text-align:right">{m.fmt(p.value, 0)}</span>
               <span class="num" style={`width:70px;text-align:right;color:${p.plPct >= 0 ? UP : DOWN}`}>{m.fmt.signed(p.plPct, 2)}%</span>
@@ -348,8 +347,7 @@ function Overview({ m, closed }) {
         {movers.length ? movers.map(p => (
           <div class="lrow click" onClick={() => nav.go('instrument', p.ticker)}>
             <SymCell sym={p.sym} name={p.name} ticker={p.ticker} />
-            <span style="flex:1"></span>
-            <span class="num" style="width:96px;text-align:right;color:var(--color-neutral-400)">{m.fmt(q[p.ticker].last, 2)} {q[p.ticker].currency || ''}</span>
+            <span class="num" style="width:112px;text-align:right;color:var(--color-neutral-400)">{m.fmt(q[p.ticker].last, 2)} {q[p.ticker].currency || ''}</span>
             <span style="width:76px;display:flex;justify-content:flex-end"><Chip color={p.day >= 0 ? UP : DOWN} bg={tint(p.day >= 0 ? UP : DOWN)}>{m.fmt.signed(p.day, 2)}%</Chip></span>
           </div>
         )) : <Empty icon="ph-pulse" title={quotes.loading ? t('Loading prices…') : t('No price data')} text={quotes.loading ? '' : t('Day moves come from Yahoo Finance and may be missing for some instruments.')} />}
@@ -386,7 +384,7 @@ function ActivityRow({ x, fmt, fx, cur, compact }) {
           <span class="t1">{t('Dividend')} · {x.sym}</span>
           <span class="t2">{dfmt(x.time)}{x.qty ? ' · ' + t('{q} shares × {p} {c}', { q: fmt(x.qty, x.qty % 1 ? 3 : 0), p: fmt(x.perShare || 0, 4), c: x.tickerCurrency || '' }) : ''}</span>
         </span>
-        <span class="num" style={`color:${UP}`}>+{fmt(conv(x.amount), 2)} {cur}</span>
+        <span class="num amt" style={`color:${UP}`}>+{fmt(conv(x.amount), 2)} {cur}</span>
       </div>
     );
   }
@@ -400,7 +398,7 @@ function ActivityRow({ x, fmt, fx, cur, compact }) {
           <span class="t1">{x.type === 'TRANSFER' ? (x.amount >= 0 ? t('Deposit') : t('Withdrawal')) : (TX_LABEL()[x.type] || x.type)}</span>
           <span class="t2">{dtfmt(x.time)}{x.type === 'TRANSFER' ? ' · ' + (x.amount >= 0 ? t('from another Trading 212 account') : t('to another Trading 212 account')) : x.type === 'WITHDRAW' ? ' · ' + t('to bank or card payment') : ''}</span>
         </span>
-        <span class="num" style={`color:${neg ? 'var(--color-neutral-300)' : UP}`}>{neg ? '−' : '+'}{fmt(Math.abs(x.currency && x.currency !== cur ? x.amount : conv(x.amount)), 2)} {x.currency && x.currency !== cur && fx === 1 ? x.currency : cur}</span>
+        <span class="num amt" style={`color:${neg ? 'var(--color-neutral-300)' : UP}`}>{neg ? '−' : '+'}{fmt(Math.abs(x.currency && x.currency !== cur ? x.amount : conv(x.amount)), 2)} {x.currency && x.currency !== cur && fx === 1 ? x.currency : cur}</span>
       </div>
     );
   }
@@ -415,7 +413,7 @@ function ActivityRow({ x, fmt, fx, cur, compact }) {
           <span class="t1">{x.side === 'SELL' ? t('Sell order') : t('Buy order')} {x.sym}{!compact && <span style="color:var(--color-neutral-500);font-weight:400"> · {x.name}</span>}</span>
           <span class="t2">{dtfmt(x.time)}{x.reqQty ? ' · ' + fmt(x.reqQty, x.reqQty % 1 ? 4 : 0) + ' ' + t('pcs') : ''}{x.price ? ' @ ' + fmt(x.price, 2) + ' ' + (x.instrCur || '') : ''}{x.type ? ' · ' + typeName(x.type) : ''}</span>
         </span>
-        <Chip>{st}</Chip>
+        <span class="amt" style="display:flex;justify-content:flex-end"><Chip>{st}</Chip></span>
       </div>
     );
   }
@@ -426,9 +424,9 @@ function ActivityRow({ x, fmt, fx, cur, compact }) {
         <span class="t1">{x.side === 'SELL' ? t('Sold') : t('Bought')} {x.sym}{!compact && <span style="color:var(--color-neutral-500);font-weight:400"> · {x.name}</span>}</span>
         <span class="t2">{dtfmt(x.time)} · {fmt(x.qty || 0, (x.qty || 0) % 1 ? 4 : 0)} × {fmt(x.price || 0, 2)} {x.instrCur || ''}{x.type ? ' · ' + typeName(x.type) : ''}{fillNote}</span>
       </span>
-      {!compact && x.realized ? <span class="num" style={`width:150px;text-align:right;color:${x.realized >= 0 ? UP : DOWN}`} title={t('Realised P/L')}>{t('P/L {v}', { v: fmt.signed(conv(x.realized), 2) })}</span> : null}
+      {!compact && <span class="num" style={`width:150px;text-align:right;color:${(x.realized || 0) >= 0 ? UP : DOWN}`} title={t('Realised P/L')}>{x.realized ? t('P/L {v}', { v: fmt.signed(conv(x.realized), 2) }) : ''}</span>}
       {!compact && <span class="num" style="width:130px;text-align:right;color:var(--color-neutral-500)" title={t('Fees and taxes of this trade (e.g. FX fee)')}>{x.fees ? t('fee {v}', { v: fmt(Math.abs(conv(x.fees)), 2) }) : ''}</span>}
-      <span class="num" style="width:120px;text-align:right">{fmt(Math.abs(conv(x.value) || 0), 2)} {cur}</span>
+      <span class="num amt">{fmt(Math.abs(conv(x.value) || 0), 2)} {cur}</span>
     </div>
   );
 }
@@ -690,7 +688,7 @@ function Activity({ m, tab: tab0 }) {
           <Card title={t('Top payers')} style="grid-column:span 4">
             {S.dividends.byTicker.slice(0, 6).map(x => (
               <div class="lrow click" onClick={() => nav.go('instrument', x.ticker)}>
-                <SymCell sym={x.sym} name={x.name} ticker={x.ticker} /><span style="flex:1"></span>
+                <SymCell sym={x.sym} name={x.name} ticker={x.ticker} />
                 <span class="num">{m.fmt(x.amount * fx, 0)} {cur}</span>
               </div>))}
           </Card>
@@ -743,9 +741,8 @@ function PendingRow({ o, fmt }) {
   const price = o.type === 'STOP_LIMIT' ? `${fmt(o.stopPrice, 2)} → ${fmt(o.limitPrice, 2)}` : o.limitPrice != null ? fmt(o.limitPrice, 2) : o.stopPrice != null ? fmt(o.stopPrice, 2) : t('market');
   return (
     <div class="lrow click" onClick={() => nav.go('instrument', o.ticker)}>
-      <Side side={o.side} />
+      <span style="width:62px;display:flex"><Side side={o.side} /></span>
       <SymCell sym={o.sym} name={o.name} ticker={o.ticker} />
-      <span style="flex:1"></span>
       <span class="t2" style="width:120px">{typeName(o.type)}{o.tif ? ' · ' + (o.tif === 'DAY' ? t('day') : 'GTC') : ''}{o.extended ? ' · ' + t('ext.') : ''}</span>
       <span class="num" style="width:110px;text-align:right">{o.qty != null ? fmt(o.qty, o.qty % 1 ? 4 : 0) + ' ' + t('pcs') : o.value != null ? fmt(o.value, 2) : '—'}</span>
       <span class="num" style="width:130px;text-align:right">{price} <span class="muted">{o.instrCur || o.currency || ''}</span></span>
@@ -846,7 +843,6 @@ function PieDetail({ id, m }) {
         {p.instruments.map((i, ix) => (
           <div class="lrow click" onClick={() => nav.go('instrument', i.ticker)}>
             <SymCell sym={i.sym} name={i.name} ticker={i.ticker} />
-            <span style="flex:1"></span>
             {i.issues.length > 0 && <Chip color={DOWN} bg={tint(DOWN)}><i class="ph ph-warning"></i>{i.issues.map(x => x.name.replace(/_/g, ' ').toLowerCase()).join(', ')}</Chip>}
             <span style="width:150px;display:flex;flex-direction:column;gap:4px">
               <span style="position:relative;height:5px;border-radius:3px;background:rgba(var(--ink-rgb),.07)">
@@ -941,7 +937,7 @@ function Reports({ m }) {
                   <span class="t1">{dfmt(r.from)} – {dfmt(r.to)}</span>
                   <span class="t2">{parts.join(' · ') || '—'} · #{r.id}</span>
                 </span>
-                <Chip color={sc}>{sl}</Chip>
+                <span style="width:110px;display:flex;justify-content:flex-end"><Chip color={sc}>{sl}</Chip></span>
                 <span style="width:120px;display:flex;justify-content:flex-end">
                   {r.status === 'Finished' && r.link && <button class="btn btn-secondary" style="font-size:12px;padding:5px 10px" disabled={dl[r.id] === 'busy'} onClick={() => download(r)}>
                     {dl[r.id] === 'busy' ? <Spinner size={11} /> : dl[r.id] === 'done' ? <i class="ph ph-check" style={`color:${UP}`}></i> : <i class="ph ph-download-simple"></i>}{t('Download')}</button>}
