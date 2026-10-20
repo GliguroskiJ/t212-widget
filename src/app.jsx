@@ -107,7 +107,7 @@ export const CAT = ['#8b9cff', '#5fd4b0', '#f5b85c', '#f2789f', '#b48cff', '#4fc
 const OTHER = '#5a5e6e';
 const catColor = i => CAT[i % CAT.length];
 // colour of a holding = its place by value (same as in the allocation donut)
-const holdColor = (ticker, positions) => { const i = positions.findIndex(p => p.ticker === ticker); return i < 0 ? OTHER : i < 5 ? catColor(i) : OTHER; };
+const holdColor = (ticker, positions) => { const i = positions.findIndex(p => p.ticker === ticker); return i < 0 ? OTHER : i < CAT.length ? catColor(i) : OTHER; };
 
 // company logos (Trading 212 icon store via main, cached on disk) — batched, shared by all rows
 const logoStore = { map: {}, pending: new Set(), subs: new Set(), timer: null };
@@ -405,6 +405,20 @@ function ActivityRow({ x, fmt, fx, cur, compact }) {
     );
   }
   const fillNote = x.fillType && x.fillType !== 'TRADE' ? ' · ' + x.fillType.replace(/_/g, ' ').toLowerCase() : '';
+  const unfilled = x.fillType == null && !((x.qty || 0) > 0 && (x.status === 'FILLED' || x.status === 'PARTIALLY_FILLED'));
+  if (unfilled) {
+    const st = { CANCELLED: t('Cancelled'), REJECTED: t('Rejected'), EXPIRED: t('Expired') }[x.status] || t('Not executed');
+    return (
+      <div class="lrow click" style="opacity:.62" onClick={() => nav.go('instrument', x.ticker)}>
+        <Logo ticker={x.ticker} sym={x.sym} badge="ph-x" badgeColor="var(--color-neutral-400)" />
+        <span style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1">
+          <span class="t1">{x.side === 'SELL' ? t('Sell order') : t('Buy order')} {x.sym}{!compact && <span style="color:var(--color-neutral-500);font-weight:400"> · {x.name}</span>}</span>
+          <span class="t2">{dtfmt(x.time)}{x.reqQty ? ' · ' + fmt(x.reqQty, x.reqQty % 1 ? 4 : 0) + ' ' + t('pcs') : ''}{x.price ? ' @ ' + fmt(x.price, 2) + ' ' + (x.instrCur || '') : ''}{x.type ? ' · ' + typeName(x.type) : ''}</span>
+        </span>
+        <Chip>{st}</Chip>
+      </div>
+    );
+  }
   return (
     <div class="lrow click" onClick={() => nav.go('instrument', x.ticker)}>
       <Logo ticker={x.ticker} sym={x.sym} badge={x.side === 'SELL' ? 'ph-arrow-up-right' : 'ph-arrow-down-left'} badgeColor={x.side === 'SELL' ? DOWN : UP} />
@@ -412,8 +426,8 @@ function ActivityRow({ x, fmt, fx, cur, compact }) {
         <span class="t1">{x.side === 'SELL' ? t('Sold') : t('Bought')} {x.sym}{!compact && <span style="color:var(--color-neutral-500);font-weight:400"> · {x.name}</span>}</span>
         <span class="t2">{dtfmt(x.time)} · {fmt(x.qty || 0, (x.qty || 0) % 1 ? 4 : 0)} × {fmt(x.price || 0, 2)} {x.instrCur || ''}{x.type ? ' · ' + typeName(x.type) : ''}{fillNote}</span>
       </span>
-      {!compact && x.realized ? <span class="num" style={`width:110px;text-align:right;color:${x.realized >= 0 ? UP : DOWN}`} title={t('Realised P/L')}>{fmt.signed(conv(x.realized), 2)}</span> : null}
-      {!compact && <span class="num" style="width:80px;text-align:right;color:var(--color-neutral-500)" title={t('Fees')}>{x.fees ? fmt(conv(x.fees), 2) : '—'}</span>}
+      {!compact && x.realized ? <span class="num" style={`width:150px;text-align:right;color:${x.realized >= 0 ? UP : DOWN}`} title={t('Realised P/L')}>{t('P/L {v}', { v: fmt.signed(conv(x.realized), 2) })}</span> : null}
+      {!compact && <span class="num" style="width:130px;text-align:right;color:var(--color-neutral-500)" title={t('Fees and taxes of this trade (e.g. FX fee)')}>{x.fees ? t('fee {v}', { v: fmt(Math.abs(conv(x.fees)), 2) }) : ''}</span>}
       <span class="num" style="width:120px;text-align:right">{fmt(Math.abs(conv(x.value) || 0), 2)} {cur}</span>
     </div>
   );
@@ -440,9 +454,9 @@ function Holdings({ m }) {
     { label: t('Value'), align: 'right', sort: 'value', render: p => <span class="num" style="color:var(--color-neutral-100)">{m.fmt(p.value, 0)}</span> },
     { label: t('P/L'), align: 'right', sort: 'pl', render: p => <span class="num" style={`color:${p.pl >= 0 ? UP : DOWN}`}>{m.fmt.signed(p.pl, 0)}</span> },
     { label: '%', w: 74, align: 'right', sort: 'plPct', render: p => <span class="num" style={`color:${p.plPct >= 0 ? UP : DOWN}`}>{m.fmt.signed(p.plPct, 2)}%</span> },
-    { label: t('Weight'), w: 92, align: 'right', sort: 'weight', render: p => (
+    { label: t('Weight'), w: 80, align: 'right', sort: 'weight', render: p => (
       <span style="display:flex;align-items:center;gap:7px;justify-content:flex-end">
-        <span style="width:34px;height:3px;border-radius:2px;background:rgba(var(--ink-rgb),.07);overflow:hidden"><GrowBar color={holdColor(p.ticker, d.positions)} w={Math.min(100, p.weight * 2.5) + '%'} /></span>
+        <span style={`width:7px;height:7px;border-radius:2px;flex:none;background:${holdColor(p.ticker, d.positions)}`}></span>
         <span class="num">{m.fmt(p.weight, 1)}%</span></span>) }
   ];
   return (
@@ -461,6 +475,45 @@ function Holdings({ m }) {
         <Table cols={cols} rows={rows} sort={sort} setSort={setSort} rowKey={p => p.ticker} onRow={p => nav.go('instrument', p.ticker)}
           empty={<Empty icon="ph-chart-pie-slice" title={q ? t('Nothing matches “{q}”', { q }) : t('No open positions yet.')} />} />
       </Card>
+      {d.positions.length > 0 && (
+        <Card style="grid-column:1/-1" title={t('Portfolio composition')} right={<span class="muted">{t('share of invested value')}</span>}>
+          <WeightBar positions={d.positions} fmt={m.fmt} cur={m.cur} />
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// one horizontal bar split by holding, with a legend; hover shows the value
+function WeightBar({ positions, fmt, cur }) {
+  const { nav } = useApp();
+  const [hov, setHov] = useState(null);
+  const [on, setOn] = useState(false);
+  useEffect(() => { const h = setTimeout(() => setOn(true), 80); return () => clearTimeout(h); }, []);
+  const tot = positions.reduce((a, p) => a + Math.max(0, p.value), 0) || 1;
+  const segs = positions.filter(p => p.value > 0).map(p => ({ ...p, w: (p.value / tot) * 100, color: holdColor(p.ticker, positions) }));
+  const h = hov != null ? segs[hov] : null;
+  return (
+    <div>
+      <div class="wbar" onMouseLeave={() => setHov(null)}>
+        {segs.map((s, i) => (
+          <div class="wseg" onMouseEnter={() => setHov(i)} onClick={() => nav.go('instrument', s.ticker)}
+            style={`width:${on ? s.w : 0}%;background:${s.color};opacity:${hov == null || hov === i ? 1 : .35};transition-delay:${i * 40}ms`}
+            title={`${s.sym} · ${fmt(s.w, 1)} %`}></div>
+        ))}
+      </div>
+      <div style="height:18px;margin-top:8px;font:400 11.5px/18px 'Inter',sans-serif;color:var(--color-neutral-400);font-variant-numeric:tabular-nums">
+        {h ? <span><span style={`color:${h.color};font-weight:500`}>{h.sym}</span> · {h.name} · {fmt(h.value, 0)} {cur} · {fmt(h.w, 1)} %</span> : ''}
+      </div>
+      <div class="wlegend">
+        {segs.map((s, i) => (
+          <button class={'wleg' + (hov === i ? ' on' : '')} onMouseEnter={() => setHov(i)} onMouseLeave={() => setHov(null)} onClick={() => nav.go('instrument', s.ticker)}>
+            <span style={`width:9px;height:9px;border-radius:3px;flex:none;background:${s.color}`}></span>
+            <span style="color:var(--color-neutral-100);font-weight:500">{s.sym}</span>
+            <span class="num" style="color:var(--color-neutral-400)">{fmt(s.w, 1)} %</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -609,7 +662,7 @@ function Activity({ m, tab: tab0 }) {
   const cur = m.cur;
   const money = (v, d = 0) => m.fmt(v * fx, d) + ' ' + cur;
   const months = lastMonths(24);
-  const typeOpts = tab === 'orders' ? [['', t('All')], ['BUY', t('Buys')], ['SELL', t('Sells')]]
+  const typeOpts = tab === 'orders' ? [['', t('All')], ['BUY', t('Buys')], ['SELL', t('Sells')], ['UNFILLED', t('Not executed')]]
     : tab === 'transactions' ? [['', t('All')], ['IN', t('Deposits')], ['OUT', t('Withdrawals')], ['INTEREST_ON_FREE_CASH', t('Interest')]] : null;
   const permName = { orders: 'History – Orders', dividends: 'History – Dividends', transactions: 'History – Transactions' }[tab];
   return (
@@ -657,7 +710,7 @@ function Activity({ m, tab: tab0 }) {
         </>}
         {S && tab === 'orders' && (
           <div class="kpis" style="grid-column:1/-1">
-            <Kpi label={t('Trades')} value={S.orders.count} sub={t('{b} buys · {s} sells', { b: S.orders.buys, s: S.orders.sells })} />
+            <Kpi label={t('Trades')} value={S.orders.count} sub={t('{b} buys · {s} sells', { b: S.orders.buys, s: S.orders.sells }) + (S.orders.unfilled ? ' · ' + t('{n} not executed', { n: S.orders.unfilled }) : '')} />
             <Kpi label={t('Bought')} value={money(S.orders.bought)} />
             <Kpi label={t('Sold')} value={money(S.orders.sold)} />
             <Kpi label={t('Realised P/L')} value={(S.orders.realized >= 0 ? '+' : '') + money(S.orders.realized)} color={S.orders.realized >= 0 ? UP : DOWN} sub={t('from sells in the history')} />

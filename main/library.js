@@ -59,12 +59,13 @@ function normOrder(it) {
     status: o.status || null,
     fillType: (f && f.type) || null,
     qty: qty == null ? null : Math.abs(qty),
+    reqQty: num(o.quantity) == null ? null : Math.abs(num(o.quantity)),
     price: num(f && f.price) ?? num(o.limitPrice) ?? num(o.stopPrice),
     value: num(w.netValue) ?? num(o.filledValue) ?? num(o.value),
     currency: w.currency || o.currency || null,
     fxRate: num(w.fxRate),
     realized: num(w.realisedProfitLoss),
-    fees: taxes.reduce((a, x) => a + (num(x.quantity) || 0), 0),
+    fees: taxes.reduce((a, x) => a + Math.abs(num(x.quantity) || 0), 0),
     taxes: taxes.map(x => ({ name: x.name, amount: num(x.quantity), currency: x.currency })),
     time: ts(f && f.filledAt) ?? ts(o.createdAt),
     created: ts(o.createdAt),
@@ -127,6 +128,11 @@ function txDir(x) {
   if (x.type === 'WITHDRAW') return 'OUT';
   if (x.type === 'TRANSFER') return (x.amount || 0) >= 0 ? 'IN' : 'OUT';
   return null;
+}
+
+// an order that actually traded (cancelled / rejected / expired orders come back with no fill)
+function isFilled(x) {
+  return x.fillType != null || ((x.qty || 0) > 0 && (x.status === 'FILLED' || x.status === 'PARTIALLY_FILLED'));
 }
 
 function monthKey(t) { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
@@ -312,7 +318,7 @@ class Library extends EventEmitter {
     const n = Math.max(1, Math.min(50, Number(limit) || 8));
     const all = [];
     for (const k of Object.keys(KINDS)) for (const x of this.data[k].slice(0, n)) all.push({ ...x, kind: k });
-    return all.filter(x => !(x.kind === 'orders' && x.fillType && x.fillType !== 'TRADE')).sort((a, b) => (b.time || 0) - (a.time || 0)).slice(0, n);
+    return all.filter(x => !(x.kind === 'orders' && (!isFilled(x) || (x.fillType && x.fillType !== 'TRADE')))).sort((a, b) => (b.time || 0) - (a.time || 0)).slice(0, n);
   }
 
   // forget the downloaded history (Settings → Data); the next sync starts from scratch
@@ -328,7 +334,9 @@ class Library extends EventEmitter {
     if (!KINDS[kind]) return { items: [], total: 0 };
     let l = this.data[kind];
     if (ticker) l = l.filter(x => x.ticker === ticker);
-    if (type) l = l.filter(x => (kind === 'orders' ? x.side === type : type === 'IN' || type === 'OUT' ? txDir(x) === type : x.type === type));
+    // trades: unfilled orders only under their own filter, never mixed into the list or the sums
+    if (kind === 'orders') l = type === 'UNFILLED' ? l.filter(x => !isFilled(x)) : l.filter(isFilled);
+    if (type && type !== 'UNFILLED') l = l.filter(x => (kind === 'orders' ? x.side === type : type === 'IN' || type === 'OUT' ? txDir(x) === type : x.type === type));
     if (from) l = l.filter(x => (x.time || 0) >= from);
     if (to) l = l.filter(x => (x.time || 0) < to);
     if (q) {
@@ -368,13 +376,14 @@ class Library extends EventEmitter {
       else if (x.type === 'FEE') c.fees += Math.abs(a);
     }
     c.net = c.deposits - c.withdrawals;
-    const o = { count: 0, buys: 0, sells: 0, realized: 0, fees: 0, bought: 0, sold: 0, byMonth: {} };
+    const o = { count: 0, unfilled: 0, buys: 0, sells: 0, realized: 0, fees: 0, bought: 0, sold: 0, byMonth: {} };
     for (const x of this.data.orders) {
+      if (!isFilled(x)) { o.unfilled++; continue; }
       if (x.fillType && x.fillType !== 'TRADE') continue;
       o.count++;
       if (x.side === 'SELL') { o.sells++; o.sold += Math.abs(x.value || 0); } else { o.buys++; o.bought += Math.abs(x.value || 0); }
       o.realized += x.realized || 0;
-      o.fees += x.fees || 0;
+      o.fees += Math.abs(x.fees || 0);
       if (x.time) o.byMonth[monthKey(x.time)] = (o.byMonth[monthKey(x.time)] || 0) + 1;
     }
     d.byTicker = Object.values(d.byTicker).sort((a, b) => b.amount - a.amount);
@@ -639,7 +648,7 @@ class Library extends EventEmitter {
         market: null, hours: null, orders: [], dividends: [], pending: [], dividendTotal: 0, realized: 0, fees: 0 };
     }
     const meta = this.instrumentIndex()[ticker] || null;
-    const orders = this.data.orders.filter(x => x.ticker === ticker);
+    const orders = this.data.orders.filter(x => x.ticker === ticker && isFilled(x));
     const dividends = this.data.dividends.filter(x => x.ticker === ticker);
     const pend = ((this.mem.pending && this.mem.pending.list) || []).filter(x => x.ticker === ticker);
     const sample = orders[0] || dividends[0] || null;
@@ -659,7 +668,7 @@ class Library extends EventEmitter {
       pending: pend,
       dividendTotal: dividends.reduce((a, d) => a + (d.amount || 0), 0),
       realized: orders.reduce((a, o) => a + (o.realized || 0), 0),
-      fees: orders.reduce((a, o) => a + (o.fees || 0), 0)
+      fees: orders.reduce((a, o) => a + Math.abs(o.fees || 0), 0)
     };
   }
 
