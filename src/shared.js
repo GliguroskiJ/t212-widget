@@ -163,7 +163,15 @@ export function applyTheme(key, accent = DEFAULT_ACCENT, tint = 0, textColor = '
   const ramp = dark ? accentRamp(acc).reverse() : accentRamp(acc);
   ramp.forEach((c, i) => s.setProperty(`--color-accent-${(i + 1) * 100}`, c));
   // dark text ⇒ a dark accent shade for text/borders (ramp is reversed: [0] darkest … [8] lightest)
-  s.setProperty('--color-accent', dark ? ramp[2] : acc);
+  // buttons, links and borders use --color-accent: keep it readable whatever colour was picked
+  // (a black accent on a dark card or a white one on a light card would disappear)
+  const [aL, aC, aH] = rgb2oklch(hex2rgb(acc));
+  // judged against the background itself, so an odd text-colour choice can't hide the buttons
+  let accUi = dark ? ramp[2] : acc;
+  const uiL = rgb2oklch(hex2rgb(accUi))[0];
+  if (!t.lightBg && uiL < 0.62) accUi = rgbHex(oklch2rgb(0.74, Math.min(aC, 0.16), aH));
+  if (t.lightBg && uiL > 0.5) accUi = rgbHex(oklch2rgb(0.42, Math.min(aC, 0.16), aH));
+  s.setProperty('--color-accent', accUi);
   s.setProperty('--acc-rgb', hex2rgb(acc).join(','));
   textRamp(text).forEach((c, i) => s.setProperty(`--color-neutral-${(i + 1) * 100}`, c));
   s.setProperty('--color-text', text);

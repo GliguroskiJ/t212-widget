@@ -92,3 +92,7 @@ body.m-off .pulse-dot{opacity:0!important}
 .corner + .menu .mlabel{padding:6px 9px 5px}
 .corner + .menu .msz{padding:5px 0}
 .corner + .menu .msep{margin:3px 6px}
+
+/* primary buttons: a light fill so they read as the main action on every background */
+.btn-primary:not(:disabled){background:color-mix(in srgb,var(--color-accent) 14%,transparent)}
+.btn-primary:not(:disabled):hover{background:color-mix(in srgb,var(--color-accent) 24%,transparent)}

@@ -877,6 +877,7 @@ function Reports({ m }) {
   const [to, setTo] = useState(isoDay(Date.now()));
   const [inc, setInc] = useState({ orders: true, dividends: true, transactions: true, interest: true });
   const [busy, setBusy] = useState(false);
+  const [wait, setWait] = useState(0);
   const [msg, setMsg] = useState(null);
   const [dl, setDl] = useState({});
   const list = res.data || [];
@@ -892,7 +893,10 @@ function Reports({ m }) {
     const r = await api.lib('requestExport', { from: f, to: tt, ...inc });
     if (r && r.error) setMsg({ ok: false, text: r.error.message });
     else { toast(t('Report requested'), 'ph-file-csv'); setMsg({ ok: true, text: t('Report requested — Trading 212 prepares it in a minute or two.') }); setTimeout(() => { api.lib('exports', { force: true }).then(() => res.reload()); }, 8000); }
-    setTimeout(() => setBusy(false), 31e3);
+    // Trading 212 allows one report request per 30 s — show the wait instead of a dead button
+    const until = Date.now() + 31e3;
+    setWait(31);
+    const iv = setInterval(() => { const s = Math.ceil((until - Date.now()) / 1000); setWait(s > 0 ? s : 0); if (s <= 0) { clearInterval(iv); setBusy(false); } }, 1000);
   };
   const download = async r => {
     setDl(x => ({ ...x, [r.id]: 'busy' }));
@@ -916,7 +920,9 @@ function Reports({ m }) {
             ))}
           </div>
           <div style="display:flex;align-items:center;gap:12px">
-            <button class="btn btn-primary" style="font-size:13px" disabled={busy || !from || !to || !Object.values(inc).some(Boolean)} onClick={create}>{busy ? <Spinner size={12} /> : <i class="ph ph-file-csv"></i>}{t('Create report')}</button>
+            <button class="btn btn-primary" style="font-size:13px" disabled={busy || !from || !to || !Object.values(inc).some(Boolean)} onClick={create}>{busy && !wait ? <Spinner size={12} /> : <i class="ph ph-file-csv"></i>}{t('Create report')}</button>
+            {wait > 0 && <span class="muted">{t('Next report possible in {n} s', { n: wait })}</span>}
+            {!Object.values(inc).some(Boolean) && <span class="muted">{t('Tick at least one type of data')}</span>}
           </div>
           {msg && <span style={`display:flex;gap:7px;align-items:flex-start;font:400 11.5px/1.5 ${F};color:${msg.ok ? 'var(--color-neutral-400)' : DOWN}`}><i class={'ph ' + (msg.ok ? 'ph-hourglass' : 'ph-warning-circle')} style="font-size:14px;flex:none"></i>{msg.text}</span>}
           <span class="t2" style="line-height:1.5;white-space:normal">{t('The same CSV as Trading 212 → History → Export. It is saved where you choose; the app keeps no copy.')}</span>

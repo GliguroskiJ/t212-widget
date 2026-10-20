@@ -542,4 +542,6 @@ const CS = {
   'P/L {v}': 'zisk {v}',
   'fee {v}': 'poplatek {v}',
   'Fees and taxes of this trade (e.g. FX fee)': 'Poplatky a daně tohoto obchodu (např. za převod měny)',
+  'Next report possible in {n} s': 'Další report půjde za {n} s',
+  'Tick at least one type of data': 'Zaškrtněte aspoň jeden typ dat',
 };
