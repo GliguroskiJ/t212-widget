@@ -313,6 +313,13 @@ class Library extends EventEmitter {
     return out;
   }
 
+  // cumulative net deposits over time (deposits − withdrawals, transfers by sign) for the chart line
+  netDeposits() {
+    const ev = this.data.transactions.filter(x => x.time && txDir(x)).map(x => [x.time, txDir(x) === 'IN' ? Math.abs(x.amount || 0) : -Math.abs(x.amount || 0)]).sort((a, b) => a[0] - b[0]);
+    let c = 0;
+    return { complete: !!this.data.complete.transactions, pts: ev.map(([t, a]) => [t, (c += a)]) };
+  }
+
   // newest items of all three histories, merged (overview "Recent activity")
   recent(limit = 8) {
     const n = Math.max(1, Math.min(50, Number(limit) || 8));
@@ -717,6 +724,105 @@ class Library extends EventEmitter {
     if (keys.length > 120) for (const k of keys.slice(0, keys.length - 120)) delete this.mem.prices[k];
     return data;
   }
+
+  // ── company calendar (earnings, ex-dividend, dividend pay dates) ──
+  // Trading 212's API has no corporate calendar, so this uses Yahoo Finance's quote summary, which
+  // needs a session cookie + "crumb". Collected for held instruments, cached in calendar.json.
+  async yahooCrumb(force) {
+    if (!force && this.crumb && this.now() - this.crumb.at < 6 * 3600e3) return this.crumb;
+    let cookie = '';
+    try {
+      const r = await this.fetch('https://fc.yahoo.com/', { credentials: 'include', redirect: 'manual' });
+      const sc = (r.headers && r.headers.get && r.headers.get('set-cookie')) || '';
+      const m = /(?:^|[;,]\s*)(A3=[^;]+)/.exec(sc);
+      if (m) cookie = m[1];
+    } catch {}
+    const headers = { Accept: 'text/plain' };
+    if (cookie) headers.Cookie = cookie;
+    const r2 = await this.fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', { credentials: 'include', headers });
+    const crumb = r2.ok ? (await r2.text()).trim() : '';
+    if (!crumb || crumb.length > 40 || /[<\s{]/.test(crumb)) throw new Error('Yahoo Finance did not hand out a session (HTTP ' + r2.status + ')');
+    this.crumb = { at: this.now(), crumb, cookie };
+    return this.crumb;
+  }
+
+  async quoteSummary(sym) {
+    const go = async force => {
+      const c = await this.yahooCrumb(force);
+      const headers = { Accept: 'application/json' };
+      if (c.cookie) headers.Cookie = c.cookie;
+      return this.fetch(`https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=calendarEvents,summaryDetail,defaultKeyStatistics&crumb=${encodeURIComponent(c.crumb)}`, { credentials: 'include', headers });
+    };
+    let r = await go(false);
+    if (r.status === 401 || r.status === 403) r = await go(true);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    return j && j.quoteSummary && j.quoteSummary.result && j.quoteSummary.result[0];
+  }
+
+  calFile() { return path.join(this.dir, 'calendar.json'); }
+  calData() {
+    if (!this.cal) this.cal = readJson(this.calFile(), null) || { by: {}, at: 0 };
+    return this.cal;
+  }
+
+  // refresh calendar data of the given positions (each at most every 12 h)
+  async refreshCalendar(positions, force) {
+    if (this.calRunning) return this.calRunning;
+    const cal = this.calData();
+    this.calRunning = (async () => {
+      let ok = 0, fail = null;
+      for (const p of positions.slice(0, 80)) {
+        const old = cal.by[p.ticker];
+        if (!force && old && this.now() - old.at < 12 * 3600e3) continue;
+        try {
+          const sym = await this.resolveSymbol(p.ticker, p.isin, p.price);
+          if (!sym) { cal.by[p.ticker] = { at: this.now(), none: true }; continue; }
+          const q = await this.quoteSummary(sym);
+          const ce = (q && q.calendarEvents) || {}, sd = (q && q.summaryDetail) || {}, ks = (q && q.defaultKeyStatistics) || {};
+          const raw = v => (v && typeof v === 'object' ? (v.raw ?? null) : v ?? null);
+          const er = ce.earnings || {};
+          cal.by[p.ticker] = {
+            at: this.now(), sym,
+            earnings: (er.earningsDate || []).map(x => raw(x) * 1000).filter(Boolean),
+            estimate: !!er.isEarningsDateEstimate,
+            epsAvg: raw(er.earningsAverage), revAvg: raw(er.revenueAverage),
+            exDiv: raw(ce.exDividendDate) ? raw(ce.exDividendDate) * 1000 : null,
+            divDate: raw(ce.dividendDate) ? raw(ce.dividendDate) * 1000 : null,
+            stats: { marketCap: raw(sd.marketCap), pe: raw(sd.trailingPE), fwdPe: raw(sd.forwardPE), divYield: raw(sd.dividendYield),
+              beta: raw(sd.beta), eps: raw(ks.trailingEps), avgVolume: raw(sd.averageVolume), currency: sd.currency || null }
+          };
+          ok++;
+        } catch (e) { fail = e; if (/session/.test(String(e && e.message))) break; }
+        await new Promise(r => setTimeout(r, 250));
+      }
+      cal.at = this.now();
+      cal.error = ok || !fail ? null : String(fail.message || fail);
+      try { atomicWrite(this.calFile(), JSON.stringify(cal)); } catch {}
+      this.emitChange('calendar');
+      return true;
+    })().finally(() => { this.calRunning = null; });
+    return this.calRunning;
+  }
+
+  // events for the calendar page: upcoming corporate events of holdings + dividends received
+  calendar(positions) {
+    const cal = this.calData();
+    const names = Object.fromEntries(positions.map(p => [p.ticker, p]));
+    const ev = [];
+    for (const [tk, c] of Object.entries(cal.by)) {
+      if (!names[tk] || c.none) continue;
+      const base = { ticker: tk, sym: names[tk].sym, name: names[tk].name };
+      (c.earnings || []).slice(0, 2).forEach((t, i) => ev.push({ ...base, type: 'earnings', time: t, estimate: c.estimate || i > 0, eps: c.epsAvg, rev: c.revAvg }));
+      if (c.exDiv) ev.push({ ...base, type: 'exdiv', time: c.exDiv });
+      if (c.divDate) ev.push({ ...base, type: 'divpay', time: c.divDate });
+    }
+    for (const d of this.data.dividends) ev.push({ ticker: d.ticker, sym: d.sym, name: d.name, type: 'paid', time: d.time, amount: d.amount });
+    ev.sort((a, b) => a.time - b.time);
+    return { events: ev, at: cal.at || null, error: cal.error || null, running: !!this.calRunning };
+  }
+
+  stats4(ticker) { const c = this.calData().by[ticker]; return c && c.stats ? c.stats : null; }
 
   // returns over standard periods + all-time high/low (instrument page), from 5 years of daily closes
   async performance({ ticker, isin, refPrice } = {}) {

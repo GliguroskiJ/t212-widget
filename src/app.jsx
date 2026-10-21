@@ -265,6 +265,19 @@ const APP_RANGES = ['1D', '1W', '1M', '1Y', 'ALL'];
 
 function Hero({ m, closed, range, setRange }) {
   const { d } = m;
+  const nd = useLib('netDeposits', {}, [], ['transactions', 'account']);
+  const [showNd, setShowNd] = useState(() => { try { return localStorage.getItem('t212.nd') === '1'; } catch { return false; } });
+  const toggleNd = () => setShowNd(v => { try { localStorage.setItem('t212.nd', v ? '0' : '1'); } catch {} return !v; });
+  const fx = d.fx || 1;
+  const ndPts = nd.data && nd.data.pts && nd.data.pts.length ? nd.data.pts : null;
+  const ndAt = ts => { if (!ndPts) return null; let v = 0; for (const p of ndPts) { if (p[0] <= ts) v = p[1]; else break; } return v * fx; };
+  const series = d.series || [];
+  const values2 = showNd && ndPts && series.length ? series.map(p => ndAt(p[0])) : null;
+  const tipFor = i => {
+    const tip = m.tipFor(i);
+    if (tip && showNd && ndPts && series[i]) tip.extra = t('net deposits {v}', { v: m.fmt(ndAt(series[i][0]), 0) + ' ' + m.cur });
+    return tip;
+  };
   return (
     <Card style="grid-column:1/-1;display:flex;flex-direction:column;min-height:330px" pad={22}>
       <div style="display:flex;align-items:flex-end;gap:20px;flex-wrap:wrap">
@@ -281,9 +294,12 @@ function Hero({ m, closed, range, setRange }) {
           </div>
         </div>
         <span style="flex:1"></span>
-        <div style="display:flex;gap:6px;align-self:flex-start"><RangeChips range={range} onPick={setRange} list={APP_RANGES} size={11} padX={9} /></div>
+        <div style="display:flex;gap:6px;align-self:flex-start;align-items:center">
+          {ndPts && <button type="button" class={'ndtog' + (showNd ? ' on' : '')} onClick={toggleNd} title={t('Show net deposits as a dashed line')}>
+            <span class="ndline"></span>{t('Net deposits')}</button>}
+          <RangeChips range={range} onPick={setRange} list={APP_RANGES} size={11} padX={9} /></div>
       </div>
-      <FillChart values={m.values} tipFor={m.tipFor} rangeFor={m.rangeFor} pad={14} sw={2} color={m.trend} gid="gApp" gop={.3} glowPx={8} marker mr={3} pr={5.5}
+      <FillChart values={m.values} values2={values2} tipFor={tipFor} rangeFor={m.rangeFor} pad={14} sw={2} color={m.trend} gid="gApp" gop={.3} glowPx={8} marker mr={3} pr={5.5}
         draw={1.3} fade={1.3} fadeDelay={.3} closed={closed} animKey={range} wrapStyle="margin-top:16px;min-height:180px"
         grid={(w, h) => [0.25, 0.5, 0.75].map(f => <line x1="0" y1={h * f} x2={w} y2={h * f} stroke="rgba(var(--ink-rgb),.055)" stroke-dasharray="2 5"></line>)} />
       <div style="display:flex;justify-content:space-between;margin-top:8px">
@@ -330,6 +346,8 @@ function Overview({ m, closed }) {
 
       <Card title={t('Holdings')} right={<More onClick={() => nav.go('holdings')}>{t('All {n}', { n: d.positions.length })}</More>} style="grid-column:span 7">
         <div style="display:flex;flex-direction:column;gap:2px">
+          {d.positions.length > 0 && <div class="lhead"><span class="sc">{t('Instrument')}</span><span style="width:72px;text-align:center">{t('Trend')}</span>
+            <span style="width:110px;text-align:right">{t('Value')} ({m.cur})</span><span style="width:70px;text-align:right">{t('Return')}</span></div>}
           {d.positions.slice(0, 7).map(p => (
             <div class="lrow click" onClick={() => nav.go('instrument', p.ticker)}>
               <SymCell sym={p.sym} name={p.name} ticker={p.ticker} />
@@ -346,6 +364,7 @@ function Overview({ m, closed }) {
       </Card>
 
       <Card title={t('Today’s movers')} style="grid-column:span 5" right={<>{quotes.loading && !quotes.data ? <Spinner size={12} /> : <span class="muted">{t('vs. previous close')}</span>}<More onClick={() => nav.go('holdings')}>{t('Holdings')}</More></>}>
+        {movers.length > 0 && <div class="lhead"><span class="sc">{t('Instrument')}</span><span style="width:112px;text-align:right">{t('Price')}</span><span style="width:76px;text-align:right">{t('Today')}</span></div>}
         {movers.length ? movers.map(p => (
           <div class="lrow click" onClick={() => nav.go('instrument', p.ticker)}>
             <SymCell sym={p.sym} name={p.name} ticker={p.ticker} />
@@ -535,6 +554,7 @@ function Instrument({ ticker, m }) {
   const I = info.data;
   const pr = useLib('prices', { ticker, isin: (pos && pos.isin) || (I && I.isin), range, refPrice: pos && pos.price }, [ticker, range]);
   const P = pr.data;
+  const ks = useLib('keyStats', { ticker }, [ticker], ['calendar']);
   const perf = useLib('performance', { ticker, isin: (pos && pos.isin) || (I && I.isin), refPrice: pos && pos.price }, [ticker]);
   const vals = P && P.pts && P.pts.length > 1 ? P.pts.map(p => p[1]) : null;
   const first = vals ? (range === '1D' && P.meta && P.meta.prevClose ? P.meta.prevClose : vals[0]) : null;
@@ -634,6 +654,10 @@ function Instrument({ ticker, m }) {
             <Fact label={t('Currency')} value={pcur || '—'} />
             <Fact label={t('Type')} value={(I && I.type) || '—'} />
             <Fact label="ISIN" value={(I && I.isin) || (pos && pos.isin) || '—'} />
+            {ks.data && ks.data.marketCap != null && <Fact label={t('Market cap')} value={bigNum(ks.data.marketCap, m.fmt) + (ks.data.currency ? ' ' + ks.data.currency : '')} />}
+            {ks.data && ks.data.pe != null && <Fact label={t('P/E ratio')} value={m.fmt(ks.data.pe, 1)} />}
+            {ks.data && ks.data.divYield != null && <Fact label={t('Dividend yield')} value={m.fmt(ks.data.divYield * 100, 2) + ' %'} />}
+            {ks.data && ks.data.eps != null && <Fact label="EPS" value={m.fmt(ks.data.eps, 2)} />}
             <Fact label={pos ? t('First bought') : t('Market')} value={pos && pos.opened ? dfmt(pos.opened) : marketName(ticker)} />
           </div>
         </Card>
@@ -679,14 +703,14 @@ function RangeMeter({ label, lo, hi, cur, fmt, mark, markLabel, delay = 0 }) {
   const p = cur != null ? pos(cur) : 50;
   return (
     <div class="rmeter">
-      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">
+      <div style={`display:flex;align-items:baseline;gap:8px;margin-bottom:${mark != null && mark >= lo && mark <= hi ? 24 : 10}px`}>
         <span class="lbl">{label}</span>
         <span style="flex:1"></span>
         {cur != null && <span class="muted">{t('{p} % of range', { p: fmt(p, 0) })}</span>}
       </div>
       <div class="rtrack">
         <div class="rfill" style={`width:${on ? p : 0}%`}></div>
-        {mark != null && mark >= lo && mark <= hi && <div class="rmark" style={`left:${pos(mark)}%`} title={markLabel + ' ' + fmt(mark, 2)}><span>{markLabel}</span></div>}
+        {mark != null && mark >= lo && mark <= hi && <div class={'rmark' + (pos(mark) < 12 ? ' l' : pos(mark) > 88 ? ' r' : '')} style={`left:${pos(mark)}%`} title={markLabel + ' ' + fmt(mark, 2)}><span>{markLabel} {fmt(mark, 2)}</span></div>}
         <div class="rdot" style={`left:${on ? p : 0}%`}></div>
       </div>
       <div style="display:flex;justify-content:space-between;margin-top:9px;font:400 11.5px/1 'Inter',sans-serif;color:var(--color-neutral-400);font-variant-numeric:tabular-nums">
@@ -1069,6 +1093,85 @@ function Reports({ m }) {
   );
 }
 
+// ── calendar: earnings, ex-dividend and dividend dates of holdings ──
+const bigNum = (v, fmt) => (v >= 1e12 ? fmt(v / 1e12, 2) + ' ' + t('T') : v >= 1e9 ? fmt(v / 1e9, 1) + ' ' + t('B') : v >= 1e6 ? fmt(v / 1e6, 1) + ' ' + t('M') : fmt(v, 0));
+const EV = () => ({
+  earnings: [t('Results'), 'ph-presentation-chart', CAT[0]],
+  exdiv: [t('Ex-dividend'), 'ph-scissors', CAT[2]],
+  divpay: [t('Dividend payout'), 'ph-coins', CAT[1]],
+  paid: [t('Dividend received'), 'ph-check-circle', UP]
+});
+const dayKey = ts => { const d = new Date(ts); return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate(); };
+
+function CalendarPage({ m }) {
+  const { nav, st } = useApp();
+  const res = useLib('calendar', {}, [], ['calendar', 'dividends', 'account']);
+  const now = new Date();
+  const [view, setView] = useState(new Date(now.getFullYear(), now.getMonth(), 1));
+  const [sel, setSel] = useState(null);
+  const [show, setShow] = useState({ earnings: true, exdiv: true, divpay: true, paid: true });
+  const data = res.data || { events: [] };
+  const evs = data.events.filter(e => show[e.type]);
+  const byDay = {};
+  for (const e of evs) (byDay[dayKey(e.time)] = byDay[dayKey(e.time)] || []).push(e);
+  const first = new Date(view.getFullYear(), view.getMonth(), 1);
+  const off = (first.getDay() + 6) % 7;
+  const cells = [...Array(42)].map((_, i) => new Date(view.getFullYear(), view.getMonth(), 1 - off + i));
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const wk = [...Array(7)].map((_, i) => new Date(2024, 0, 1 + i).toLocaleDateString(locale(), { weekday: 'short' }).replace('.', ''));
+  const upcoming = data.events.filter(e => e.type !== 'paid' && e.time >= today.getTime()).slice(0, 14);
+  const fx = m.d.fx || 1;
+  const E = EV();
+  const selList = sel ? (byDay[sel] || []) : null;
+  return (
+    <div class="grid">
+      <Card style="grid-column:span 8" title={view.toLocaleDateString(locale(), { month: 'long', year: 'numeric' })} right={<>
+        <button class="tb" onClick={() => setView(v => new Date(v.getFullYear(), v.getMonth() - 1, 1))}><i class="ph ph-caret-left"></i></button>
+        <button class="btn btn-ghost" style="font-size:12px" onClick={() => setView(new Date(now.getFullYear(), now.getMonth(), 1))}>{t('Today')}</button>
+        <button class="tb" onClick={() => setView(v => new Date(v.getFullYear(), v.getMonth() + 1, 1))}><i class="ph ph-caret-right"></i></button></>}>
+        <div class="calf">
+          {Object.entries(E).map(([k, [l, ic, c]]) => (
+            <button class={'calchip' + (show[k] ? ' on' : '')} onClick={() => setShow(s => ({ ...s, [k]: !s[k] }))}><span style={`background:${c}`}></span>{l}</button>
+          ))}
+        </div>
+        <div class="calgrid">
+          {wk.map(w => <span class="calwk">{w}</span>)}
+          {cells.map(d => {
+            const k = dayKey(d), list = byDay[k] || [];
+            const out = d.getMonth() !== view.getMonth();
+            return (
+              <button class={'calday' + (out ? ' out' : '') + (+d === +today ? ' today' : '') + (sel === k ? ' sel' : '') + (list.length ? ' has' : '')} onClick={() => setSel(s => (s === k ? null : k))}>
+                <span class="caln">{d.getDate()}</span>
+                <span class="calev">{list.slice(0, 3).map(e => <span class="calpill" style={`--c:${E[e.type][2]}`} title={E[e.type][0] + ' · ' + e.sym}>{e.sym}</span>)}
+                  {list.length > 3 && <span class="calmore">+{list.length - 3}</span>}</span>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+      <Card style="grid-column:span 4" title={selList ? dfmt(selList[0] ? selList[0].time : Date.now()) : t('Upcoming')}
+        right={selList ? <a class="link" onClick={() => setSel(null)}>{t('Upcoming')}<i class="ph ph-caret-right"></i></a> : (data.running ? <Spinner size={12} /> : <button class="tb" title={t('Refresh')} onClick={() => api.lib('calendar', { refresh: true }).then(() => res.reload())}><i class="ph ph-arrow-clockwise"></i></button>)}>
+        {(selList || upcoming).length ? (selList || upcoming).map(e => {
+          const [l, ic, c] = E[e.type];
+          return (
+            <div class="lrow click" onClick={() => nav.go('instrument', e.ticker)}>
+              <Logo ticker={e.ticker} sym={e.sym} badge={ic} badgeColor={c} />
+              <span style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1">
+                <span class="t1">{e.sym} · <span style={`color:${c};font-weight:500`}>{l}</span></span>
+                <span class="t2">{dfmt(e.time, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}{e.estimate ? ' · ' + t('estimate') : ''}
+                  {e.type === 'earnings' && e.eps != null ? ' · ' + t('EPS est. {v}', { v: m.fmt(e.eps, 2) }) : ''}</span>
+              </span>
+              {e.type === 'paid' && <span class="num" style={`color:${UP}`}>+{m.fmt((e.amount || 0) * fx, 2)} {m.cur}</span>}
+            </div>
+          );
+        }) : <Empty icon="ph-calendar-dots" title={res.loading || data.running ? t('Collecting dates…') : t('Nothing coming up')}
+          text={data.error ? t('Yahoo Finance didn’t answer ({e}). Trying again later.', { e: data.error }) : t('Results and dividend dates of your holdings, collected from Yahoo Finance twice a day. ETFs usually have none.')} />}
+        {data.at && <span class="t2" style="margin-top:10px">{t('Updated {x}', { x: agoStr(data.at, Date.now()) })}</span>}
+      </Card>
+    </div>
+  );
+}
+
 // ── settings page ────────────────────────────────────────────
 function SettingsPage({ tab, init }) {
   const { settings: s, st, set, nav } = useApp();
@@ -1099,6 +1202,7 @@ const NAV = () => [
   ['activity', t('Activity'), 'ph-clock-counter-clockwise'],
   ['orders', t('Orders'), 'ph-list-checks'],
   ['pies', t('Pies'), 'ph-circle-half'],
+  ['calendar', t('Calendar'), 'ph-calendar-dots'],
   ['reports', t('Reports'), 'ph-file-csv']
 ];
 
@@ -1289,6 +1393,7 @@ function App({ init }) {
   else if (page === 'orders') body = <Orders m={m} />;
   else if (page === 'pies') body = <Pies m={m} id={arg} />;
   else if (page === 'reports') body = <Reports m={m} />;
+  else if (page === 'calendar') body = <CalendarPage m={m} />;
   else body = <Overview m={m} closed={closed} />;
 
   const ctx = { st: stFull, settings, set, setAppRange, nav, libTick, init };
@@ -1363,7 +1468,7 @@ function ErrorCard({ st, now }) {
 function parseRoute(r) {
   const [p, ...rest] = String(r || 'overview').split('/');
   const a = rest.join('/');
-  const page = ['overview', 'holdings', 'instrument', 'activity', 'orders', 'pies', 'reports', 'settings'].includes(p) ? p : 'overview';
+  const page = ['overview', 'holdings', 'instrument', 'activity', 'orders', 'pies', 'reports', 'calendar', 'settings'].includes(p) ? p : 'overview';
   return [page, a === '' ? undefined : page === 'pies' ? Number(a) : a];
 }
 

@@ -573,6 +573,14 @@ const LIB = {
   status: () => lib.statusPayload(),
   series: a => poller.seriesFor(RANGES.includes(a.range) ? a.range : '1M'),
   stats: () => lib.stats(),
+  netDeposits: () => lib.netDeposits(),
+  calendar: a => {
+    const pos = (poller.raw && poller.raw.positions || []).map(p => ({ ticker: p.instrument && p.instrument.ticker, isin: p.instrument && p.instrument.isin, price: p.currentPrice,
+      sym: require('./t212').shortTicker(p.instrument && p.instrument.ticker), name: (p.instrument && p.instrument.name) || '' })).filter(p => p.ticker);
+    if (a.refresh || !lib.calData().at || Date.now() - lib.calData().at > 12 * 3600e3) lib.refreshCalendar(pos, !!a.refresh);
+    return lib.calendar(pos);
+  },
+  keyStats: a => lib.stats4(str(a.ticker)),
   recent: a => lib.recent(a.limit),
   activity: a => lib.activity({ kind: str(a.kind, 20), ticker: a.ticker ? str(a.ticker) : null, q: a.q ? str(a.q) : '', type: a.type ? str(a.type, 40) : '',
     from: Number(a.from) || null, to: Number(a.to) || null, offset: Math.max(0, Number(a.offset) || 0), limit: Math.max(1, Number(a.limit) || 100) }),

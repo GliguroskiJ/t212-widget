@@ -201,6 +201,31 @@ srv.listen(0, async () => {
   assert.equal(await ly.resolveSymbol('yf:bad;x'), null);
   console.log('external search ok');
 
+  // 9d) calendar via Yahoo quote summary (cookie + crumb), cached, then turned into events
+  let crumbCalls = 0;
+  const cf = async (u, o) => {
+    if (u.startsWith('https://fc.yahoo.com')) return new Response('', { status: 404, headers: { 'set-cookie': 'A3=abc123; Domain=.yahoo.com; Path=/' } });
+    if (u.includes('/getcrumb')) { crumbCalls++; assert.equal(o.headers.Cookie, 'A3=abc123'); return new Response('Cr4mb', { status: 200 }); }
+    if (u.includes('/quoteSummary/')) {
+      assert.ok(u.includes('crumb=Cr4mb'));
+      return new Response(JSON.stringify({ quoteSummary: { result: [{ calendarEvents: { earnings: { earningsDate: [{ raw: 1800000000 }], earningsAverage: { raw: 1.2 }, isEarningsDateEstimate: true }, exDividendDate: { raw: 1795000000 }, dividendDate: { raw: 1796000000 } },
+        summaryDetail: { marketCap: { raw: 3e12 }, trailingPE: { raw: 31.5 }, dividendYield: { raw: 0.005 } } }] } }), { headers: { 'content-type': 'application/json' } });
+    }
+    if (u.includes('/v8/finance/chart/')) return new Response(JSON.stringify({ chart: { result: [{ meta: { regularMarketPrice: 230 }, timestamp: [1, 2], indicators: { quote: [{ close: [229, 230] }] } }] } }), { headers: { 'content-type': 'application/json' } });
+    return fetch(u, o);
+  };
+  const lc = new Library({ store, fetchImpl: cf, limiter: fast(), dir: fs.mkdtempSync(path.join(os.tmpdir(), 't212cal-')) });
+  store.history.symbols = {};
+  await lc.refreshCalendar([{ ticker: 'AAPL_US_EQ', price: 230 }]);
+  const calv = lc.calendar([{ ticker: 'AAPL_US_EQ', sym: 'AAPL', name: 'Apple' }]);
+  assert.equal(calv.error, null);
+  assert.deepEqual(calv.events.map(e => e.type), ['exdiv', 'divpay', 'earnings']);
+  assert.equal(calv.events[2].time, 1800000000 * 1000); assert.equal(calv.events[2].estimate, true);
+  assert.equal(lc.stats4('AAPL_US_EQ').pe, 31.5);
+  await lc.refreshCalendar([{ ticker: 'AAPL_US_EQ', price: 230 }]);   // cached → no new requests
+  assert.equal(crumbCalls, 1);
+  console.log('calendar ok');
+
   // 9) limiter spacing really spaces calls per key, keys are independent
   const L = new Limiter({ intervals: { a: 60, b: 0 } });
   const t0 = Date.now(); const times = [];

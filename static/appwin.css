@@ -227,3 +227,33 @@ input[type=date].input{color-scheme:dark;font-size:12.5px;min-height:34px}
 .lrow.click:hover .sym,.tr.click:hover .sym{transform:scale(1.08);box-shadow:0 4px 14px rgba(0,0,0,.35),0 0 0 1px rgba(var(--acc-rgb),.35)}
 .lrow.click::after,.tr.click::after{content:"\203A";position:absolute;right:-13px;top:50%;transform:translate(-6px,-50%);opacity:0;color:var(--color-accent-300);font:400 16px/1 "Inter",sans-serif;transition:opacity .25s ease,transform .25s ease;pointer-events:none}
 .lrow.click:hover::after,.tr.click:hover::after{opacity:1;transform:translate(0,-50%)}
+
+/* net-deposits toggle */
+.ndtog{display:inline-flex;align-items:center;gap:7px;border:0;cursor:pointer;padding:4px 9px;border-radius:5px;margin-right:6px;font:500 11px/1 "Inter",sans-serif;color:var(--color-neutral-500);background:transparent;box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.1);transition:color .2s ease,background .2s ease,box-shadow .2s ease}
+.ndtog:hover{color:var(--color-neutral-300)}
+.ndtog.on{color:var(--color-neutral-100);background:rgba(var(--ink-rgb),.06);box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.22)}
+.ndline{width:16px;height:0;border-top:1.5px dashed currentColor;opacity:.8}
+.rmark span{bottom:calc(100% + 4px)}
+.rmark.l span{left:0;transform:none}
+.rmark.r span{left:auto;right:0;transform:none}
+.lhead{display:flex;align-items:center;gap:12px;padding:0 10px 8px;font:400 9.5px/1 "Inter",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--color-neutral-600)}
+.lhead > *{flex-shrink:0}
+.lhead > .sc{flex:1 1 0;min-width:0}
+
+/* calendar */
+.calf{display:flex;gap:6px;flex-wrap:wrap;margin:-4px 0 12px}
+.calchip{display:inline-flex;align-items:center;gap:7px;border:0;cursor:pointer;padding:5px 10px;border-radius:6px;font:500 11.5px/1 "Inter",sans-serif;color:var(--color-neutral-500);background:rgba(var(--ink-rgb),.03);box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.07);transition:all .2s ease}
+.calchip span{width:8px;height:8px;border-radius:3px;opacity:.4}
+.calchip.on{color:var(--color-neutral-100);background:rgba(var(--ink-rgb),.06)}
+.calchip.on span{opacity:1}
+.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.calwk{font:500 9.5px/1 "Inter",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-600);padding:2px 6px 6px}
+.calday{min-height:78px;display:flex;flex-direction:column;align-items:stretch;gap:4px;padding:6px;border:0;border-radius:8px;cursor:pointer;text-align:left;background:rgba(var(--ink-rgb),.025);box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.04);transition:background .2s ease,box-shadow .2s ease,transform .2s ease}
+.calday:hover{background:rgba(var(--acc-rgb),.08);transform:translateY(-1px)}
+.calday.out{opacity:.38}
+.calday.today .caln{background:var(--color-accent-800);color:var(--color-accent-100)}
+.calday.sel{box-shadow:inset 0 0 0 1px var(--color-accent-500)}
+.caln{align-self:flex-start;min-width:20px;height:20px;padding:0 5px;box-sizing:border-box;border-radius:6px;display:flex;align-items:center;justify-content:center;font:500 11px/1 "Inter",sans-serif;color:var(--color-neutral-300);font-variant-numeric:tabular-nums}
+.calev{display:flex;flex-direction:column;gap:3px;min-width:0}
+.calpill{display:block;padding:2px 5px;border-radius:4px;font:600 9.5px/1.3 "Inter",sans-serif;color:var(--color-neutral-100);background:color-mix(in srgb,var(--c) 26%,transparent);box-shadow:inset 2px 0 0 var(--c);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;animation:nfade .4s ease both}
+.calmore{font:500 9.5px/1 "Inter",sans-serif;color:var(--color-neutral-500);padding-left:4px}

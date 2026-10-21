@@ -135,6 +135,7 @@ export function ChartTip({ tip, x, y, w }) {
         <span style="color:var(--color-neutral-500)">{tip.time}{tip.est ? ' · ' + t('est.') : ''}</span>
         <span style={`color:${tip.up ? UP : DOWN}`}>{tip.chg} · {tip.pct}%</span>
       </div>
+      {tip.extra && <div style={`margin-top:5px;font:400 10px/1 ${F};color:var(--color-neutral-400);font-variant-numeric:tabular-nums`}>{tip.extra}</div>}
     </div>
   );
 }
@@ -147,17 +148,26 @@ export function RangeTip({ r, x1, x2, w }) {
       `background:rgba(10,11,18,.9);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 22px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.08)`}>
       <div style={`display:flex;align-items:baseline;gap:8px;font:500 13px/1 ${F};font-variant-numeric:tabular-nums;color:${r.up ? UP : DOWN}`}>
         <span>{r.chg}</span><span style="font-size:11.5px">{r.pct}%</span></div>
+      {r.label && <div style={`margin-top:4px;font:400 10px/1 ${F};color:var(--color-neutral-500)`}>{r.label}</div>}
+      {r.detail && <div style={`margin-top:5px;font:400 10.5px/1.3 ${F};color:var(--color-neutral-300);font-variant-numeric:tabular-nums`}>{r.detail}</div>}
       <div style={`margin-top:5px;font:400 10.5px/1 ${F};color:var(--color-neutral-400);font-variant-numeric:tabular-nums`}>{r.from} → {r.to}</div>
     </div>
   );
 }
 
-export function Chart({ values, tipFor, rangeFor, w, h, pad, sw = 1.5, color, gid, gop = .24, glowPx = 0, marker, mr = 2.6, pr = 4.5, draw = 1.1, fade = 1.2, fadeDelay = .3, grid, closed, animKey, style = '' }) {
+export function Chart({ values, values2, tipFor, rangeFor, w, h, pad, sw = 1.5, color, gid, gop = .24, glowPx = 0, marker, mr = 2.6, pr = 4.5, draw = 1.1, fade = 1.2, fadeDelay = .3, grid, closed, animKey, style = '' }) {
   const [hov, setHov] = useState(null);
   const [sel, setSel] = useState(null);       // { a, b } indexes while dragging
-  const P = pts(values, w, h, pad);
-  const line = linePath(values, w, h, pad);
-  const area = areaPath(values, w, h, pad);
+  // one scale for the main line and the optional dashed one (net deposits)
+  const arr = values && values.length ? (values.length === 1 ? [values[0], values[0]] : values) : [0, 0];
+  const all = values2 ? arr.concat(values2.filter(v => v != null && isFinite(v))) : arr;
+  const mn = Math.min(...all), mx = Math.max(...all), rr = mx - mn;
+  const toY = v => (rr ? pad + (1 - (v - mn) / rr) * (h - pad * 2) : h / 2);
+  const P = arr.map((v, i) => [(i / (arr.length - 1)) * w, toY(v)]);
+  const line = P.map((q, i) => (i ? 'L' : 'M') + q[0].toFixed(1) + ' ' + q[1].toFixed(1)).join(' ');
+  const area = line + ' L' + w + ' ' + h + ' L0 ' + h + ' Z';
+  const line2 = values2 && values2.length === arr.length
+    ? values2.map((v, i) => (v == null ? '' : (i && values2[i - 1] != null ? 'L' : 'M') + P[i][0].toFixed(1) + ' ' + toY(v).toFixed(1))).join(' ') : null;
   const lp = P[P.length - 1];
   const g = typeof grid === 'function' ? grid(w, h) : grid;
   const idxAt = e => {
@@ -231,6 +241,7 @@ export function Chart({ values, tipFor, rangeFor, w, h, pad, sw = 1.5, color, gi
         style={`animation:ndraw ${draw}s cubic-bezier(.4,0,.2,1) both;transition:stroke .7s ease;${glowPx ? `filter:drop-shadow(0 0 ${glowPx}px ${glow(color)})` : ''}`}></path>
       {marker && <circle class="pulse-dot" cx={lp[0].toFixed(1)} cy={lp[1].toFixed(1)} r={pr} fill={color} opacity={hp ? '.2' : '.5'}></circle>}
       {marker && <circle cx={lp[0].toFixed(1)} cy={lp[1].toFixed(1)} r={mr} fill={color} opacity={hp ? '.45' : '1'}></circle>}
+      {line2 && <path d={line2} fill="none" stroke="var(--color-neutral-300)" stroke-width="1.3" stroke-dasharray="4 4" opacity=".7" style="pointer-events:none;animation:nfade .6s ease both"></path>}
       {band}
       {cross}
     </svg>
@@ -278,11 +289,16 @@ export function chartRange(d, per, fmt, i, j) {
   const s = d.series;
   if (!s || !s[i] || !s[j]) return null;
   const [ta, va, pa] = s[i], [tb, vb, pb] = s[j];
-  const chg = pa != null && pb != null ? pb - pa : vb - va;
+  const onPl = pa != null && pb != null;
+  const chg = onPl ? pb - pa : vb - va;
+  const dv = vb - va, dep = dv - chg;
   const base = va;
   return {
     chg: fmt.signed(chg, 0) + ' ' + d.currency,
     pct: fmt.signed(base ? (chg / base) * 100 : 0, 2),
+    label: onPl ? t('gain / loss in this period') : '',
+    // the value line can rise while the gain is negative — say why
+    detail: onPl && Math.abs(dep) >= 1 ? t('value {v} · deposits/withdrawals {d}', { v: fmt.signed(dv, 0), d: fmt.signed(dep, 0) }) : '',
     from: tipTime(ta, per.range), to: tipTime(tb, per.range), up: chg >= 0
   };
 }

@@ -113,6 +113,12 @@
       { id: 7, status: 'Failed', from: now - 700 * DAY, to: now - 365 * DAY, include: { includeOrders: true } }],
     logos: a => Object.fromEntries(a.tickers.map((tk, i) => [tk, i % 3 === 2 ? null : 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="14" fill="' + ['#76b900', '#0a66c2', '#111', '#e31937', '#d62d20'][i % 5] + '"/><text x="32" y="40" font-family="Arial" font-weight="700" font-size="20" fill="#fff" text-anchor="middle">' + tk.slice(0, 2) + '</text></svg>')])),
     performance: () => ({ w1: 1.8, m1: -3.2, m3: 6.4, m6: 12.1, ytd: 18.9, y1: 24.3, y3: 61.2, y5: null, high5: 140, low5: 38 }),
+    netDeposits: () => ({ complete: true, pts: data.series.map((p, i) => [p[0] - 1, 1080000 + Math.floor(i / 12) * 15000]) }),
+    keyStats: () => ({ marketCap: 3.2e12, pe: 41.3, divYield: 0.0004, eps: 2.94, currency: 'USD' }),
+    calendar: () => { const D = 86400e3, ev = []; const y = new Date(); y.setHours(12, 0, 0, 0);
+      [['NVDA_US_EQ', 'NVDA', 'NVIDIA', 'earnings', 6], ['MSFT_US_EQ', 'MSFT', 'Microsoft', 'earnings', 9], ['AAPL_US_EQ', 'AAPL', 'Apple', 'earnings', 10], ['AAPL_US_EQ', 'AAPL', 'Apple', 'exdiv', 18], ['AAPL_US_EQ', 'AAPL', 'Apple', 'divpay', 22], ['CEZ_CZ_EQ', 'CEZ', 'ČEZ', 'paid', -8], ['VWCEd_EQ', 'VWCE', 'Vanguard', 'paid', -2], ['MSFT_US_EQ', 'MSFT', 'Microsoft', 'exdiv', 6]]
+        .forEach(([ticker, sym, name, type, dd]) => ev.push({ ticker, sym, name, type, time: y.getTime() + dd * D, estimate: dd === 10, eps: type === 'earnings' ? 1.23 : null, amount: 412 }));
+      return { events: ev.sort((a, b) => a.time - b.time), at: Date.now() - 3600e3, error: null, running: false }; },
     requestExport: () => ({ id: 10 }), download: () => ({ saved: true }), sync: () => true, retry: () => true, wipe: () => true
   };
 })();

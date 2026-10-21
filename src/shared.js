@@ -220,9 +220,13 @@ export function applyTheme(key, accent = DEFAULT_ACCENT, tint = 0, textColor = '
   // opaque surface for popovers + inputs that follows background type, colour and text
   const m = t.raw[0];
   let menu;
+  // derived from the background itself (a touch lighter), so menus, inputs and badges always match it —
+  // never from the accent hue (a black or grey accent has no real hue and used to come out pink)
   if (t.lightBg) menu = [m[0], m[1], m[2]];
-  else if (m[3] >= 0.9 && !t.layers) menu = [m[0], m[1], m[2]];
-  else { const c = tintStop([34, 36, 50, 1], t.hue, 0.05, Math.min(1, (tint || 0) * 0.8 + 0.15)); menu = [c[0], c[1], c[2]]; }
+  else {
+    const [mL, mC, mH] = rgb2oklch([m[0], m[1], m[2]]);
+    menu = oklch2rgb(Math.min(0.4, Math.max(0.17, mL + 0.075)), Math.min(mC * 0.8, 0.05), mH);
+  }
   if (dark && !t.lightBg) menu = [236, 237, 243];                // dark text on a dark theme: use a light menu
   if (!dark && t.lightBg) menu = [34, 36, 50];                   // light text on a light theme: use a dark menu
   s.setProperty('--menu-bg', `rgb(${menu.join(',')})`);

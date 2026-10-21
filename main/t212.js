@@ -308,7 +308,15 @@ class Poller extends EventEmitter {
   useLibrary(lib) {
     this.library = lib;
     lib.on('change', ({ what }) => {
-      if (what === 'sync-done') { this.maybeFullHistory(); return; }
+      if (what === 'sync-done') {
+        this.maybeFullHistory();
+        // corporate calendar of holdings: collected in the background, at most every 12 h
+        const cal = lib.calData();
+        if (this.raw && (!cal.at || Date.now() - cal.at > 12 * 3600e3)) {
+          lib.refreshCalendar(this.raw.positions.map(p => ({ ticker: p.instrument && p.instrument.ticker, isin: p.instrument && p.instrument.isin, price: p.currentPrice })).filter(p => p.ticker)).catch(() => {});
+        }
+        return;
+      }
       if (what !== 'dividends' && what !== 'account') return;
       const st = lib.status.dividends;
       if (st.state === 'forbidden' || st.state === 'error') {
