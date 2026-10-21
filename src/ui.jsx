@@ -139,22 +139,52 @@ export function ChartTip({ tip, x, y, w }) {
   );
 }
 
-export function Chart({ values, tipFor, w, h, pad, sw = 1.5, color, gid, gop = .24, glowPx = 0, marker, mr = 2.6, pr = 4.5, draw = 1.1, fade = 1.2, fadeDelay = .3, grid, closed, animKey, style = '' }) {
+// Click-and-drag across a chart: change between the two points (like most trading apps)
+export function RangeTip({ r, x1, x2, w }) {
+  const mid = (x1 + x2) / 2, frac = w ? Math.min(.85, Math.max(.15, mid / w)) : .5;
+  return (
+    <div class="chart-tip range-tip" style={`position:absolute;left:${(frac * 100).toFixed(2)}%;top:-6px;transform:translate(-50%,-100%);pointer-events:none;z-index:7;white-space:nowrap;padding:8px 11px 7px;border-radius:8px;` +
+      `background:rgba(10,11,18,.9);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 22px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.08)`}>
+      <div style={`display:flex;align-items:baseline;gap:8px;font:500 13px/1 ${F};font-variant-numeric:tabular-nums;color:${r.up ? UP : DOWN}`}>
+        <span>{r.chg}</span><span style="font-size:11.5px">{r.pct}%</span></div>
+      <div style={`margin-top:5px;font:400 10.5px/1 ${F};color:var(--color-neutral-400);font-variant-numeric:tabular-nums`}>{r.from} → {r.to}</div>
+    </div>
+  );
+}
+
+export function Chart({ values, tipFor, rangeFor, w, h, pad, sw = 1.5, color, gid, gop = .24, glowPx = 0, marker, mr = 2.6, pr = 4.5, draw = 1.1, fade = 1.2, fadeDelay = .3, grid, closed, animKey, style = '' }) {
   const [hov, setHov] = useState(null);
+  const [sel, setSel] = useState(null);       // { a, b } indexes while dragging
   const P = pts(values, w, h, pad);
   const line = linePath(values, w, h, pad);
   const area = areaPath(values, w, h, pad);
   const lp = P[P.length - 1];
   const g = typeof grid === 'function' ? grid(w, h) : grid;
+  const idxAt = e => {
+    const r = e.currentTarget.getBoundingClientRect();
+    if (!r.width) return null;
+    const fx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    return Math.round(fx * (P.length - 1));
+  };
   const onMove = e => {
     if (!tipFor) return;
-    const r = e.currentTarget.getBoundingClientRect();
-    if (!r.width) return;
-    const fx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-    setHov(Math.round(fx * (P.length - 1)));
+    const i = idxAt(e);
+    if (i == null) return;
+    if (sel) setSel(s => (s ? { ...s, b: i } : s));
+    setHov(i);
   };
-  const leave = () => setHov(null);
-  const tip = hov != null && tipFor ? tipFor(Math.min(hov, values.length - 1)) : null;
+  const leave = () => { setHov(null); setSel(null); };
+  const down = e => {
+    if (!rangeFor || e.button !== 0) { leave(); return; }
+    const i = idxAt(e);
+    if (i == null) return;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch {}
+    setSel({ a: i, b: i });
+  };
+  const up = () => setSel(null);
+  const ranging = sel && sel.a !== sel.b;
+  const rng = ranging ? rangeFor(Math.min(sel.a, sel.b), Math.max(sel.a, sel.b)) : null;
+  const tip = !ranging && hov != null && tipFor ? tipFor(Math.min(hov, values.length - 1)) : null;
   const hp = tip ? P[Math.min(hov, P.length - 1)] : null;
   const hc = closed ? 'var(--color-neutral-300)' : color;
   const cross = hp && (
@@ -164,16 +194,28 @@ export function Chart({ values, tipFor, w, h, pad, sw = 1.5, color, gid, gop = .
       <circle cx={hp[0].toFixed(1)} cy={hp[1].toFixed(1)} r={mr + 0.6} fill={hc} stroke="rgba(0,0,0,.4)" stroke-width="1"></circle>
     </g>
   );
+  const xa = ranging ? P[Math.min(sel.a, sel.b)][0] : 0, xb = ranging ? P[Math.max(sel.a, sel.b)][0] : 0;
+  const band = ranging && (
+    <g style="pointer-events:none">
+      <rect x={xa.toFixed(1)} y="0" width={(xb - xa).toFixed(1)} height={h} fill={rng && rng.up ? UP : DOWN} opacity=".1"></rect>
+      {[Math.min(sel.a, sel.b), Math.max(sel.a, sel.b)].map(i => <g>
+        <line x1={P[i][0].toFixed(1)} y1="0" x2={P[i][0].toFixed(1)} y2={h} stroke="rgba(var(--ink-rgb),.35)" stroke-width="1" stroke-dasharray="2 3"></line>
+        <circle cx={P[i][0].toFixed(1)} cy={P[i][1].toFixed(1)} r={mr + 1} fill={rng && rng.up ? UP : DOWN} stroke="rgba(0,0,0,.45)" stroke-width="1"></circle></g>)}
+    </g>
+  );
   const wrap = svg => (
-    <div style={`position:relative;${tipFor ? 'cursor:crosshair' : ''}`} onMouseMove={onMove} onMouseLeave={leave} onPointerDown={leave}>
+    <div class={rangeFor ? 'chart-sel' : ''} style={`position:relative;${tipFor ? 'cursor:crosshair' : ''};touch-action:none`}
+      onPointerMove={onMove} onMouseLeave={leave} onPointerDown={down} onPointerUp={up} onPointerCancel={up}>
       {svg}
       {tip && <ChartTip tip={tip} x={hp[0]} y={hp[1]} w={w} />}
+      {rng && <RangeTip r={rng} x1={xa} x2={xb} w={w} />}
     </div>
   );
   if (closed) {
     return wrap(
       <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" style={`display:block;overflow:visible;${style}`}>
         <path d={line} fill="none" stroke="var(--color-neutral-500)" stroke-width="1.4" stroke-linecap="round" style="opacity:.4"></path>
+        {band}
         {cross}
       </svg>
     );
@@ -189,6 +231,7 @@ export function Chart({ values, tipFor, w, h, pad, sw = 1.5, color, gid, gop = .
         style={`animation:ndraw ${draw}s cubic-bezier(.4,0,.2,1) both;transition:stroke .7s ease;${glowPx ? `filter:drop-shadow(0 0 ${glowPx}px ${glow(color)})` : ''}`}></path>
       {marker && <circle class="pulse-dot" cx={lp[0].toFixed(1)} cy={lp[1].toFixed(1)} r={pr} fill={color} opacity={hp ? '.2' : '.5'}></circle>}
       {marker && <circle cx={lp[0].toFixed(1)} cy={lp[1].toFixed(1)} r={mr} fill={color} opacity={hp ? '.45' : '1'}></circle>}
+      {band}
       {cross}
     </svg>
   );
@@ -227,6 +270,20 @@ export function chartTip(d, per, fmt, i) {
     pct: fmt.signed(base ? (chg / base) * 100 : 0, 2),
     up: chg >= 0,
     est: !!est
+  };
+}
+
+// change between two chart points (drag on the chart) — on P/L, so deposits in between don't count
+export function chartRange(d, per, fmt, i, j) {
+  const s = d.series;
+  if (!s || !s[i] || !s[j]) return null;
+  const [ta, va, pa] = s[i], [tb, vb, pb] = s[j];
+  const chg = pa != null && pb != null ? pb - pa : vb - va;
+  const base = va;
+  return {
+    chg: fmt.signed(chg, 0) + ' ' + d.currency,
+    pct: fmt.signed(base ? (chg / base) * 100 : 0, 2),
+    from: tipTime(ta, per.range), to: tipTime(tb, per.range), up: chg >= 0
   };
 }
 
@@ -330,6 +387,7 @@ export function useModel(st, settings) {
     chgAbsStr: fmt.signed(chgAbs, 0) + ' ' + cur,
     chgIcon: chgPct >= 0 ? 'ph ph-trend-up' : 'ph ph-trend-down',
     tipFor: i => chartTip(d, per, fmt, i),
+    rangeFor: (i, j) => chartRange(d, per, fmt, i, j),
     cashStr: fmt(d.cash, 0),
     divStr: d.dividendsYTD == null ? '—' : fmt(d.dividendsYTD, 0) + ' ' + cur,
     divFull: d.dividendsYTD == null ? '—' : fmt(d.dividendsYTD, 0) + ' ' + cur,

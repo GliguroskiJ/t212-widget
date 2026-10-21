@@ -63,33 +63,60 @@ export const THEMES = {
   acrylic: { label: 'Acrylic', stops: [[48, 51, 72, .88], [22, 24, 38, .94]], edge: '0 0 0 1px rgba(233,233,237,.10),0 10px 30px rgba(0,0,0,.55)', hair: .5,
     layers: [{ type: 'blob', cx: .02, cy: -.18, r: .95, hue: 0, a: .2 }, { type: 'streak', pos: .3, width: .12, a: .045 }, { type: 'grain', a: .012 },
       { type: 'shade', stop: .55, a: .18 }, { type: 'rim', a: .2 }] },
-  slate: { label: 'Flat slate', stops: [[35, 37, 50, 1]], edge: '0 0 0 1px #3f424d,0 8px 22px rgba(0,0,0,.45)', hairWhite: .18,
-    layers: [{ type: 'rim', a: .07 }] },
-  indigo: { label: 'Indigo', stops: [[56, 62, 134, .92], [32, 36, 90, .97]], edge: '0 0 0 1px #4c5397,0 10px 30px rgba(0,0,0,.5)', hair: .55, soft: true,
-    layers: [{ type: 'streak', pos: .32, width: .12, a: .05 }, { type: 'shade', stop: .55, a: .16 }, { type: 'rim', a: .22 }] },
-  clear: { label: 'Clear glass', stops: [[238, 239, 246, .19], [160, 165, 182, .13]], edge: '0 0 0 1px rgba(255,255,255,.22),0 12px 34px rgba(0,0,0,.35)', hairWhite: .45, glass: true,
-    layers: [{ type: 'streak', pos: .26, width: .16, a: .09 }, { type: 'streak', pos: .37, width: .022, a: .1 }, { type: 'grain', a: .02 },
-      { type: 'shade', stop: .5, a: .12 }, { type: 'rim', a: .6 }] },
-  frost: { label: 'Smoked glass', stops: [[34, 36, 54, .6], [12, 13, 22, .74]], edge: '0 0 0 1px rgba(233,233,237,.16),0 12px 34px rgba(0,0,0,.45)', hairWhite: .4, glass: true,
-    layers: [{ type: 'blob', cx: .05, cy: -.2, r: .9, hue: 0, a: .16 }, { type: 'streak', pos: .28, width: .14, a: .07 }, { type: 'streak', pos: .38, width: .02, a: .07 },
-      { type: 'grain', a: .03 }, { type: 'shade', stop: .5, a: .2 }, { type: 'rim', a: .38 }] },
-  aurora: { label: 'Aurora', stops: [[20, 21, 36, .97], [13, 14, 24, .98]], edge: '0 0 0 1px #34374a,0 12px 34px rgba(0,0,0,.55)', hair: .6,
-    layers: [{ type: 'blob', cx: .12, cy: -.1, r: .85, hue: 0, a: .42 }, { type: 'blob', cx: 1.05, cy: 1.1, r: .8, hue: 110, a: .28 }, { type: 'blob', cx: .7, cy: .2, r: .5, hue: -70, a: .14 },
-      { type: 'grain', a: .01 }, { type: 'rim', a: .14 }] },
-  mesh: { label: 'Mesh', stops: [[22, 23, 34, .97]], edge: '0 0 0 1px #373a4c,0 12px 34px rgba(0,0,0,.5)', hair: .5,
-    layers: [{ type: 'mesh', hues: [0, 55, -55, 170], l: .32, c: .085, a: .92 }, { type: 'grain', a: .01 }, { type: 'rim', a: .12 }] },
-  ember: { label: 'Ember', stops: [[58, 30, 36, .96], [22, 15, 26, .98]], edge: '0 0 0 1px #4a3038,0 12px 34px rgba(0,0,0,.55)', hairWhite: .22,
-    layers: [{ type: 'blob', cx: 1, cy: 1.15, r: .9, rgb: [224, 120, 70], a: .3 }, { type: 'sheen', a: .04, stop: .3 }, { type: 'rim', a: .16 }] },
-  blueprint: { label: 'Blueprint', stops: [[18, 26, 52, .97], [12, 17, 36, .98]], edge: '0 0 0 1px #2a3a66,0 10px 30px rgba(0,0,0,.5)', hair: .45,
-    layers: [{ type: 'grid', step: 16, a: .09 }, { type: 'blob', cx: .1, cy: -.2, r: .8, hue: 0, a: .1 }, { type: 'rim', a: .14 }] },
-  carbon: { label: 'Carbon', stops: [[28, 29, 34, 1], [17, 18, 22, 1]], edge: '0 0 0 1px #2f3036,0 8px 24px rgba(0,0,0,.6)', hairWhite: .14,
-    layers: [{ type: 'weave', a: .045 }, { type: 'rim', a: .1 }] },
-  ink: { label: 'Ink', stops: [[27, 29, 44, 1], [20, 22, 34, 1]], edge: '0 0 0 1px #292b31,0 6px 18px rgba(0,0,0,.6)', hair: .32,
-    layers: [{ type: 'blob', cx: 0, cy: -.25, r: .9, hue: 0, a: .09 }] },
-  oled: { label: 'Pure black', stops: [[0, 0, 0, 1]], edge: '0 0 0 1px #26272c', hair: .4, lift: .13 },
-  porcelain: { label: 'Porcelain', stops: [[247, 247, 251, .97], [228, 230, 240, .97]], edge: '0 0 0 1px rgba(20,22,40,.14),0 12px 30px rgba(0,0,0,.28)', hair: .55, lightBg: true,
-    layers: [{ type: 'sheen', a: .5, stop: .3 }, { type: 'blob', cx: 1, cy: 1.1, r: .9, hue: 0, a: .07, light: true }, { type: 'rim', a: .7 }] }
+  solid: { label: 'Solid colour', custom: 'solid' },
+  gradient: { label: 'Gradient', custom: 'gradient' },
+  blueprint: { label: 'Blueprint', stops: [[20, 30, 60, .98], [10, 15, 34, .99]], edge: '0 0 0 1px #2a3a66,0 10px 30px rgba(0,0,0,.5)', hair: .45,
+    layers: [{ type: 'grid2', minor: 12, major: 60, a: .07 }, { type: 'blob', cx: .1, cy: -.2, r: .85, hue: 0, a: .12 }, { type: 'shade', stop: .5, a: .22 }, { type: 'rim', a: .14 }] },
+  carbon: { label: 'Carbon', stops: [[30, 31, 36, 1], [16, 17, 21, 1]], edge: '0 0 0 1px #2f3036,0 8px 24px rgba(0,0,0,.6)', hairWhite: .14,
+    layers: [{ type: 'carbon', cell: 6, a: .06 }, { type: 'sheen', a: .05, stop: .45 }, { type: 'shade', stop: .5, a: .2 }, { type: 'rim', a: .1 }] }
 };
+// older builds had more background types — map them onto the current ones
+export const LEGACY_THEMES = {
+  slate: ['solid', '#232532'], ink: ['solid', '#1b1d2c'], oled: ['solid', '#000000'], indigo: ['solid', '#262b66'], porcelain: ['solid', '#eef0f6'],
+  clear: ['acrylic'], frost: ['acrylic'], aurora: ['gradient'], mesh: ['gradient'], ember: ['gradient']
+};
+export const DEFAULT_BG = '#16171f';
+export const DEFAULT_GRADIENT = ['#3b2f80', '#0f4b5c', '#5c1f45'];
+export const GRADIENT_PRESETS = [
+  ['#3b2f80', '#0f4b5c', '#5c1f45'], ['#1d3c78', '#0e6b5c'], ['#5a2a1a', '#1f1530', '#7a3b12'], ['#0f3d2e', '#13263f'],
+  ['#4a1942', '#14213d', '#7b2d26'], ['#202020', '#3a3a3a']
+];
+export const SOLID_PRESETS = ['#16171f', '#000000', '#1b1d2c', '#232532', '#262b66', '#13312a', '#3a1a24', '#eef0f6'];
+
+let CUSTOM = { color: DEFAULT_BG, colors: DEFAULT_GRADIENT };
+const hexOk = h => /^#[0-9a-f]{6}$/i.test(h || '');
+export function setCustomBg(color, colors) {
+  const cs = (Array.isArray(colors) ? colors : []).filter(hexOk).slice(0, 3);
+  CUSTOM = { color: hexOk(color) ? color.toLowerCase() : DEFAULT_BG, colors: cs.length >= 2 ? cs : DEFAULT_GRADIENT };
+}
+const mixRgb = (a, b, k = .5) => a.map((v, i) => Math.round(v + (b[i] - v) * k));
+
+// the full definition of a background type (solid / gradient are built from the user's colours)
+export function themeDef(key) {
+  if (LEGACY_THEMES[key]) key = LEGACY_THEMES[key][0];
+  const base = THEMES[key] || THEMES.acrylic;
+  if (base.custom === 'solid') {
+    const c = hex2rgb(CUSTOM.color);
+    const [L, C, H] = rgb2oklch(c);
+    const light = L > 0.62;
+    const top = oklch2rgb(Math.min(1, L + (light ? 0.015 : 0.035)), C, H);
+    return { ...base, stops: [[...top, 1], [...c, 1]], lightBg: light, fixed: true,
+      edge: light ? '0 0 0 1px rgba(20,22,40,.14),0 12px 30px rgba(0,0,0,.28)' : '0 0 0 1px rgba(233,233,237,.10),0 10px 28px rgba(0,0,0,.55)',
+      hairWhite: light ? .5 : .16, layers: [{ type: 'grain', a: .006 }, { type: 'rim', a: light ? .6 : .12 }] };
+  }
+  if (base.custom === 'gradient') {
+    const cs = CUSTOM.colors.map(hex2rgb);
+    const corners = cs.length >= 3 ? [cs[0], cs[1], cs[2], mixRgb(cs[1], cs[2])] : [cs[0], mixRgb(cs[0], cs[1]), mixRgb(cs[0], cs[1]), cs[1]];
+    const avgL = cs.reduce((a, c) => a + rgb2oklch(c)[0], 0) / cs.length;
+    const light = avgL > 0.68;
+    const dark = mixRgb(cs[0], [8, 9, 14], .55);
+    return { ...base, stops: [[...dark, 1]], lightBg: light, fixed: true,
+      edge: light ? '0 0 0 1px rgba(20,22,40,.14),0 12px 30px rgba(0,0,0,.28)' : '0 0 0 1px rgba(233,233,237,.10),0 12px 34px rgba(0,0,0,.55)',
+      hairWhite: .3, layers: [{ type: 'mesh', rgb: corners, a: .96 }, { type: 'blob', cx: .1, cy: -.15, r: .7, rgb: [255, 255, 255], a: light ? .1 : .06 },
+        { type: 'grain', a: .01 }, { type: 'shade', stop: .45, a: light ? .05 : .22 }, { type: 'rim', a: .16 }] };
+  }
+  return base;
+}
 
 // Tint moves a stop towards the accent in OKLab (smooth hue change, no jump at low values)
 // and lifts very dark bases a little, otherwise the colour can't show on near-black.
@@ -103,6 +130,12 @@ function tintStop([r, g, b, a], hue, chroma, t, opt = {}) {
   const L2 = opt.light ? L - 0.025 * t
     : opt.glass && L > 0.5 ? L + (0.42 - L) * t
       : L + (Math.max(L, lift) - L) * t + 0.025 * t;
+  if (opt.neutral != null) {
+    // black / white / grey accent: no hue to take on — move towards that lightness (kept dark enough for text)
+    const Ln = L + (opt.neutral - L) * t;
+    const [nr, ng, nb] = oklch2rgb(Ln, C * (1 - t), H);
+    return [nr, ng, nb, a];
+  }
   const A = C * Math.cos(H * rad) * (1 - t) + chroma * Math.cos(hue * rad) * t;
   const B = C * Math.sin(H * rad) * (1 - t) + chroma * Math.sin(hue * rad) * t;
   const [nr, ng, nb] = oklch2rgb(L2, Math.hypot(A, B), (Math.atan2(B, A) / rad + 360) % 360);
@@ -112,12 +145,14 @@ const css = ([r, g, b, a]) => a >= 1 ? `rgb(${r},${g},${b})` : `rgba(${r},${g},$
 const accHex = a => (/^#[0-9a-f]{6}$/i.test(a || '') ? a : DEFAULT_ACCENT);
 
 export function themeCss(key, accent = DEFAULT_ACCENT, tint = 0) {
-  const t = THEMES[key] || THEMES.acrylic;
-  const [, C, H] = rgb2oklch(hex2rgb(accHex(accent)));
+  const t = themeDef(key);
+  const [aL, C, H] = rgb2oklch(hex2rgb(accHex(accent)));
   // how saturated the tinted background gets: follows the accent, but always visible
   const tc = t.lightBg ? Math.min(0.07, Math.max(0.035, C * 0.45)) : Math.min(0.15, Math.max(0.055, C * 1.05));
-  const opt = { light: t.lightBg, glass: t.glass, lift: t.lift };
-  const raw = t.stops.map(s => tintStop(s, H, tc, Math.min(1, Math.max(0, tint)), opt));
+  const neutral = C < 0.03 ? (t.lightBg ? Math.max(0.82, Math.min(0.97, aL)) : Math.max(0.04, Math.min(0.3, aL * 0.3))) : null;
+  const opt = { light: t.lightBg, glass: t.glass, lift: t.lift, neutral };
+  const k = t.fixed ? 0 : Math.min(1, Math.max(0, tint));        // solid / gradient use the picked colours as they are
+  const raw = t.stops.map(s => tintStop(s, H, tc, k, opt));
   const stops = raw.map(css);
   const bg = stops.length > 1 ? `linear-gradient(158deg,${stops[0]},${stops[1]})` : `linear-gradient(${stops[0]},${stops[0]})`;
   return { ...t, bg, raw, hue: H, chroma: C };
@@ -133,7 +168,7 @@ const BASE_N_LCH = BASE_NEUTRAL.map(h => rgb2oklch(hex2rgb(h)));
 const L_TEXT = rgb2oklch(hex2rgb('#e9e9ed'))[0], L_900 = BASE_N_LCH[8][0];
 
 export function resolveText(textColor, themeKey) {
-  if (!textColor || textColor === 'auto') return (THEMES[themeKey] || {}).lightBg ? '#1c1f2e' : '#e9e9ed';
+  if (!textColor || textColor === 'auto') return themeDef(themeKey).lightBg ? '#1c1f2e' : '#e9e9ed';
   return /^#[0-9a-f]{6}$/i.test(textColor) ? textColor.toLowerCase() : '#e9e9ed';
 }
 // neutral ramp for any text colour: 100 = most prominent … 900 = closest to the background
@@ -153,7 +188,8 @@ export function textRamp(hex) {
 export let UP = '#74c69a';
 export let DOWN = '#e0777d';
 
-export function applyTheme(key, accent = DEFAULT_ACCENT, tint = 0, textColor = 'auto') {
+export function applyTheme(key, accent = DEFAULT_ACCENT, tint = 0, textColor = 'auto', bgColor, bgColors) {
+  setCustomBg(bgColor, bgColors);
   const s = document.body.style;
   const acc = accHex(accent);
   const t = themeCss(key, acc, tint);
@@ -206,19 +242,22 @@ export function applyMotion(m) {
 // Windows composites transparent windows without gradient dithering, which showed
 // up as diagonal bands; baking the gradient into an image removes them.
 const bgCache = new Map();
-export function ditheredBg(key, accent, tint, w, h, overlayAlpha = 0, overlayStop = 0.45) {
-  const id = [key, accent, tint, w, h, overlayAlpha, overlayStop].join('|');
+export function ditheredBg(key, accent, tint, w, h, overlayAlpha = 0, overlayStop = 0.45, opts = {}) {
+  const id = [key, accent, tint, w, h, overlayAlpha, overlayStop, opts.noRim ? 1 : 0, CUSTOM.color, CUSTOM.colors.join()].join('|');
   if (bgCache.has(id)) return bgCache.get(id);
   const t = themeCss(key, accent, tint);
   const a0 = t.raw[0], a1 = t.raw[1] || t.raw[0];
   const acc = hex2rgb(accHex(accent));
   const [aL, aC, aH] = rgb2oklch(acc);
-  const hueRgb = (off, L = 0.62, C = Math.max(0.09, aC)) => oklch2rgb(L, C, (aH + off + 360) % 360);
-  const layers = (t.layers || []).map(l => {
+  const achrom = aC < 0.03;
+  const hueRgb = (off, L = 0.62, C = Math.max(0.09, aC)) => oklch2rgb(L, achrom ? 0 : C, (aH + off + 360) % 360);
+  const layers = (t.layers || []).filter(l => !(opts.noRim && l.type === 'rim')).map(l => {
+    if (l.type === 'mesh' && l.rgb) return { ...l, cols: l.rgb };
     if (l.type === 'blob') return { ...l, col: l.rgb || (l.light ? hueRgb(l.hue || 0, 0.82, Math.max(0.06, aC * 0.8)) : hueRgb(l.hue || 0)) };
     if (l.type === 'mesh') return { ...l, cols: l.hues.map(o => oklch2rgb(l.l, l.c, (aH + o + 360) % 360)) };
     return l;
   });
+  const acc2 = achrom ? [150, 170, 220] : oklch2rgb(0.72, Math.max(0.08, aC), aH);   // blueprint lines stay visible with a black accent
   const cv = document.createElement('canvas');
   cv.width = w; cv.height = h;
   const ctx = cv.getContext('2d');
@@ -262,6 +301,18 @@ export function ditheredBg(key, accent, tint, w, h, overlayAlpha = 0, overlaySto
           const gx = x % l.step, gy = y % l.step;
           if (gx === 0 && gy === 0) over(acc[0], acc[1], acc[2], l.a * 4);
           else if (gx === 0 || gy === 0) over(acc[0], acc[1], acc[2], l.a * 0.35);
+        } else if (l.type === 'grid2') {
+          // blueprint: fine minor grid + stronger major lines, 1 px crisp at any size
+          const mx = x % l.major, my = y % l.major;
+          if (mx === 0 || my === 0) over(acc2[0], acc2[1], acc2[2], l.a * 1.6);
+          else if (x % l.minor === 0 || y % l.minor === 0) over(acc2[0], acc2[1], acc2[2], l.a * 0.5);
+        } else if (l.type === 'carbon') {
+          // carbon fibre: 2×2 twill of small cells, each a rounded tow with a highlight across it
+          const c = l.cell, ix = Math.floor(x / c), iy = Math.floor(y / c);
+          const vert = ((ix + (iy >> 1)) & 1) === 0;
+          const u = ((vert ? x : y) % c + 0.5) / c;
+          const k = (Math.sin(u * Math.PI) - 0.62) * l.a * 2.2;
+          if (k > 0) over(255, 255, 255, k); else over(0, 0, 0, -k * 1.4);
         } else if (l.type === 'rim') {
           const e = -edgeDist(x + 0.5, y + 0.5);                         // px inside the edge
           if (e >= 0 && e < 1.6) {

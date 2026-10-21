@@ -53,6 +53,8 @@ const Card = ({ title, right, children, style = '', pad = 18, cls = '' }) => (
   </section>
 );
 
+const More = ({ onClick, children }) => <a class="link" onClick={onClick}>{children}<i class="ph ph-caret-right"></i></a>;
+
 const Kpi = ({ label, value, sub, color, title, onClick }) => (
   <div class={'card kpi' + (onClick ? ' click' : '')} title={title || ''} onClick={onClick}>
     <span style={`font:400 9.5px/1 ${F};letter-spacing:.12em;text-transform:uppercase;color:var(--color-neutral-600)`}>{label}</span>
@@ -281,7 +283,7 @@ function Hero({ m, closed, range, setRange }) {
         <span style="flex:1"></span>
         <div style="display:flex;gap:6px;align-self:flex-start"><RangeChips range={range} onPick={setRange} list={APP_RANGES} size={11} padX={9} /></div>
       </div>
-      <FillChart values={m.values} tipFor={m.tipFor} pad={14} sw={2} color={m.trend} gid="gApp" gop={.3} glowPx={8} marker mr={3} pr={5.5}
+      <FillChart values={m.values} tipFor={m.tipFor} rangeFor={m.rangeFor} pad={14} sw={2} color={m.trend} gid="gApp" gop={.3} glowPx={8} marker mr={3} pr={5.5}
         draw={1.3} fade={1.3} fadeDelay={.3} closed={closed} animKey={range} wrapStyle="margin-top:16px;min-height:180px"
         grid={(w, h) => [0.25, 0.5, 0.75].map(f => <line x1="0" y1={h * f} x2={w} y2={h * f} stroke="rgba(var(--ink-rgb),.055)" stroke-dasharray="2 5"></line>)} />
       <div style="display:flex;justify-content:space-between;margin-top:8px">
@@ -326,7 +328,7 @@ function Overview({ m, closed }) {
           onClick={() => nav.go('activity', 'transactions')} />
       </div>
 
-      <Card title={t('Holdings')} right={<a class="link" onClick={() => nav.go('holdings')}>{t('All {n}', { n: d.positions.length })}<i class="ph ph-caret-right"></i></a>} style="grid-column:span 7">
+      <Card title={t('Holdings')} right={<More onClick={() => nav.go('holdings')}>{t('All {n}', { n: d.positions.length })}</More>} style="grid-column:span 7">
         <div style="display:flex;flex-direction:column;gap:2px">
           {d.positions.slice(0, 7).map(p => (
             <div class="lrow click" onClick={() => nav.go('instrument', p.ticker)}>
@@ -343,7 +345,7 @@ function Overview({ m, closed }) {
         <Donut items={allocItems} fmt={m.fmt} center={allocBy === 'currency' ? d.invested + d.cash : d.invested} />
       </Card>
 
-      <Card title={t('Today’s movers')} style="grid-column:span 5" right={quotes.loading && !quotes.data ? <Spinner size={12} /> : <span class="muted">{t('vs. previous close')}</span>}>
+      <Card title={t('Today’s movers')} style="grid-column:span 5" right={<>{quotes.loading && !quotes.data ? <Spinner size={12} /> : <span class="muted">{t('vs. previous close')}</span>}<More onClick={() => nav.go('holdings')}>{t('Holdings')}</More></>}>
         {movers.length ? movers.map(p => (
           <div class="lrow click" onClick={() => nav.go('instrument', p.ticker)}>
             <SymCell sym={p.sym} name={p.name} ticker={p.ticker} />
@@ -352,7 +354,7 @@ function Overview({ m, closed }) {
           </div>
         )) : <Empty icon="ph-pulse" title={quotes.loading ? t('Loading prices…') : t('No price data')} text={quotes.loading ? '' : t('Day moves come from Yahoo Finance and may be missing for some instruments.')} />}
       </Card>
-      <Card title={t('Recent activity')} style="grid-column:span 7" right={<a class="link" onClick={() => nav.go('activity')}>{t('Activity')}<i class="ph ph-caret-right"></i></a>}>
+      <Card title={t('Recent activity')} style="grid-column:span 7" right={<More onClick={() => nav.go('activity')}>{t('Activity')}</More>}>
         {act.data && act.data.length ? act.data.map(x => <ActivityRow x={x} fmt={m.fmt} fx={fx} cur={cur} compact />)
           : <Empty icon="ph-clock-counter-clockwise" title={act.loading || (st.lib && st.lib.syncing) ? t('Downloading your history…') : t('No activity yet')}
             text={t('Trades, dividends and deposits appear here once the history is downloaded.')} />}
@@ -533,6 +535,7 @@ function Instrument({ ticker, m }) {
   const I = info.data;
   const pr = useLib('prices', { ticker, isin: (pos && pos.isin) || (I && I.isin), range, refPrice: pos && pos.price }, [ticker, range]);
   const P = pr.data;
+  const perf = useLib('performance', { ticker, isin: (pos && pos.isin) || (I && I.isin), refPrice: pos && pos.price }, [ticker]);
   const vals = P && P.pts && P.pts.length > 1 ? P.pts.map(p => p[1]) : null;
   const first = vals ? (range === '1D' && P.meta && P.meta.prevClose ? P.meta.prevClose : vals[0]) : null;
   const last = P ? P.last : null;
@@ -543,6 +546,11 @@ function Instrument({ ticker, m }) {
     const p = P.pts[i]; if (!p) return null;
     const c = p[1] - first;
     return { value: m.fmt(p[1], 2) + ' ' + pcur, time: priceTipTime(p[0], range), chg: m.fmt.signed(c, 2), pct: m.fmt.signed(first ? c / first * 100 : 0, 2), up: c >= 0 };
+  };
+  const rangeFor = (i, j) => {
+    const a0 = P.pts[i], b0 = P.pts[j]; if (!a0 || !b0) return null;
+    const c = b0[1] - a0[1];
+    return { chg: m.fmt.signed(c, 2) + ' ' + pcur, pct: m.fmt.signed(a0[1] ? c / a0[1] * 100 : 0, 2), from: priceTipTime(a0[0], range), to: priceTipTime(b0[0], range), up: c >= 0 };
   };
   // average buy price as a dashed line (same scale as the chart)
   const avgLine = (w, h) => {
@@ -584,7 +592,7 @@ function Instrument({ ticker, m }) {
         </div>
         <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:14px"><RangeChips range={range} onPick={setRange} list={PRICE_RANGES} size={11} padX={9} /></div>
         {vals ? (
-          <FillChart values={vals} tipFor={tipFor} pad={14} sw={1.8} color={up ? UP : DOWN} gid="gIns" gop={.26} glowPx={6} marker draw={1.1} animKey={range + ticker}
+          <FillChart values={vals} tipFor={tipFor} rangeFor={rangeFor} pad={14} sw={1.8} color={up ? UP : DOWN} gid="gIns" gop={.26} glowPx={6} marker draw={1.1} animKey={range + ticker}
             wrapStyle="margin-top:10px;min-height:200px" grid={(w, h) => [[0.25, 0.5, 0.75].map(f => <line x1="0" y1={h * f} x2={w} y2={h * f} stroke="rgba(var(--ink-rgb),.055)" stroke-dasharray="2 5"></line>), avgLine(w, h)]} />
         ) : (
           <div style="flex:1;display:flex;align-items:center;justify-content:center;min-height:200px">
@@ -607,34 +615,87 @@ function Instrument({ ticker, m }) {
           <Kpi label={t('Dividends received')} value={I ? m.fmt(I.dividendTotal * fx, 2) + ' ' + m.cur : '—'} sub={I ? t('{n} payments', { n: I.dividends.length }) : ''} />
         </div>
       )}
-      {meta && (meta.dayLow != null || meta.high52 != null) && (
-        <Card title={t('Market data')} style="grid-column:1/-1">
-          <div class="facts">
-            {meta.prevClose != null && <Fact label={t('Previous close')} value={m.fmt(meta.prevClose, 2)} />}
-            {meta.dayLow != null && <Fact label={t('Day range')} value={m.fmt(meta.dayLow, 2) + ' – ' + m.fmt(meta.dayHigh, 2)} />}
-            {meta.low52 != null && <Fact label={t('52-week range')} value={m.fmt(meta.low52, 2) + ' – ' + m.fmt(meta.high52, 2)} />}
-            {meta.volume != null && <Fact label={t('Volume')} value={m.fmt(meta.volume, 0)} />}
-            {meta.exchange && <Fact label={t('Exchange')} value={meta.exchange} />}
-            {pos && pos.opened && <Fact label={t('First bought')} value={dfmt(pos.opened)} />}
-            {pos && pos.inPies ? <Fact label={t('In pies')} value={m.fmt(pos.inPies, 4)} /> : null}
+      {meta && (
+        <Card title={t('Price range')} style="grid-column:span 6" right={<span class="muted">{pcur}</span>}>
+          <div style="display:flex;flex-direction:column;gap:22px;padding-top:4px">
+            {meta.dayLow != null && <RangeMeter label={t('Today')} lo={meta.dayLow} hi={meta.dayHigh} cur={last} fmt={m.fmt} mark={meta.open} markLabel={t('open')} />}
+            {meta.low52 != null && <RangeMeter label={t('52 weeks')} lo={meta.low52} hi={meta.high52} cur={last} fmt={m.fmt} mark={pos && (!pos.avgCur || !pcur || pos.avgCur.toUpperCase() === pcur.toUpperCase()) ? pos.avg : null} markLabel={t('your avg')} delay={.15} />}
+            {perf.data && perf.data.low5 != null && <RangeMeter label={t('5 years')} lo={perf.data.low5} hi={perf.data.high5} cur={last} fmt={m.fmt} delay={.3} />}
+          </div>
+        </Card>
+      )}
+      {(meta || I) && (
+        <Card title={t('Key facts')} style="grid-column:span 6">
+          <div class="facts two">
+            <Fact label={t('Previous close')} value={meta && meta.prevClose != null ? m.fmt(meta.prevClose, 2) : '—'} />
+            <Fact label={t('Open price')} value={meta && meta.open != null ? m.fmt(meta.open, 2) : '—'} />
+            <Fact label={t('Volume')} value={meta && meta.volume != null ? m.fmt(meta.volume, 0) : '—'} />
+            <Fact label={t('Exchange')} value={(I && I.hours && I.hours.exchange) || (meta && meta.exchange) || '—'} />
+            <Fact label={t('Currency')} value={pcur || '—'} />
+            <Fact label={t('Type')} value={(I && I.type) || '—'} />
+            <Fact label="ISIN" value={(I && I.isin) || (pos && pos.isin) || '—'} />
+            <Fact label={pos ? t('First bought') : t('Market')} value={pos && pos.opened ? dfmt(pos.opened) : marketName(ticker)} />
+          </div>
+        </Card>
+      )}
+      {perf.data && (
+        <Card title={t('Performance')} style="grid-column:1/-1" right={<span class="muted">{t('price change, without dividends')}</span>}>
+          <div class="perf">
+            {[['w1', '1T'], ['m1', '1M'], ['m3', '3M'], ['m6', '6M'], ['ytd', t('YTD')], ['y1', '1R'], ['y3', '3R'], ['y5', '5R']].map(([k, l], i) => {
+              const v = perf.data[k];
+              const max = Math.max(1, ...['w1', 'm1', 'm3', 'm6', 'ytd', 'y1', 'y3', 'y5'].map(x => Math.abs(perf.data[x] || 0)));
+              return (
+                <div class="perf-i" style={`animation-delay:${i * .04}s`}>
+                  <span class="lbl">{l}</span>
+                  <span class="num" style={`font-size:14px;color:${v == null ? 'var(--color-neutral-600)' : v >= 0 ? UP : DOWN}`}>{v == null ? '—' : m.fmt.signed(v, 2) + '%'}</span>
+                  <span class="perf-bar"><GrowBar color={v >= 0 ? UP : DOWN} w={v == null ? '0%' : Math.max(3, Math.abs(v) / max * 100) + '%'} dur={1} /></span>
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}
 
       {I && I.pending && I.pending.length > 0 && (
-        <Card title={t('Pending orders')} style="grid-column:1/-1">{I.pending.map(o => <PendingRow o={o} fmt={m.fmt} />)}</Card>
+        <Card title={t('Pending orders')} style="grid-column:1/-1" right={<More onClick={() => nav.go('orders')}>{t('All orders')}</More>}>{I.pending.map(o => <PendingRow o={o} fmt={m.fmt} />)}</Card>
       )}
-      {!ext && <Card title={t('Your trades')} style="grid-column:span 7">
+      {!ext && <Card title={t('Your trades')} style="grid-column:span 7" right={I && I.orders.length ? <More onClick={() => nav.go('activity', 'orders|' + sym)}>{t('In Activity')}</More> : null}>
         {I && I.orders.length ? I.orders.slice(0, 40).map(x => <ActivityRow x={{ ...x, kind: 'orders' }} fmt={m.fmt} fx={fx} cur={m.cur} compact />)
           : <Empty icon="ph-swap" title={info.loading ? t('Loading…') : t('No trades in the downloaded history')} />}
       </Card>}
-      {!ext && <Card title={t('Dividends')} style="grid-column:span 5">
+      {!ext && <Card title={t('Dividends')} style="grid-column:span 5" right={I && I.dividends.length ? <More onClick={() => nav.go('activity', 'dividends|' + sym)}>{t('In Activity')}</More> : null}>
         {I && I.dividends.length ? I.dividends.slice(0, 40).map(x => <ActivityRow x={{ ...x, kind: 'dividends' }} fmt={m.fmt} fx={fx} cur={m.cur} compact />)
           : <Empty icon="ph-coins" title={info.loading ? t('Loading…') : t('No dividends from this instrument yet')} />}
       </Card>}
     </div>
   );
 }
+// low–high bar with an animated marker for the current price (and an optional second mark)
+function RangeMeter({ label, lo, hi, cur, fmt, mark, markLabel, delay = 0 }) {
+  const [on, setOn] = useState(false);
+  useEffect(() => { const h = setTimeout(() => setOn(true), 120 + delay * 1000); return () => clearTimeout(h); }, []);
+  const span = hi - lo || 1;
+  const pos = v => Math.min(100, Math.max(0, ((v - lo) / span) * 100));
+  const p = cur != null ? pos(cur) : 50;
+  return (
+    <div class="rmeter">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:10px">
+        <span class="lbl">{label}</span>
+        <span style="flex:1"></span>
+        {cur != null && <span class="muted">{t('{p} % of range', { p: fmt(p, 0) })}</span>}
+      </div>
+      <div class="rtrack">
+        <div class="rfill" style={`width:${on ? p : 0}%`}></div>
+        {mark != null && mark >= lo && mark <= hi && <div class="rmark" style={`left:${pos(mark)}%`} title={markLabel + ' ' + fmt(mark, 2)}><span>{markLabel}</span></div>}
+        <div class="rdot" style={`left:${on ? p : 0}%`}></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:9px;font:400 11.5px/1 'Inter',sans-serif;color:var(--color-neutral-400);font-variant-numeric:tabular-nums">
+        <span>{fmt(lo, 2)}</span>{cur != null && <span style="color:var(--color-neutral-100);font-weight:500">{fmt(cur, 2)}</span>}<span>{fmt(hi, 2)}</span>
+      </div>
+    </div>
+  );
+}
+
 const Fact = ({ label, value }) => (
   <div style="display:flex;flex-direction:column;gap:5px;min-width:0">
     <span style={`font:400 9.5px/1 ${F};letter-spacing:.12em;text-transform:uppercase;color:var(--color-neutral-600)`}>{label}</span>
@@ -643,11 +704,13 @@ const Fact = ({ label, value }) => (
 );
 
 // ── activity ─────────────────────────────────────────────────
-function Activity({ m, tab: tab0 }) {
+function Activity({ m, tab: arg0 }) {
   const { st, nav } = useApp();
+  // route arg: "orders" or "orders|AAPL" (opened from an instrument → pre-filtered)
+  const [tab0, q0] = String(arg0 || '').split('|');
   const [tab, setTab] = useState(tab0 || 'orders');
   useEffect(() => { if (tab0) setTab(tab0); }, [tab0]);
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(q0 || '');
   const [type, setType] = useState('');
   const [limit, setLimit] = useState(60);
   useEffect(() => { setLimit(60); setType(''); }, [tab]);
@@ -839,7 +902,7 @@ function PieDetail({ id, m }) {
         <Kpi label={t('Dividends')} value={p.dividends ? m.fmt((p.dividends.gained || 0) * fx, 2) + ' ' + m.cur : '—'}
           sub={p.dividendAction ? (p.dividendAction === 'REINVEST' ? t('reinvested') : t('paid to cash')) : ''} />
       </div>
-      <Card title={t('Composition')} style="grid-column:span 8" right={<span class="muted">{t('current vs. target share')}</span>}>
+      <Card title={t('Composition')} style="grid-column:span 8" right={<><span class="muted">{t('current vs. target share')}</span><More onClick={() => nav.go('pies')}>{t('All pies')}</More></>}>
         {p.instruments.map((i, ix) => (
           <div class="lrow click" onClick={() => nav.go('instrument', i.ticker)}>
             <SymCell sym={i.sym} name={i.name} ticker={i.ticker} />
@@ -864,6 +927,61 @@ function PieDetail({ id, m }) {
 }
 
 // ── reports (CSV export) ─────────────────────────────────────
+// date field in the app's style: shows "1. 1. 2026", opens a month calendar (weeks start on Monday)
+const pad2 = n => String(n).padStart(2, '0');
+const isoOf = d => d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+const parseIso = s => { const [y, m, d] = String(s || '').split('-').map(Number); return y ? new Date(y, m - 1, d) : null; };
+function DateInput({ value, onChange, min, max, align }) {
+  const [open, setOpen] = useState(false);
+  const cur = parseIso(value) || new Date();
+  const [view, setView] = useState(new Date(cur.getFullYear(), cur.getMonth(), 1));
+  const ref = useRef(null);
+  useEffect(() => { if (open) setView(new Date(cur.getFullYear(), cur.getMonth(), 1)); }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const off = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc = e => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('mousedown', off); window.addEventListener('keydown', esc);
+    return () => { window.removeEventListener('mousedown', off); window.removeEventListener('keydown', esc); };
+  }, [open]);
+  const lo = parseIso(min), hi = parseIso(max);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const first = new Date(view.getFullYear(), view.getMonth(), 1);
+  const startOff = (first.getDay() + 6) % 7;                       // Monday first
+  const days = [];
+  for (let i = 0; i < 42; i++) days.push(new Date(view.getFullYear(), view.getMonth(), 1 - startOff + i));
+  const wk = [...Array(7)].map((_, i) => new Date(2024, 0, 1 + i).toLocaleDateString(locale(), { weekday: 'short' }).replace('.', ''));
+  const pick = d => { if ((lo && d < lo) || (hi && d > hi)) return; onChange(isoOf(d)); setOpen(false); };
+  const shift = n => setView(v => new Date(v.getFullYear(), v.getMonth() + n, 1));
+  return (
+    <div class="dpick" ref={ref}>
+      <button type="button" class={'input dbtn' + (open ? ' on' : '')} onClick={() => setOpen(o => !o)}>
+        <span class="num" style="font-size:12.5px">{cur.getDate()}. {cur.getMonth() + 1}. {cur.getFullYear()}</span>
+        <i class="ph ph-calendar-blank"></i>
+      </button>
+      {open && (
+        <div class={'dpop' + (align === 'right' ? ' r' : '')}>
+          <div class="dhead">
+            <button type="button" class="tb" onClick={() => shift(-1)}><i class="ph ph-caret-left"></i></button>
+            <span style="flex:1;text-align:center;font:500 12.5px/1 'Inter',sans-serif;color:var(--color-neutral-100);text-transform:capitalize">{view.toLocaleDateString(locale(), { month: 'long', year: 'numeric' })}</span>
+            <button type="button" class="tb" onClick={() => shift(1)}><i class="ph ph-caret-right"></i></button>
+          </div>
+          <div class="dgrid">
+            {wk.map(w => <span class="dwk">{w}</span>)}
+            {days.map(d => {
+              const sel = isoOf(d) === value, out = d.getMonth() !== view.getMonth(), dis = (lo && d < lo) || (hi && d > hi);
+              return <button type="button" disabled={dis} class={'dday' + (sel ? ' sel' : '') + (out ? ' out' : '') + (+d === +today ? ' today' : '')} onClick={() => pick(d)}>{d.getDate()}</button>;
+            })}
+          </div>
+          <div class="dfoot">
+            <button type="button" class="btn btn-ghost" style="font-size:11.5px" onClick={() => pick(today)}>{t('Today')}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const isoDay = ts => { const d = new Date(ts); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 function Reports({ m }) {
   const { st } = useApp();
@@ -907,8 +1025,8 @@ function Reports({ m }) {
         <div style="display:flex;flex-direction:column;gap:14px">
           <div style="display:flex;gap:6px;flex-wrap:wrap">{presets.map(([l, a, b]) => <button class="btn btn-secondary" style="font-size:11.5px;padding:4px 9px" onClick={() => { setFrom(isoDay(a)); setTo(isoDay(b)); }}>{l}</button>)}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <label style="display:flex;flex-direction:column;gap:6px"><span class="lbl">{t('From')}</span><input class="input" type="date" value={from} max={to} onInput={e => setFrom(e.currentTarget.value)} /></label>
-            <label style="display:flex;flex-direction:column;gap:6px"><span class="lbl">{t('To')}</span><input class="input" type="date" value={to} min={from} onInput={e => setTo(e.currentTarget.value)} /></label>
+            <div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">{t('From')}</span><DateInput value={from} max={to} onChange={setFrom} /></div>
+            <div style="display:flex;flex-direction:column;gap:6px"><span class="lbl">{t('To')}</span><DateInput value={to} min={from} onChange={setTo} align="right" /></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
             {[['orders', t('Trades')], ['dividends', t('Dividends')], ['transactions', t('Deposits & withdrawals')], ['interest', t('Interest')]].map(([k, l]) => (
@@ -1111,9 +1229,9 @@ function App({ init }) {
     });
     api.onAppGoto(r => go(...parseRoute(r)));
   }, []);
-  const themeKey = [settings.theme, settings.accent, settings.tint, settings.textColor].join('|');
+  const themeKey = [settings.theme, settings.accent, settings.tint, settings.textColor, settings.bgColor, (settings.bgColors || []).join()].join('|');
   const applied = useRef('');
-  if (applied.current !== themeKey) { applied.current = themeKey; applyTheme(settings.theme, settings.accent, settings.tint, settings.textColor); }
+  if (applied.current !== themeKey) { applied.current = themeKey; applyTheme(settings.theme, settings.accent, settings.tint, settings.textColor, settings.bgColor, settings.bgColors); }
   setLang(settings.language || 'cs');
   useEffect(() => applyMotion(settings.motion), [settings.motion]);
 
@@ -1146,8 +1264,9 @@ function App({ init }) {
     let h; const on = () => { clearTimeout(h); h = setTimeout(() => setDim([window.innerWidth, window.innerHeight]), 220); };
     window.addEventListener('resize', on); return () => window.removeEventListener('resize', on);
   }, []);
-  const bg = useMemo(() => ditheredBg(settings.theme, settings.accent, settings.tint || 0, Math.max(200, Math.round(dim[0] / 2)), Math.max(200, Math.round(dim[1] / 2)), 0.06, 0.3),
-    [settings.theme, settings.accent, settings.tint, dim[0], dim[1]]);
+  // full window resolution (patterns stay crisp), no card rim — the window has its own corners
+  const bg = useMemo(() => ditheredBg(settings.theme, settings.accent, settings.tint || 0, Math.max(200, dim[0]), Math.max(200, dim[1]), 0.05, 0.3, { noRim: true }),
+    [settings.theme, settings.accent, settings.tint, settings.bgColor, (settings.bgColors || []).join(), dim[0], dim[1]]);
 
   const market = st.market || {};
   const closed = st.status === 'closed' || (st.data && settings.pauseWhenClosed && market.open === false && st.status !== 'live');
@@ -1249,7 +1368,7 @@ function parseRoute(r) {
 }
 
 api.init().then(init => {
-  applyTheme(init.settings.theme, init.settings.accent, init.settings.tint, init.settings.textColor);
+  applyTheme(init.settings.theme, init.settings.accent, init.settings.tint, init.settings.textColor, init.settings.bgColor, init.settings.bgColors);
   setLang(init.settings.language || 'cs');
   MAC = init.platform === 'darwin';
   setMac(MAC);

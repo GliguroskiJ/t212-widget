@@ -1,7 +1,7 @@
 // Settings of the whole app — rendered as the Settings page of the app window.
 // The Widget tab holds what only concerns the desktop widget / menu-bar panel.
 import { useState, useEffect } from 'preact/hooks';
-import { THEMES, UP, DOWN, applyTheme, applyMotion, agoStr, ACCENT_PRESETS, DEFAULT_ACCENT, ditheredBg, TEXT_PRESETS, resolveText } from './shared.js';
+import { THEMES, themeDef, UP, DOWN, applyTheme, applyMotion, agoStr, ACCENT_PRESETS, DEFAULT_ACCENT, ditheredBg, TEXT_PRESETS, resolveText, SOLID_PRESETS, GRADIENT_PRESETS, DEFAULT_BG, DEFAULT_GRADIENT } from './shared.js';
 import { t, setLang } from './i18n.js';
 import { updErr } from './updtext.js';
 import { marketStatus } from '../main/market.js';
@@ -280,29 +280,93 @@ function TextColour({ s, set }) {
   );
 }
 
+function ColorDot({ value, on, onPick, title }) {
+  return <button type="button" class={'dotc' + (on ? ' on' : '')} title={title || value} onClick={() => onPick(value)} style={`--c:${value}`}></button>;
+}
+function CustomDot({ value, on, onPick }) {
+  return (
+    <label class={'dotc custom' + (on ? ' on' : '')} title={t('Custom colour')} style={on ? `--c:${value}` : ''}>
+      <i class="ph ph-eyedropper"></i>
+      <input type="color" value={value} onInput={e => onPick(e.currentTarget.value)} />
+    </label>
+  );
+}
+
+function SolidPicker({ s, set }) {
+  const cur = (s.bgColor || DEFAULT_BG).toLowerCase();
+  const preset = SOLID_PRESETS.includes(cur);
+  return (
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:12px">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span style={`font:500 12.5px/1.2 ${F};color:var(--color-neutral-200)`}>{t('Background colour')}</span>
+        <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>{t('One plain colour. Text switches to dark automatically on light colours.')}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        {SOLID_PRESETS.map(c => <ColorDot value={c} on={c === cur} onPick={v => set({ bgColor: v })} />)}
+        <CustomDot value={cur} on={!preset} onPick={v => set({ bgColor: v })} />
+      </div>
+    </div>
+  );
+}
+
+function GradientPicker({ s, set }) {
+  const cols = (s.bgColors && s.bgColors.length >= 2 ? s.bgColors : DEFAULT_GRADIENT).slice(0, 3);
+  const setAt = (i, v) => { const n = cols.slice(); n[i] = v; set({ bgColors: n }); };
+  const same = (a, b) => a.length === b.length && a.every((x, i) => x.toLowerCase() === b[i].toLowerCase());
+  return (
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:14px">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span style={`font:500 12.5px/1.2 ${F};color:var(--color-neutral-200)`}>{t('Gradient colours')}</span>
+        <span style={`font:400 11.5px/1.5 ${F};color:var(--color-neutral-500)`}>{t('Two or three colours blended across the background, from the top left corner.')}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        {cols.map((c, i) => (
+          <label class="gstop" title={t('Colour {n}', { n: i + 1 })}>
+            <span class="gsw" style={`background:${c}`}></span>
+            <span class="mono" style="font-size:11.5px;color:var(--color-neutral-300)">{c}</span>
+            <input type="color" value={c} onInput={e => setAt(i, e.currentTarget.value)} />
+            {cols.length > 2 && <button type="button" class="gx" title={t('Remove')} onClick={e => { e.preventDefault(); set({ bgColors: cols.filter((_, j) => j !== i) }); }}><i class="ph ph-x"></i></button>}
+          </label>
+        ))}
+        {cols.length < 3 && <button type="button" class="btn btn-ghost" style="font-size:12px" onClick={() => set({ bgColors: cols.concat(['#1d3c78']) })}><i class="ph ph-plus"></i>{t('Third colour')}</button>}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        {GRADIENT_PRESETS.map(g => (
+          <button type="button" class={'gpre' + (same(g, cols) ? ' on' : '')} onClick={() => set({ bgColors: g.slice() })}
+            style={`background:linear-gradient(135deg,${g.join(',')})`}></button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function AppearanceTab({ s, set }) {
+  const tintable = !['solid', 'gradient'].includes(s.theme);
   return (
     <>
       <Section label={t('Background')}>
-        <div class="thgrid">
+        <div class="thgrid five">
           {Object.keys(THEMES).map(k => {
             const on = s.theme === k;
+            const def = themeDef(k);
             return (
               <button type="button" class={'thc' + (on ? ' on' : '')} onClick={() => set({ theme: k })} title={t(THEMES[k].label)}>
-                <span class="ths" style={`background:url(${ditheredBg(k, s.accent, s.tint || 0, 76, 48)}) 0 0/100% 100%;box-shadow:${THEMES[k].edge.split(',')[0]}`}>
-                  <span style={`color:${resolveText(s.textColor, k)};font:300 13px/1 ${F};letter-spacing:-.02em`}>1,284</span>
+                <span class="ths" style={`background:url(${ditheredBg(k, s.accent, tintable ? s.tint || 0 : 0, 120, 72)}) 0 0/100% 100%;box-shadow:${(def.edge || '').split(',')[0]}`}>
+                  <span style={`color:${resolveText(s.textColor, k)};font:300 14px/1 ${F};letter-spacing:-.02em`}>1,284</span>
                 </span>
                 <span class="txl">{t(THEMES[k].label)}</span>
               </button>
             );
           })}
         </div>
+        {s.theme === 'solid' && <SolidPicker s={s} set={set} />}
+        {s.theme === 'gradient' && <GradientPicker s={s} set={set} />}
       </Section>
       <Section label={t('Colour')}>
         <ColourPicker s={s} set={set} />
-        <Row title={t('Tint the background')} desc={t('How much the background takes on the accent colour. 0 % = its own colour, 100 % = fully in the accent.')}>
+        {tintable && <Row title={t('Tint the background')} desc={t('How much the background takes on the accent colour. 0 % = its own colour, 100 % = fully in the accent.')}>
           <input type="range" class="rng" min="0" max="100" step="5" value={Math.round((s.tint || 0) * 100)} onInput={e => set({ tint: Number(e.currentTarget.value) / 100 })} style={`--p:${Math.round((s.tint || 0) * 100)}%`} />
-          <span class="tnum" style={`width:36px;text-align:right;font:400 12px/1 ${F};color:var(--color-neutral-300)`}>{Math.round((s.tint || 0) * 100)}%</span></Row>
+          <span class="tnum" style={`width:36px;text-align:right;font:400 12px/1 ${F};color:var(--color-neutral-300)`}>{Math.round((s.tint || 0) * 100)}%</span></Row>}
       </Section>
       <Section label={t('Text colour')}>
         <TextColour s={s} set={set} />

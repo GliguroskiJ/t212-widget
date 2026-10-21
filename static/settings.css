@@ -56,3 +56,16 @@ a{cursor:pointer}
 .txl{font:400 10px/1.2 "Inter",sans-serif;color:var(--color-neutral-500);text-align:center;max-width:80px}
 .thc.on .txl,.txc.on .txl{color:var(--color-accent-300)}
 .txc input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+
+/* background types (5) and custom colours */
+.thgrid.five{grid-template-columns:repeat(5,1fr);gap:12px}
+.thgrid.five .ths{width:100%;height:64px;aspect-ratio:auto}
+.gstop{position:relative;display:flex;align-items:center;gap:8px;padding:6px 10px 6px 6px;border-radius:8px;background:rgba(var(--ink-rgb),.04);box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.08);cursor:pointer;transition:background .2s ease}
+.gstop:hover{background:rgba(var(--acc-rgb),.08)}
+.gsw{width:24px;height:24px;border-radius:6px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.gstop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.gx{position:relative;z-index:1;border:0;background:transparent;color:var(--color-neutral-500);cursor:pointer;padding:2px;margin-left:2px;font-size:11px}
+.gx:hover{color:#e0777d}
+.gpre{width:54px;height:26px;border-radius:7px;border:0;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14);transition:transform .2s ease}
+.gpre:hover{transform:translateY(-2px)}
+.gpre.on{outline:2px solid var(--color-accent);outline-offset:2px}

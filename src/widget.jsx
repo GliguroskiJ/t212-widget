@@ -422,9 +422,9 @@ function App({ init }) {
   const [settings, setSettings] = useState(init.settings);
   const now = useNow(1000);
   useEffect(() => { api.onState(setSt); api.onSettings(setSettings); }, []);
-  const themeKey = [settings.theme, settings.accent, settings.tint, settings.textColor].join('|');
+  const themeKey = [settings.theme, settings.accent, settings.tint, settings.textColor, settings.bgColor, (settings.bgColors || []).join()].join('|');
   const applied = useRef('');
-  if (applied.current !== themeKey) { applied.current = themeKey; applyTheme(settings.theme, settings.accent, settings.tint, settings.textColor); }
+  if (applied.current !== themeKey) { applied.current = themeKey; applyTheme(settings.theme, settings.accent, settings.tint, settings.textColor, settings.bgColor, settings.bgColors); }
   setLang(settings.language || 'cs');
   useEffect(() => applyMotion(settings.motion), [settings.motion]);
 
@@ -480,7 +480,7 @@ function App({ init }) {
   const [w, h] = DIMS[size] || DIMS.medium;
   const ov = status === 'first-run' || status === 'error' || !st.data ? [0, 0] : size === 'medium' ? [0.09, 0.45] : size === 'large' ? [0.08, 0.4] : [0, 0];
   const bg = useMemo(() => ditheredBg(settings.theme, settings.accent, settings.tint || 0, w, h, ov[0], ov[1]),
-    [settings.theme, settings.accent, settings.tint, w, h, ov[0], ov[1]]);
+    [settings.theme, settings.accent, settings.tint, settings.bgColor, (settings.bgColors || []).join(), w, h, ov[0], ov[1]]);
   return (
     <div class="stage">
       <div key={size + (status === 'first-run' ? '-fr' : '')} class={'wg' + (settings.lockPosition || POPOVER ? '' : ' draggable')} style={`width:${w}px;height:${h}px;background:url(${bg}) 0 0/100% 100% no-repeat`}
@@ -493,7 +493,7 @@ function App({ init }) {
 }
 
 api.init().then(init => {
-  applyTheme(init.settings.theme, init.settings.accent, init.settings.tint, init.settings.textColor);
+  applyTheme(init.settings.theme, init.settings.accent, init.settings.tint, init.settings.textColor, init.settings.bgColor, init.settings.bgColors);
   setLang(init.settings.language || 'cs');
   applyMotion(init.settings.motion);
   render(<App init={init} />, document.getElementById('root'));

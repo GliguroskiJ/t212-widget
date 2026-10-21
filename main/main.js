@@ -494,7 +494,7 @@ function registerIpc() {
   ipcMain.handle('hide-widget', () => { hideWidget(); return true; });
   ipcMain.handle('show-widget', () => { showWidget(); return true; });
   ipcMain.handle('quit', () => { quitting = true; app.quit(); return true; });
-  ipcMain.handle('clear-history', () => { store.clearHistory(); poller.emitState(); return true; });
+  ipcMain.handle('clear-history', () => { store.clearHistory(); poller.emitState(); poller.maybeFullHistory(true); return true; });
   ipcMain.handle('open-data-folder', () => { shell.openPath(app.getPath('userData')); return true; });
   ipcMain.handle('open-external', (_e, url) => { if (externalAllowed(url)) shell.openExternal(url); return true; });
   ipcMain.handle('reset-position', () => {
@@ -581,6 +581,7 @@ const LIB = {
   pie: a => lib.pieDetail(Number(a.id)),
   search: a => lib.searchAll(str(a.q, 60), Array.isArray(a.held) ? a.held.slice(0, 500).map(x => str(x)) : []),
   instrument: a => { lib.loadMetadata(); return lib.instrument(str(a.ticker)); },
+  performance: a => lib.performance({ ticker: str(a.ticker), isin: a.isin ? str(a.isin, 20) : null, refPrice: Number(a.refPrice) || null }),
   prices: a => lib.prices({ ticker: str(a.ticker), isin: a.isin ? str(a.isin, 20) : null, range: str(a.range, 4), refPrice: Number(a.refPrice) || null }),
   quotes: a => lib.quotes((Array.isArray(a.positions) ? a.positions : []).slice(0, 200).map(p => ({ ticker: str(p && p.ticker), isin: p && p.isin ? str(p.isin, 20) : null, price: Number(p && p.price) || null }))),
   exports: a => lib.exportsList(!!a.force),

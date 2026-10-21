@@ -11,6 +11,9 @@ Otevře se z tray (*Otevřít aplikaci*, dvojklik), z menu widgetu nebo druhým 
   cenový graf z Yahoo Finance (1D–MAX) s čarou průměrné nákupní ceny, burza a obchodní hodiny, vaše obchody, dividendy, čekající příkazy.
 - **Aktivita** — obchody (poplatky, realizovaný zisk), dividendy (po měsících, největší plátci, výnos z nákladů), vklady a výběry.
 - **Příkazy** — čekající příkazy (jen zobrazení). **Koláče** — výsledek, cíl, složení aktuální vs. cílové. **Reporty** — CSV export z Trading 212 se stažením.
+- **Historie až do ALL** — po stažení obchodů a vkladů se graf portfolia dopočítá zpětně až k prvnímu obchodu (denní zavírací ceny z Yahoo, odhad).
+- **Tažení po grafu** (portfolio i instrument) ukáže změnu za vybrané období. Detail instrumentu: denní / 52týdenní / 5letá rozpětí, základní údaje, výkonnost 1T–5R.
+- **Pozadí**: Akryl, Plná barva, Přechod (2–3 vlastní barvy), Plán, Karbon (vykreslené v plném rozlišení).
 - **Nastavení** celé aplikace (Účet, Vzhled, Data, Systém) + záložka **Widget** jen pro widget. Hledání instrumentů: Ctrl/⌘ K.
 
 Potřebná oprávnění klíče: Account data, Portfolio; volitelně History – Orders / Dividends / Transactions, Orders – Read, Pies – Read, Metadata.

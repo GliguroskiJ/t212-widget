@@ -9,7 +9,9 @@ const DEFAULTS = {
   size: 'medium',              // 'small' | 'medium' | 'large' | 'rail'
   largeView: 'chart',          // 'chart' | 'positions' | 'alloc'
   range: '1D',                 // '1D' | '1W' | '1M' | '1Y' | 'ALL'
-  theme: 'acrylic',            // 'acrylic' | 'slate' | 'indigo' | 'clear' | 'ink'
+  theme: 'acrylic',            // 'acrylic' | 'solid' | 'gradient' | 'blueprint' | 'carbon'
+  bgColor: '#16171f',          // colour of the 'solid' background
+  bgColors: ['#3b2f80', '#0f4b5c', '#5c1f45'],   // 2–3 colours of the 'gradient' background
   accent: '#9184d9',           // accent colour (hex) — drives the whole Nocturne accent ramp
   tint: 0,                     // 0–1: how much the accent colour tints the background type
   motion: 'full',              // 'full' | 'subtle' | 'off'
@@ -58,6 +60,11 @@ class Store {
     try { fs.unlinkSync(path.join(dir, 'github-token.bin')); } catch {}
     this.historyFile = path.join(dir, 'history.json');
     this.settings = { ...DEFAULTS, ...readJson(this.settingsFile, {}) };
+    // background types from older versions → current ones
+    const LEGACY = { slate: ['solid', '#232532'], ink: ['solid', '#1b1d2c'], oled: ['solid', '#000000'], indigo: ['solid', '#262b66'],
+      porcelain: ['solid', '#eef0f6'], clear: ['acrylic'], frost: ['acrylic'], aurora: ['gradient'], mesh: ['gradient'], ember: ['gradient'] };
+    const lg = LEGACY[this.settings.theme];
+    if (lg) { this.settings.theme = lg[0]; if (lg[1]) this.settings.bgColor = lg[1]; }
     this.history = readJson(this.historyFile, null) || { points: [], dayBase: null, posHist: {}, last: null };
     if (!Array.isArray(this.history.points)) this.history.points = [];
     if (!this.history.posHist) this.history.posHist = {};
@@ -112,7 +119,7 @@ class Store {
     try { atomicWrite(this.historyFile, JSON.stringify(this.history)); } catch {}
   }
   clearHistory() {
-    this.history = { points: [], dayBase: null, posHist: {}, last: this.history.last };
+    this.history = { points: [], dayBase: null, posHist: {}, last: this.history.last, symbols: this.history.symbols };
     this.saveHistory();
   }
 }

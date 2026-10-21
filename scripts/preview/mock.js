@@ -106,12 +106,13 @@
     prices: a => { const pos = POS.find(p => p.ticker === a.ticker) || POS[1]; const span = { '1D': 5 * 60e3, '1W': 1800e3, '1M': DAY, '3M': DAY, '1Y': DAY, '5Y': 7 * DAY, 'MAX': 30 * DAY }[a.range] || DAY;
       const n = a.range === '1D' ? 78 : a.range === '1W' ? 65 : a.range === '1M' ? 22 : a.range === '3M' ? 64 : a.range === '1Y' ? 252 : 260;
       const pts = pricePts(n, pos.avg * 1.05, 0.018, 7, span); const last = pts[pts.length - 1][1];
-      return { ticker: a.ticker, range: a.range, symbol: pos.sym, pts, last, meta: { currency: pos.avgCur, prevClose: pts[0][1], dayLow: last * 0.98, dayHigh: last * 1.01, low52: last * 0.7, high52: last * 1.2, volume: 18234000, exchange: 'NasdaqGS' } }; },
+      return { ticker: a.ticker, range: a.range, symbol: pos.sym, pts, last, meta: { currency: pos.avgCur, prevClose: pts[0][1], dayLow: last * 0.98, dayHigh: last * 1.01, low52: last * 0.7, high52: last * 1.2, volume: 18234000, exchange: 'NasdaqGS', open: last * 0.99 } }; },
     quotes: () => Object.fromEntries(POS.map((p, i) => [p.ticker, { last: p.avg * 1.1, prevClose: p.avg, pct: [0.42, 2.81, -0.66, 1.12, -1.4, -3.2][i], currency: p.avgCur }])),
     exports: () => [{ id: 9, status: 'Finished', from: now - 280 * DAY, to: now, link: 'https://x', include: { includeOrders: true, includeDividends: true, includeTransactions: true } },
       { id: 8, status: 'Processing', from: now - 30 * DAY, to: now, include: { includeDividends: true } },
       { id: 7, status: 'Failed', from: now - 700 * DAY, to: now - 365 * DAY, include: { includeOrders: true } }],
     logos: a => Object.fromEntries(a.tickers.map((tk, i) => [tk, i % 3 === 2 ? null : 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" rx="14" fill="' + ['#76b900', '#0a66c2', '#111', '#e31937', '#d62d20'][i % 5] + '"/><text x="32" y="40" font-family="Arial" font-weight="700" font-size="20" fill="#fff" text-anchor="middle">' + tk.slice(0, 2) + '</text></svg>')])),
+    performance: () => ({ w1: 1.8, m1: -3.2, m3: 6.4, m6: 12.1, ytd: 18.9, y1: 24.3, y3: 61.2, y5: null, high5: 140, low5: 38 }),
     requestExport: () => ({ id: 10 }), download: () => ({ saved: true }), sync: () => true, retry: () => true, wipe: () => true
   };
 })();

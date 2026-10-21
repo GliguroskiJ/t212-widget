@@ -709,7 +709,7 @@ class Library extends EventEmitter {
     // the chart's own "previous close" is the close before the whole range (a year ago on 1Y) →
     // take the real last session close (and today's range) from the 1-day chart
     const dq = await this.dayQuote(sym);
-    const qmeta = res ? { ...res.meta, prevClose: dq ? dq.prevClose : null, dayHigh: dq ? dq.dayHigh : res.meta.dayHigh, dayLow: dq ? dq.dayLow : res.meta.dayLow } : null;
+    const qmeta = res ? { ...res.meta, prevClose: dq ? dq.prevClose : null, dayHigh: dq ? dq.dayHigh : res.meta.dayHigh, dayLow: dq ? dq.dayLow : res.meta.dayLow, open: dq ? dq.open : null } : null;
     const data = res ? { ticker, range, symbol: sym, pts: res.pts, last: dq && dq.last ? dq.last : res.last, meta: qmeta } : { ticker, range, symbol: sym, pts: [] };
     if (res) this.mem.prices[key] = { at: this.now(), data };
     // keep the cache small
@@ -718,13 +718,46 @@ class Library extends EventEmitter {
     return data;
   }
 
+  // returns over standard periods + all-time high/low (instrument page), from 5 years of daily closes
+  async performance({ ticker, isin, refPrice } = {}) {
+    const sym = await this.resolveSymbol(ticker, isin, refPrice);
+    if (!sym) return null;
+    this.perfCache = this.perfCache || {};
+    const c = this.perfCache[sym];
+    if (c && this.now() - c.at < 30 * 60e3) return c.data;
+    let r = null;
+    try { r = await chart(this.fetch, sym, '5y', '1d'); } catch {}
+    if (!r || r.pts.length < 2) return null;
+    const pts = r.pts, last = r.last || pts[pts.length - 1][1], now = pts[pts.length - 1][0];
+    const at = t => { let v = null; for (const p of pts) { if (p[0] <= t) v = p[1]; else break; } return v ?? pts[0][1]; };
+    const ret = t => (t < pts[0][0] - 5 * DAY ? null : (last / at(t) - 1) * 100);
+    const y0 = new Date(new Date(now).getFullYear(), 0, 1).getTime();
+    const vals = pts.map(p => p[1]);
+    const data = {
+      w1: ret(now - 7 * DAY), m1: ret(now - 30 * DAY), m3: ret(now - 91 * DAY), m6: ret(now - 182 * DAY), ytd: ret(y0),
+      y1: ret(now - 365 * DAY), y3: ret(now - 3 * 365 * DAY), y5: ret(now - 5 * 365 * DAY + 10 * DAY),
+      high5: Math.max(...vals), low5: Math.min(...vals), since: pts[0][0]
+    };
+    this.perfCache[sym] = { at: this.now(), data };
+    return data;
+  }
+
+  // daily closes from `from` until today (full-history rebuild)
+  async dailyCloses(ticker, isin, refPrice, from) {
+    const sym = await this.resolveSymbol(ticker, isin, refPrice);
+    if (!sym) return null;
+    const age = this.now() - from;
+    const range = age < 360 * DAY ? '1y' : age < 720 * DAY ? '2y' : age < 1800 * DAY ? '5y' : '10y';
+    try { const c = await chart(this.fetch, sym, range, '1d'); return c ? c.pts : null; } catch { return null; }
+  }
+
   async dayQuote(sym) {
     const c = this.dayCache[sym];
     if (c && this.now() - c.at < 120e3) return c.q;
     let q = null;
     try {
       const r = await chart(this.fetch, sym, '1d', '5m');
-      if (r && r.meta && r.meta.prevClose) q = { last: r.last, prevClose: r.meta.prevClose, dayHigh: r.meta.dayHigh, dayLow: r.meta.dayLow, currency: r.meta.currency };
+      if (r && r.meta && r.meta.prevClose) q = { last: r.last, prevClose: r.meta.prevClose, dayHigh: r.meta.dayHigh, dayLow: r.meta.dayLow, currency: r.meta.currency, open: r.pts.length ? r.pts[0][1] : null };
     } catch {}
     this.dayCache[sym] = { at: this.now(), q };
     return q;

@@ -70,10 +70,8 @@ input,textarea{user-select:text;-webkit-user-select:text}
 .msz:hover{color:var(--color-neutral-300)}
 .msz.on{background:var(--color-accent-900);color:var(--color-accent-200);box-shadow:inset 0 0 0 1px var(--color-accent-800)}
 
-.scroll{overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(var(--ink-rgb),.12) transparent}
-.scroll::-webkit-scrollbar{width:6px}
-.scroll::-webkit-scrollbar-thumb{background:rgba(var(--ink-rgb),.1);border-radius:3px}
-.scroll::-webkit-scrollbar-track{background:transparent}
+.scroll{overflow-y:auto}
+
 
 /* ── motion settings ──────────────────────────────────────── */
 body.m-subtle .loop,body.m-subtle .pulse-dot,body.m-subtle .breathe{animation:none!important}
@@ -96,3 +94,11 @@ body.m-off .pulse-dot{opacity:0!important}
 /* primary buttons: a light fill so they read as the main action on every background */
 .btn-primary:not(:disabled){background:color-mix(in srgb,var(--color-accent) 14%,transparent)}
 .btn-primary:not(:disabled):hover{background:color-mix(in srgb,var(--color-accent) 24%,transparent)}
+
+/* scrollbars in the app's style, everywhere */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(var(--ink-rgb),.14);border-radius:6px;border:3px solid transparent;background-clip:padding-box;transition:background .2s ease}
+::-webkit-scrollbar-thumb:hover{background:rgba(var(--acc-rgb),.55);background-clip:padding-box;border:3px solid transparent}
+::-webkit-scrollbar-button{display:none;width:0;height:0}
+::-webkit-scrollbar-corner{background:transparent}

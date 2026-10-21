@@ -136,7 +136,7 @@ class Poller extends EventEmitter {
     this.lastSync = null;
     this.divFetchedAt = 0;
     this.divError = null;
-    this.store.history = { points: [], dayBase: null, posHist: {}, last: null };
+    this.store.history = { points: [], dayBase: null, posHist: {}, last: null, full: null };
     this.store.saveHistory();
     this.status = 'loading';
     this.error = null;
@@ -308,6 +308,7 @@ class Poller extends EventEmitter {
   useLibrary(lib) {
     this.library = lib;
     lib.on('change', ({ what }) => {
+      if (what === 'sync-done') { this.maybeFullHistory(); return; }
       if (what !== 'dividends' && what !== 'account') return;
       const st = lib.status.dividends;
       if (st.state === 'forbidden' || st.state === 'error') {
@@ -319,6 +320,40 @@ class Poller extends EventEmitter {
       }
       this.emitState();
     });
+  }
+
+  // First run (or history that doesn't reach back to the first trade): rebuild the chart back to
+  // the start of the account from the downloaded trades, cash movements and daily prices.
+  async maybeFullHistory(force) {
+    const lib = this.library;
+    if (!lib || this.fullRunning || !this.raw || !this.raw.summary) return;
+    if (!lib.data.complete.orders || !lib.data.complete.transactions) return;   // needs both histories
+    const h = this.store.history;
+    const acc = lib.data.account;
+    if (!force && h.full && h.full.account === acc && (h.full.points || Date.now() - h.full.at < 86400e3)) return;
+    this.fullRunning = true;
+    try {
+      const { rebuild } = require('./fullhistory');
+      const real = h.points.filter(p => !p[3]);
+      const until = real.length ? real[0][0] - 3600e3 : this.raw.t;
+      const pts = await rebuild({
+        orders: lib.data.orders, transactions: lib.data.transactions, dividends: lib.data.dividends,
+        positions: this.raw.positions, summary: this.raw.summary, until,
+        prices: (tk, isin, ref, from) => lib.dailyCloses(tk, isin, ref, from)
+      });
+      if (pts.length) {
+        // replace older estimates with the rebuilt series; recorded points stay untouched
+        const cut = pts[pts.length - 1][0];
+        h.points = pts.concat(h.points.filter(p => !(p[3] && p[0] <= cut))).sort((a, b) => a[0] - b[0]);
+      }
+      h.full = { account: acc, at: Date.now(), points: pts.length, from: pts.length ? pts[0][0] : null };
+      this.store.saveHistorySoon();
+      this.emitState();
+    } catch (e) {
+      h.full = { account: acc, at: Date.now(), points: 0, error: String(e && e.message || e) };
+    } finally {
+      this.fullRunning = false;
+    }
   }
 
   // new key / manual recheck: forget the old dividend result and ask again now

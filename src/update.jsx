@@ -109,7 +109,7 @@ function App({ init, dlg }) {
   const [d, setD] = useState(dlg);
   const [u, setU] = useState(init.update);
   useEffect(() => { api.onSettings(setS); api.onUpdate(setU); api.onUpdateDialog(setD); }, []);
-  applyTheme(s.theme, s.accent, s.tint, s.textColor);
+  applyTheme(s.theme, s.accent, s.tint, s.textColor, s.bgColor, s.bgColors);
   setLang(s.language || 'cs');
   useEffect(() => applyMotion(s.motion), [s.motion]);
   useEffect(() => {
@@ -136,7 +136,7 @@ function App({ init, dlg }) {
 }
 
 Promise.all([api.init(), api.getUpdateDialog()]).then(([init, dlg]) => {
-  applyTheme(init.settings.theme, init.settings.accent, init.settings.tint, init.settings.textColor);
+  applyTheme(init.settings.theme, init.settings.accent, init.settings.tint, init.settings.textColor, init.settings.bgColor, init.settings.bgColors);
   setLang(init.settings.language || 'cs');
   applyMotion(init.settings.motion);
   render(<App init={init} dlg={dlg} />, document.getElementById('root'));
