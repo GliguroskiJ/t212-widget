@@ -582,12 +582,18 @@ const LIB = {
     return lib.calendar(pos);
   },
   keyStats: a => lib.stats4(str(a.ticker)),
+  tax: a => {
+    const raw = poller.raw || {};
+    const y = Number(a.year) || new Date().getFullYear();
+    return require('./tax').compute({ orders: lib.data.orders, dividends: lib.data.dividends, transactions: lib.data.transactions,
+      positions: raw.positions || [], year: y, currency: (raw.summary && raw.summary.currency) || 'CZK' });
+  },
   notifications: a => notifier.list({ kind: ['news', 'alert', 'event'].includes(a.kind) ? a.kind : null }),
   notifRead: a => notifier.markRead(a.ids === 'all' ? 'all' : (Array.isArray(a.ids) ? a.ids.slice(0, 500).map(x => str(x, 200)) : [])),
   notifRemove: a => notifier.remove(str(a.id, 200)),
   notifClear: () => notifier.clear(),
   setAlert: a => notifier.setAlert(str(a.ticker), Number(a.pct), { sym: str(a.sym, 20), name: str(a.name, 120), isin: a.isin ? str(a.isin, 20) : null }),
-  checkNow: async () => { const pos = heldPositions(); await notifier.checkNews(pos, true); await notifier.checkAlerts(pos); return notifier.list({}); },
+  checkNow: async () => { const pos = watchedPositions(); await notifier.checkNews(pos, true); await notifier.checkAlerts(pos); return notifier.list({}); },
   openNews: a => { const u = notifier.link(str(a.id, 200)); if (u) shell.openExternal(u); return !!u; },
   recent: a => lib.recent(a.limit),
   activity: a => lib.activity({ kind: str(a.kind, 20), ticker: a.ticker ? str(a.ticker) : null, q: a.q ? str(a.q) : '', type: a.type ? str(a.type, 40) : '',
@@ -617,6 +623,13 @@ const LIB = {
   wipe: () => { lib.wipe(); lib.sync(); return true; }
 };
 
+// holdings + watchlist (news and alerts cover both)
+function watchedPositions() {
+  const held = heldPositions();
+  const extra = (store.get('watchlist') || []).filter(w => w && w.ticker && !held.some(h => h.ticker === w.ticker))
+    .map(w => ({ ticker: w.ticker, isin: w.isin || null, price: null, sym: w.sym || w.ticker, name: w.name || '' }));
+  return held.concat(extra);
+}
 function heldPositions() {
   const { shortTicker } = require('./t212');
   return ((poller && poller.raw && poller.raw.positions) || []).map(p => ({ ticker: p.instrument && p.instrument.ticker, isin: p.instrument && p.instrument.isin,
@@ -672,7 +685,7 @@ app.whenReady().then(() => {
   notifier.on('change', n => { lib.notifUnread = n; lib.emitChange('notifications'); });
   lib.on('change', e => { if (e.what === 'calendar') notifier.checkEvents(lib.calendar(heldPositions()).events); });
   const notifTick = () => {
-    const pos = heldPositions();
+    const pos = watchedPositions();
     if (!pos.length) return;
     notifier.checkAlerts(pos).catch(() => {});
     notifier.checkNews(pos).catch(() => {});

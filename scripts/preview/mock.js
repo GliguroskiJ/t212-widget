@@ -125,6 +125,16 @@
       { id: 'n3', type: 'event', event: 'earnings', when: 'today', ticker: 'AAPL_US_EQ', sym: 'AAPL', name: 'Apple Inc', time: n - 5 * 3600e3, read: false },
       { id: 'n4', type: 'news', ticker: 'CEZ_CZ_EQ', sym: 'CEZ', title: 'ČEZ raises dividend outlook for next year', publisher: 'Patria', url: 'https://x', time: n - 30 * 3600e3, read: true }] }; },
     setAlert: () => ({ pct: 3 }), notifRead: () => true, checkNow: () => ({}), openNews: () => true,
+    tax: a => ({ year: a.year, currency: 'CZK', years: [2026, 2025, 2024, 2023],
+      sales: { gross: 184500, valueTest: false, valueLimit: 100000, timeCap: a.year === 2025 ? 40e6 : null, timeExemptProceeds: 96000, taxProceeds: 88500, taxCost: 71200, profit: 17300, taxBase: 17300, unknownCost: false,
+        rows: [{ time: now - 40 * DAY, ticker: 'AAPL_US_EQ', sym: 'AAPL', qty: 10, days: 1210, proceeds: 96000, pl: 41000, status: 'time' },
+          { time: now - 40 * DAY, ticker: 'AAPL_US_EQ', sym: 'AAPL', qty: 5, days: 420, proceeds: 48000, pl: 9800, status: 'taxable' },
+          { time: now - 120 * DAY, ticker: 'TSLA_US_EQ', sym: 'TSLA', qty: 8, days: 210, proceeds: 40500, pl: 7500, status: 'taxable' }] },
+      dividends: { gross: 14200, withheld: 2130, credit: 2130, tax: 0, domesticNet: 3100, rows: [
+        { country: 'US', rate: .15, net: 9520, gross: 11200, withheld: 1680, credit: 1680, czTax: 0, count: 14 },
+        { country: 'DE', rate: .26375, net: 2210, gross: 3000, withheld: 790, credit: 450, czTax: 0, count: 2 },
+        { country: 'CZ', rate: .15, net: 3100, gross: 3647, withheld: 547, credit: 547, czTax: 0, count: 1, domestic: true }] },
+      interest: 412.6, soon: [{ ticker: 'MSFT_US_EQ', sym: 'MSFT', qty: 12, buyTime: now - 1000 * DAY, freeFrom: now + 95 * DAY, gain: 18400 }, { ticker: 'VWCEd_EQ', sym: 'VWCE', qty: 300, buyTime: now - 900 * DAY, freeFrom: now + 195 * DAY, gain: 9100 }] }),
     requestExport: () => ({ id: 10 }), download: () => ({ saved: true }), sync: () => true, retry: () => true, wipe: () => true
   };
 })();

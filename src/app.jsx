@@ -608,6 +608,7 @@ function Instrument({ ticker, m }) {
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
             <span style={`font:300 30px/1 ${F};letter-spacing:-.03em;font-variant-numeric:tabular-nums`}>{last != null ? m.fmt(last, 2) : pos ? m.fmt(pos.price, 2) : '—'} <span style="font-size:13px;color:var(--color-neutral-500)">{pcur}</span></span>
             <span style="display:flex;gap:8px;align-items:center">
+              {!pos && <WatchStar ticker={ticker} sym={sym} name={name} isin={(I && I.isin) || null} />}
               <AlertBell ticker={ticker} sym={sym} name={name} isin={(I && I.isin) || (pos && pos.isin)} />
               {vals && <Chip color={up ? UP : DOWN} bg={tint(up ? UP : DOWN)}><i class={'ph ' + (up ? 'ph-trend-up' : 'ph-trend-down')}></i>{m.fmt.signed(first ? chg / first * 100 : 0, 2)}% · {m.fmt.signed(chg, 2)} · {range}</Chip>}
             </span>
@@ -668,7 +669,7 @@ function Instrument({ ticker, m }) {
       {perf.data && (
         <Card title={t('Performance')} style="grid-column:1/-1" right={<span class="muted">{t('price change, without dividends')}</span>}>
           <div class="perf">
-            {[['w1', '1T'], ['m1', '1M'], ['m3', '3M'], ['m6', '6M'], ['ytd', t('YTD')], ['y1', '1R'], ['y3', '3R'], ['y5', '5R']].map(([k, l], i) => {
+            {[['w1', t('1W')], ['m1', '1M'], ['m3', '3M'], ['m6', '6M'], ['ytd', t('YTD')], ['y1', t('1Y')], ['y3', t('3Y')], ['y5', t('5Y')]].map(([k, l], i) => {
               const v = perf.data[k];
               const max = Math.max(1, ...['w1', 'm1', 'm3', 'm6', 'ytd', 'y1', 'y3', 'y5'].map(x => Math.abs(perf.data[x] || 0)));
               return (
@@ -1247,7 +1248,7 @@ function NotificationsPage({ m }) {
             <option value="">{t('Choose a holding…')}</option>
             {held.filter(p => !data.alerts[p.ticker]).map(p => <option value={p.ticker}>{p.sym} · {p.name}</option>)}
           </select>
-          <span class="pctin"><input class="input" type="number" min="0.5" max="50" step="0.5" value={addPct} onInput={e => setAddPct(e.currentTarget.value)} /><span>%</span></span>
+          <NumberInput value={addPct} onChange={setAddPct} min={0.5} max={50} step={0.5} suffix="%" />
           <button class="btn btn-primary" style="font-size:12px" disabled={!addTk || !(Number(addPct) > 0)} onClick={() => {
             const p = held.find(x => x.ticker === addTk);
             api.lib('setAlert', { ticker: addTk, pct: Number(addPct), sym: p.sym, name: p.name, isin: p.isin }).then(() => { setAddTk(''); res.reload(); toast(t('Alert set'), 'ph-bell'); });
@@ -1282,7 +1283,7 @@ function AlertBell({ ticker, sym, name, isin }) {
           <span class="t1" style="margin-bottom:4px">{t('Price alert')}</span>
           <span class="t2" style="white-space:normal;line-height:1.45;margin-bottom:10px">{t('Notify me when {s} moves more than this today:', { s: sym })}</span>
           <div style="display:flex;gap:8px;align-items:center">
-            <span class="pctin"><input class="input" type="number" min="0.5" max="50" step="0.5" value={pct} onInput={e => setPct(e.currentTarget.value)} /><span>%</span></span>
+            <NumberInput value={pct} onChange={setPct} min={0.5} max={50} step={0.5} suffix="%" />
             <button class="btn btn-primary" style="font-size:12px" disabled={!(Number(pct) > 0)} onClick={() => save(Number(pct))}>{cur ? t('Save') : t('Set')}</button>
             {cur && <button class="btn btn-ghost" style="font-size:12px" onClick={() => save(0)}>{t('Remove')}</button>}
           </div>
@@ -1330,6 +1331,203 @@ function Banners() {
   );
 }
 
+// number field with its own up/down arrows (in the app's style, not the system spinner)
+function NumberInput({ value, onChange, min = -Infinity, max = Infinity, step = 1, suffix }) {
+  const n = Number(value);
+  const dec = String(step).includes('.') ? String(step).split('.')[1].length : 0;
+  const bump = d => { const v = Math.min(max, Math.max(min, (isFinite(n) ? n : 0) + d * step)); onChange(v.toFixed(dec)); };
+  return (
+    <span class="numin">
+      <input class="input" inputMode="decimal" value={value} onInput={e => onChange(e.currentTarget.value.replace(',', '.'))}
+        onKeyDown={e => { if (e.key === 'ArrowUp') { e.preventDefault(); bump(1); } if (e.key === 'ArrowDown') { e.preventDefault(); bump(-1); } }} />
+      {suffix && <span class="numsuf">{suffix}</span>}
+      <span class="numarr">
+        <button type="button" tabIndex={-1} onClick={() => bump(1)}><i class="ph ph-caret-up"></i></button>
+        <button type="button" tabIndex={-1} onClick={() => bump(-1)}><i class="ph ph-caret-down"></i></button>
+      </span>
+    </span>
+  );
+}
+
+// ── watchlist: holdings + instruments you follow (news and alerts cover both) ──
+function useWatchlist() {
+  const { settings, set } = useApp();
+  const list = Array.isArray(settings.watchlist) ? settings.watchlist : [];
+  const has = tk => list.some(w => w.ticker === tk);
+  const add = w => { if (!has(w.ticker)) { set({ watchlist: list.concat([{ ticker: w.ticker, sym: w.sym, name: w.name, isin: w.isin || null }]) }); toast(t('Added to watchlist'), 'ph-star'); } };
+  const remove = tk => { set({ watchlist: list.filter(w => w.ticker !== tk) }); toast(t('Removed from watchlist'), 'ph-star'); };
+  return { list, has, add, remove };
+}
+
+function WatchStar({ ticker, sym, name, isin }) {
+  const w = useWatchlist();
+  const on = w.has(ticker);
+  return <button class={'tb bell' + (on ? ' on' : '')} title={on ? t('Remove from watchlist') : t('Add to watchlist')} onClick={() => (on ? w.remove(ticker) : w.add({ ticker, sym, name, isin }))}>
+    <i class={on ? 'ph-fill ph-star' : 'ph ph-star'} style={on ? 'color:#f5b85c' : ''}></i></button>;
+}
+
+function WatchRow({ r, q, fmt, onRemove }) {
+  const { nav } = useApp();
+  const pr = useLib('prices', { ticker: r.ticker, isin: r.isin, range: '1M', refPrice: r.price }, [r.ticker]);
+  const vals = pr.data && pr.data.pts && pr.data.pts.length > 1 ? pr.data.pts.map(p => p[1]) : null;
+  const m1 = vals ? (vals[vals.length - 1] / vals[0] - 1) * 100 : null;
+  const day = q ? q.pct : null;
+  return (
+    <div class="lrow click" onClick={() => nav.go('instrument', r.ticker)}>
+      <SymCell sym={r.sym} name={r.name} ticker={r.ticker} />
+      <span style="width:84px;display:flex;justify-content:flex-start">{r.held ? <Chip color="var(--color-accent-300)" bg="var(--color-accent-900)">{t('held')}</Chip> : String(r.ticker).startsWith('yf:') ? <Chip>{t('watch only')}</Chip> : null}</span>
+      {vals ? <Sparkline values={vals} color={m1 >= 0 ? UP : DOWN} w={90} h={24} /> : <span style="width:90px"></span>}
+      <span class="num" style="width:120px;text-align:right">{q ? fmt(q.last, 2) + ' ' + (q.currency || '') : pr.data && pr.data.last ? fmt(pr.data.last, 2) : '—'}</span>
+      <span style="width:84px;display:flex;justify-content:flex-end">{day == null ? <span class="muted">—</span> : <Chip color={day >= 0 ? UP : DOWN} bg={tint(day >= 0 ? UP : DOWN)}>{fmt.signed(day, 2)}%</Chip>}</span>
+      <span class="num" style={`width:74px;text-align:right;color:${m1 == null ? 'var(--color-neutral-600)' : m1 >= 0 ? UP : DOWN}`}>{m1 == null ? '—' : fmt.signed(m1, 1) + '%'}</span>
+      <span style="width:34px;display:flex;justify-content:flex-end">{onRemove && <button class="tb" title={t('Remove from watchlist')} onClick={e => { e.stopPropagation(); onRemove(); }}><i class="ph ph-x"></i></button>}</span>
+    </div>
+  );
+}
+
+function WatchlistPage({ m }) {
+  const { st } = useApp();
+  const w = useWatchlist();
+  const held = (m.d && m.d.positions) || [];
+  const rows = held.map(p => ({ ticker: p.ticker, sym: p.sym, name: p.name, isin: p.isin, price: p.price, held: true }))
+    .concat(w.list.filter(x => !held.some(p => p.ticker === x.ticker)).map(x => ({ ...x, held: false })));
+  const quotes = useLib('quotes', { positions: rows.map(r => ({ ticker: r.ticker, isin: r.isin, price: r.price })) }, [rows.map(r => r.ticker).join()]);
+  const qq = quotes.data || {};
+  const [q, setQ] = useState('');
+  const [res, setRes] = useState([]);
+  useEffect(() => {
+    if (!q.trim()) { setRes([]); return; }
+    const h = setTimeout(() => api.lib('search', { q, held: held.map(p => p.ticker) }).then(r => setRes(Array.isArray(r) ? r.slice(0, 8) : [])), 150);
+    return () => clearTimeout(h);
+  }, [q]);
+  const head = (
+    <div class="lhead"><span class="sc">{t('Instrument')}</span><span style="width:84px"></span><span style="width:90px;text-align:center">1M</span>
+      <span style="width:120px;text-align:right">{t('Price')}</span><span style="width:84px;text-align:right">{t('Today')}</span><span style="width:74px;text-align:right">1M %</span><span style="width:34px"></span></div>
+  );
+  const own = rows.filter(r => !r.held);
+  return (
+    <div class="grid">
+      <Card style="grid-column:1/-1" title={t('Add to watchlist')}>
+        <div class="search" style="max-width:520px"><i class="ph ph-magnifying-glass"></i>
+          <input class="input" placeholder={t('Search any stock, ETF or index')} value={q} onInput={e => setQ(e.currentTarget.value)} /></div>
+        {res.length > 0 && <div style="margin-top:10px;display:flex;flex-direction:column">
+          {res.map(r => {
+            const inList = r.held || w.has(r.ticker);
+            return (
+              <div class="lrow">
+                <SymCell sym={r.sym} name={r.name} ticker={r.ticker} />
+                <span class="muted" style="width:140px;text-align:right">{r.type || ''} {r.external ? r.exchange || '' : r.currency || ''}</span>
+                <span style="width:120px;display:flex;justify-content:flex-end">{inList ? <Chip>{r.held ? t('held') : t('in watchlist')}</Chip>
+                  : <button class="btn btn-primary" style="font-size:12px;padding:4px 10px" onClick={() => { w.add(r); setQ(''); }}><i class="ph ph-star"></i>{t('Add')}</button>}</span>
+              </div>
+            );
+          })}
+        </div>}
+      </Card>
+      <Card style="grid-column:1/-1" title={t('Watching')} right={<span class="muted">{t('News and price alerts cover everything here.')}</span>}>
+        {own.length > 0 ? <>{head}{own.map(r => <WatchRow r={r} q={qq[r.ticker]} fmt={m.fmt} onRemove={() => w.remove(r.ticker)} />)}</>
+          : <Empty icon="ph-star" title={t('Nothing added yet')} text={t('Search above, or use the star on any instrument page.')} />}
+      </Card>
+      <Card style="grid-column:1/-1" title={t('Your holdings')} right={<span class="muted">{t('always included')}</span>}>
+        {held.length ? <>{head}{rows.filter(r => r.held).map(r => <WatchRow r={r} q={qq[r.ticker]} fmt={m.fmt} />)}</> : <Empty icon="ph-chart-pie-slice" title={t('No open positions yet.')} />}
+      </Card>
+    </div>
+  );
+}
+
+// ── taxes (Czech Republic) ──
+const STATUS_TAX = () => ({ value: [t('Exempt (limit)'), UP], time: [t('Exempt (3 years)'), UP], taxable: [t('Taxable'), DOWN] });
+function TaxPage({ m }) {
+  const { nav } = useApp();
+  const [year, setYear] = useState(new Date().getFullYear() - (new Date().getMonth() < 3 ? 1 : 0));
+  const res = useLib('tax', { year }, [year], ['orders', 'dividends', 'transactions', 'account']);
+  const r = res.data;
+  const L = useApp().st.lib || {};
+  const money = (v, d = 0) => (v == null ? '—' : m.fmt(v, d) + ' ' + ((r && r.currency) || 'Kč'));
+  const years = r && r.years && r.years.length ? r.years : [year];
+  if (!r) return <Card><div style="display:flex;justify-content:center;padding:40px"><Spinner size={18} /></div></Card>;
+  const S = r.sales, D = r.dividends;
+  const missing = ['orders', 'dividends', 'transactions'].filter(k => L[k] && L[k].state === 'forbidden');
+  return (
+    <div class="grid">
+      <div style="grid-column:1/-1;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <Seg value={year} onChange={setYear} options={years.slice(0, 6).map(y => [y, String(y)])} />
+        <span style="flex:1"></span>
+        <span class="muted" style="max-width:560px;text-align:right;line-height:1.45">{t('A guide for the Czech tax return, not tax advice. Amounts are converted by Trading 212; the law uses ČNB rates.')}</span>
+      </div>
+      {missing.length > 0 && <Card style="grid-column:1/-1"><Empty icon="ph-lock-simple" title={t('Some history is missing')} text={t('The API key lacks: {p}. Without it the overview is incomplete.', { p: missing.map(k => ({ orders: 'History – Orders', dividends: 'History – Dividends', transactions: 'History – Transactions' }[k])).join(', ') })} /></Card>}
+      {r.currency !== 'CZK' && <Card style="grid-column:1/-1"><Empty icon="ph-warning" title={t('Account currency is {c}', { c: r.currency })} text={t('The 100 000 Kč limit and Czech tax are in CZK — convert the amounts below with ČNB rates.')} /></Card>}
+      <div class="kpis" style="grid-column:1/-1">
+        <Kpi label={t('Sales proceeds')} value={money(S.gross)} sub={S.valueTest ? t('under 100 000 Kč — all exempt') : t('over the 100 000 Kč limit')} color={S.valueTest ? UP : undefined} />
+        <Kpi label={t('Taxable profit (§10)')} value={money(S.taxBase)} color={S.taxBase > 0 ? DOWN : UP} sub={S.profit < 0 ? t('loss {v} — only offsets gains of the same year', { v: m.fmt(S.profit, 0) }) : t('tax 15 % ≈ {v}', { v: money(S.taxBase * 0.15) })} />
+        <Kpi label={t('Foreign dividends (gross)')} value={money(D.gross)} sub={t('withheld abroad ≈ {v}', { v: money(D.withheld) })} />
+        <Kpi label={t('Tax on dividends to pay')} value={money(D.tax)} color={D.tax > 0 ? DOWN : UP} sub={t('15 % minus foreign tax credit')} />
+        <Kpi label={t('Interest (§8)')} value={money(r.interest, 2)} sub={t('interest on cash from Trading 212')} />
+      </div>
+      <Card style="grid-column:1/-1" title={t('Sales in {y}', { y: year })} right={<span class="muted">{t('matched FIFO to purchases')}</span>}>
+        {S.rows.length ? <>
+          <div class="lhead"><span class="sc">{t('Instrument')}</span><span style="width:96px;text-align:right">{t('Held')}</span>
+            <span style="width:110px;text-align:right">{t('Proceeds')}</span><span style="width:100px;text-align:right">{t('P/L')}</span><span style="width:150px;text-align:right">{t('Status')}</span></div>
+          {S.rows.map(x => {
+            const [sl, sc] = STATUS_TAX()[x.status];
+            return (
+              <div class="lrow click" onClick={() => nav.go('instrument', x.ticker)}>
+                <SymCell sym={x.sym} name={dfmt(x.time) + ' · ' + m.fmt(x.qty, x.qty % 1 ? 4 : 0) + ' ' + t('pcs')} ticker={x.ticker} />
+                <span class="num" style="width:96px;text-align:right;color:var(--color-neutral-400)">{x.days == null ? '?' : x.days >= 365 ? m.fmt(x.days / 365, 1) + ' ' + t('yrs') : x.days + ' ' + t('days')}</span>
+                <span class="num" style="width:110px;text-align:right">{m.fmt(x.proceeds, 0)}</span>
+                <span class="num" style={`width:100px;text-align:right;color:${x.pl == null ? 'var(--color-neutral-500)' : x.pl >= 0 ? UP : DOWN}`}>{x.pl == null ? t('unknown') : m.fmt.signed(x.pl, 0)}</span>
+                <span style="width:150px;display:flex;justify-content:flex-end"><Chip color={sc} bg={tint(sc)}>{sl}</Chip></span>
+              </div>
+            );
+          })}
+          {S.unknownCost && <span class="t2" style="white-space:normal;margin-top:10px">{t('Some sold shares were bought before the downloaded history — their purchase price is missing; add it from your own records.')}</span>}
+        </> : <Empty icon="ph-receipt" title={t('No sales in {y}', { y: year })} />}
+      </Card>
+      <Card style="grid-column:span 7" title={t('Dividends by country of the issuer')} right={<span class="muted">{t('withholding estimated')}</span>}>
+        {D.rows.length ? <>
+          <div class="lhead"><span class="sc">{t('Country')}</span><span style="width:70px;text-align:right">{t('Rate')}</span><span style="width:100px;text-align:right">{t('Received')}</span>
+            <span style="width:100px;text-align:right">{t('Gross')}</span><span style="width:100px;text-align:right">{t('To pay in CZ')}</span></div>
+          {D.rows.map(x => (
+            <div class="lrow">
+              <span class="sc t1">{x.country}{x.domestic ? <span class="t2" style="display:inline;margin-left:6px">{t('taxed in CZ at source — not in the return')}</span> : ` · ${x.count}×`}</span>
+              <span class="num" style="width:70px;text-align:right;color:var(--color-neutral-400)">{m.fmt(x.rate * 100, 1)} %</span>
+              <span class="num" style="width:100px;text-align:right">{m.fmt(x.net, 2)}</span>
+              <span class="num" style="width:100px;text-align:right">{m.fmt(x.gross, 2)}</span>
+              <span class="num" style={`width:100px;text-align:right;color:${x.czTax > 0 ? DOWN : 'var(--color-neutral-400)'}`}>{x.domestic ? '—' : m.fmt(x.czTax, 2)}</span>
+            </div>
+          ))}
+        </> : <Empty icon="ph-coins" title={t('No dividends in {y}', { y: year })} />}
+      </Card>
+      <Card style="grid-column:span 5" title={t('For the tax return')}>
+        <div class="taxsum">
+          <span class="lbl">{t('§10 — sale of securities')}</span>
+          <div><span>{t('Taxable income')}</span><b>{money(S.taxProceeds)}</b></div>
+          <div><span>{t('Expenses (purchase price)')}</span><b>{money(S.taxCost)}</b></div>
+          <div><span>{t('Exempt income')}</span><b>{money(S.gross - S.taxProceeds)}</b></div>
+          <span class="lbl" style="margin-top:12px">{t('§8 — foreign dividends (separate base, 15 %)')}</span>
+          <div><span>{t('Gross dividends')}</span><b>{money(D.gross, 2)}</b></div>
+          <div><span>{t('Tax paid abroad (credit)')}</span><b>{money(D.credit, 2)}</b></div>
+          <span class="lbl" style="margin-top:12px">{t('§8 — interest')}</span>
+          <div><span>{t('Interest received')}</span><b>{money(r.interest, 2)}</b></div>
+        </div>
+        <span class="t2" style="white-space:normal;line-height:1.5;margin-top:12px">{t('Rules used: value test 100 000 Kč a year, time test over 3 years{c}. Withholding is estimated by the issuer’s country (US 15 % with W-8BEN) — check the exact amounts in Trading 212’s annual statement or a CSV report.', { c: S.timeCap ? t(' (in {y} up to 40 mil. Kč)', { y: year }) : '' })}</span>
+        <More onClick={() => nav.go('reports')}>{t('CSV report for the year')}</More>
+      </Card>
+      <Card style="grid-column:1/-1" title={t('Soon tax-free')} right={<span class="muted">{t('3-year test, next 12 months')}</span>}>
+        {r.soon.length ? r.soon.map(x => (
+          <div class="lrow click" onClick={() => nav.go('instrument', x.ticker)}>
+            <SymCell sym={x.sym} name={m.fmt(x.qty, x.qty % 1 ? 4 : 0) + ' ' + t('pcs') + ' · ' + t('bought {d}', { d: dfmt(x.buyTime) })} ticker={x.ticker} />
+            <span style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+              <span class="num">{dfmt(x.freeFrom)}</span>
+              <span class="num" style={`font-size:11px;color:${x.gain >= 0 ? UP : DOWN}`}>{m.fmt.signed(x.gain, 0)}</span>
+            </span>
+          </div>
+        )) : <Empty icon="ph-hourglass" title={t('Nothing in the next 12 months')} text={t('Lots of your holdings that pass the 3-year test show up here, with the date and the current gain.')} />}
+      </Card>
+    </div>
+  );
+}
+
 // ── settings page ────────────────────────────────────────────
 function SettingsPage({ tab, init }) {
   const { settings: s, st, set, nav } = useApp();
@@ -1357,12 +1555,14 @@ function SettingsPage({ tab, init }) {
 const NAV = () => [
   ['overview', t('Overview'), 'ph-squares-four'],
   ['holdings', t('Holdings'), 'ph-chart-pie-slice'],
+  ['watchlist', t('Watchlist'), 'ph-star'],
   ['activity', t('Activity'), 'ph-clock-counter-clockwise'],
   ['orders', t('Orders'), 'ph-list-checks'],
   ['pies', t('Pies'), 'ph-circle-half'],
   ['calendar', t('Calendar'), 'ph-calendar-dots'],
   ['notifications', t('Notifications'), 'ph-bell'],
-  ['reports', t('Reports'), 'ph-file-csv']
+  ['reports', t('Reports'), 'ph-file-csv'],
+  ['tax', t('Taxes'), 'ph-scales']
 ];
 
 function Search() {
@@ -1554,6 +1754,8 @@ function App({ init }) {
   else if (page === 'reports') body = <Reports m={m} />;
   else if (page === 'calendar') body = <CalendarPage m={m} />;
   else if (page === 'notifications') body = <NotificationsPage m={m} />;
+  else if (page === 'watchlist') body = <WatchlistPage m={m} />;
+  else if (page === 'tax') body = <TaxPage m={m} />;
   else body = <Overview m={m} closed={closed} />;
 
   const ctx = { st: stFull, settings, set, setAppRange, nav, libTick, init };
@@ -1630,7 +1832,7 @@ function ErrorCard({ st, now }) {
 function parseRoute(r) {
   const [p, ...rest] = String(r || 'overview').split('/');
   const a = rest.join('/');
-  const page = ['overview', 'holdings', 'instrument', 'activity', 'orders', 'pies', 'reports', 'calendar', 'notifications', 'settings'].includes(p) ? p : 'overview';
+  const page = ['overview', 'holdings', 'instrument', 'activity', 'orders', 'pies', 'reports', 'calendar', 'notifications', 'watchlist', 'tax', 'settings'].includes(p) ? p : 'overview';
   return [page, a === '' ? undefined : page === 'pies' ? Number(a) : a];
 }
 
