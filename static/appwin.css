@@ -257,3 +257,26 @@ input[type=date].input{color-scheme:dark;font-size:12.5px;min-height:34px}
 .calev{display:flex;flex-direction:column;gap:3px;min-width:0}
 .calpill{display:block;padding:2px 5px;border-radius:4px;font:600 9.5px/1.3 "Inter",sans-serif;color:var(--color-neutral-100);background:color-mix(in srgb,var(--c) 26%,transparent);box-shadow:inset 2px 0 0 var(--c);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;animation:nfade .4s ease both}
 .calmore{font:500 9.5px/1 "Inter",sans-serif;color:var(--color-neutral-500);padding-left:4px}
+
+/* notifications */
+.badge.hot{background:#c4434b;color:#fff}
+.nrow.unread{background:rgba(var(--acc-rgb),.05)}
+.ndot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--color-accent-400);box-shadow:0 0 8px rgba(var(--acc-rgb),.7)}
+.aadd{display:flex;gap:8px;align-items:center;margin-top:10px}
+.aadd select{flex:1;min-width:0;min-height:32px;font-size:12px;background:var(--color-surface);color:var(--color-text)}
+.pctin{position:relative;display:inline-flex;align-items:center;width:78px;flex:none}
+.pctin input{width:100%;min-height:32px;font-size:12.5px;padding-right:22px}
+.pctin span{position:absolute;right:9px;font:400 12px/1 "Inter",sans-serif;color:var(--color-neutral-500)}
+.bellw{position:relative}
+.tb.bell.on{color:var(--color-accent-300);background:rgba(var(--acc-rgb),.12)}
+.bellpop{width:290px;display:flex;flex-direction:column}
+.banners{position:fixed;top:72px;right:20px;z-index:60;pointer-events:none;display:flex;flex-direction:column;gap:8px;width:360px;align-items:stretch}
+.banner{display:flex;align-items:flex-start;gap:11px;padding:12px 12px 12px 14px;border-radius:12px;cursor:pointer;background:var(--menu-bg,#232532);box-shadow:0 14px 34px rgba(0,0,0,.5),inset 0 0 0 1px rgba(var(--acc-rgb),.25);animation:nbanner .5s cubic-bezier(.2,.8,.2,1) both;transition:opacity .4s ease,transform .4s ease}
+.banner:hover{box-shadow:0 14px 34px rgba(0,0,0,.5),inset 0 0 0 1px rgba(var(--acc-rgb),.5)}
+.banner.out{opacity:0;transform:translateX(30px);pointer-events:none}
+.banner .tb{width:24px;height:22px;font-size:12px;flex:none}
+.banner-all{align-self:flex-end;padding:2px 4px;pointer-events:auto;animation:nfade .6s .5s both}
+@keyframes nbanner{from{opacity:0;transform:translateX(40px)}to{opacity:1;transform:none}}
+.banner:not(.out){pointer-events:auto}
+.banner.out{animation:nbannerout .4s ease forwards}
+@keyframes nbannerout{to{opacity:0;transform:translateX(30px)}}

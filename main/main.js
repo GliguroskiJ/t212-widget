@@ -5,6 +5,7 @@ const path = require('path');
 const { Store } = require('./store');
 const { Poller } = require('./t212');
 const { Library } = require('./library');
+const { Notifier } = require('./notify');
 const { Updater, installWindows, installMac, macBundle, macCanReplace } = require('./updater');
 const autostart = require('./autostart');
 
@@ -20,7 +21,7 @@ const APP_W = 1280, APP_H = 820, APP_MIN_W = 980, APP_MIN_H = 640;
 app.setAppUserModelId('cz.jovan.t212widget');
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
-let store, poller, lib, widget, appWin, tray, popover, updater;
+let store, poller, lib, notifier, widget, appWin, tray, popover, updater;
 const IS_MAC = process.platform === 'darwin';
 let lastState = null;
 let quitting = false;
@@ -581,6 +582,13 @@ const LIB = {
     return lib.calendar(pos);
   },
   keyStats: a => lib.stats4(str(a.ticker)),
+  notifications: a => notifier.list({ kind: ['news', 'alert', 'event'].includes(a.kind) ? a.kind : null }),
+  notifRead: a => notifier.markRead(a.ids === 'all' ? 'all' : (Array.isArray(a.ids) ? a.ids.slice(0, 500).map(x => str(x, 200)) : [])),
+  notifRemove: a => notifier.remove(str(a.id, 200)),
+  notifClear: () => notifier.clear(),
+  setAlert: a => notifier.setAlert(str(a.ticker), Number(a.pct), { sym: str(a.sym, 20), name: str(a.name, 120), isin: a.isin ? str(a.isin, 20) : null }),
+  checkNow: async () => { const pos = heldPositions(); await notifier.checkNews(pos, true); await notifier.checkAlerts(pos); return notifier.list({}); },
+  openNews: a => { const u = notifier.link(str(a.id, 200)); if (u) shell.openExternal(u); return !!u; },
   recent: a => lib.recent(a.limit),
   activity: a => lib.activity({ kind: str(a.kind, 20), ticker: a.ticker ? str(a.ticker) : null, q: a.q ? str(a.q) : '', type: a.type ? str(a.type, 40) : '',
     from: Number(a.from) || null, to: Number(a.to) || null, offset: Math.max(0, Number(a.offset) || 0), limit: Math.max(1, Number(a.limit) || 100) }),
@@ -608,6 +616,12 @@ const LIB = {
   },
   wipe: () => { lib.wipe(); lib.sync(); return true; }
 };
+
+function heldPositions() {
+  const { shortTicker } = require('./t212');
+  return ((poller && poller.raw && poller.raw.positions) || []).map(p => ({ ticker: p.instrument && p.instrument.ticker, isin: p.instrument && p.instrument.isin,
+    price: p.currentPrice, sym: shortTicker(p.instrument && p.instrument.ticker), name: (p.instrument && p.instrument.name) || '' })).filter(p => p.ticker);
+}
 
 const isoDay = ts => new Date(ts).toISOString().slice(0, 10);
 async function downloadExport(id) {
@@ -652,6 +666,20 @@ app.whenReady().then(() => {
   lib = new Library({ store, fetchImpl: (u, o) => net.fetch(u, o) });
   poller.useLibrary(lib);
   lib.on('change', e => { if (appWin && !appWin.isDestroyed()) appWin.webContents.send('lib', e); });
+  // notifications: news, price-move alerts, calendar events (checked in the background)
+  notifier = new Notifier({ lib, dir: app.getPath('userData') });
+  lib.notifUnread = notifier.unread();
+  notifier.on('change', n => { lib.notifUnread = n; lib.emitChange('notifications'); });
+  lib.on('change', e => { if (e.what === 'calendar') notifier.checkEvents(lib.calendar(heldPositions()).events); });
+  const notifTick = () => {
+    const pos = heldPositions();
+    if (!pos.length) return;
+    notifier.checkAlerts(pos).catch(() => {});
+    notifier.checkNews(pos).catch(() => {});
+    notifier.checkEvents(lib.calendar(pos).events);
+  };
+  setTimeout(notifTick, 20e3);
+  setInterval(notifTick, 5 * 60e3);
   if (!store.get('firstLaunchDone')) {
     store.set({ firstLaunchDone: true });
     applyAutostart(store.get('startWithWindows'));

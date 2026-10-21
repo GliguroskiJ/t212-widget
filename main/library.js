@@ -310,6 +310,7 @@ class Library extends EventEmitter {
     }
     out.syncing = !!this.syncing;
     out.pendingCount = this.mem.pending ? this.mem.pending.list.length : 0;
+    out.notifUnread = this.notifUnread || 0;
     return out;
   }
 
@@ -782,8 +783,11 @@ class Library extends EventEmitter {
           const ce = (q && q.calendarEvents) || {}, sd = (q && q.summaryDetail) || {}, ks = (q && q.defaultKeyStatistics) || {};
           const raw = v => (v && typeof v === 'object' ? (v.raw ?? null) : v ?? null);
           const er = ce.earnings || {};
+          // keep dates that already passed — Yahoo drops them right after the event
+          const prev = old ? [...(old.past || []), ...(old.earnings || [])] : [];
+          const past = [...new Set(prev.filter(t => t < this.now() - 6 * 3600e3 && t > this.now() - 400 * DAY))].sort((a, b) => a - b);
           cal.by[p.ticker] = {
-            at: this.now(), sym,
+            at: this.now(), sym, past,
             earnings: (er.earningsDate || []).map(x => raw(x) * 1000).filter(Boolean),
             estimate: !!er.isEarningsDateEstimate,
             epsAvg: raw(er.earningsAverage), revAvg: raw(er.revenueAverage),
@@ -814,6 +818,7 @@ class Library extends EventEmitter {
       if (!names[tk] || c.none) continue;
       const base = { ticker: tk, sym: names[tk].sym, name: names[tk].name };
       (c.earnings || []).slice(0, 2).forEach((t, i) => ev.push({ ...base, type: 'earnings', time: t, estimate: c.estimate || i > 0, eps: c.epsAvg, rev: c.revAvg }));
+      for (const t of c.past || []) if (!(c.earnings || []).includes(t)) ev.push({ ...base, type: 'earnings', time: t, past: true });
       if (c.exDiv) ev.push({ ...base, type: 'exdiv', time: c.exDiv });
       if (c.divDate) ev.push({ ...base, type: 'divpay', time: c.divDate });
     }

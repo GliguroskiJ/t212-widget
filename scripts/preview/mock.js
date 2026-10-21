@@ -82,7 +82,7 @@
   };
   const pricePts = (n, base, vol, seed, span) => series(n, base, vol, seed).map((v, i) => [now - (n - 1 - i) * span, v]);
   const lstat = { orders: { state: 'done', count: orders.length, complete: true, syncedAt: now - 60e3 }, dividends: { state: 'done', count: dividends.length, complete: true, syncedAt: now - 60e3 },
-    transactions: { state: 'done', count: txs.length, complete: true, syncedAt: now - 60e3 }, pending: { state: 'done' }, pies: { state: 'done' }, instruments: { state: 'done' }, exports: { state: 'done' }, syncing: false, pendingCount: 2 };
+    transactions: { state: 'done', count: txs.length, complete: true, syncedAt: now - 60e3 }, pending: { state: 'done' }, pies: { state: 'done' }, instruments: { state: 'done' }, exports: { state: 'done' }, syncing: false, pendingCount: 2, notifUnread: 3 };
   Object.assign(lstat, cfg.lib || {});
   const PIES = [
     { id: 1, name: 'Dividendový koláč', status: 'AHEAD', goal: 500000, progress: 0.62, value: 310400, invested: 268000, result: 42400, resultPct: 15.8, cash: 820, dividends: { gained: 9120 }, count: 4, endDate: now + 900 * DAY },
@@ -119,6 +119,12 @@
       [['NVDA_US_EQ', 'NVDA', 'NVIDIA', 'earnings', 6], ['MSFT_US_EQ', 'MSFT', 'Microsoft', 'earnings', 9], ['AAPL_US_EQ', 'AAPL', 'Apple', 'earnings', 10], ['AAPL_US_EQ', 'AAPL', 'Apple', 'exdiv', 18], ['AAPL_US_EQ', 'AAPL', 'Apple', 'divpay', 22], ['CEZ_CZ_EQ', 'CEZ', 'ČEZ', 'paid', -8], ['VWCEd_EQ', 'VWCE', 'Vanguard', 'paid', -2], ['MSFT_US_EQ', 'MSFT', 'Microsoft', 'exdiv', 6]]
         .forEach(([ticker, sym, name, type, dd]) => ev.push({ ticker, sym, name, type, time: y.getTime() + dd * D, estimate: dd === 10, eps: type === 'earnings' ? 1.23 : null, amount: 412 }));
       return { events: ev.sort((a, b) => a.time - b.time), at: Date.now() - 3600e3, error: null, running: false }; },
+    notifications: () => { const n = Date.now(); return { unread: 3, alerts: { NVDA_US_EQ: { pct: 3, sym: 'NVDA', name: 'NVIDIA Corp' } }, items: [
+      { id: 'n1', type: 'alert', ticker: 'NVDA_US_EQ', sym: 'NVDA', name: 'NVIDIA Corp', pct: 3.4, threshold: 3, price: 145.2, currency: 'USD', time: n - 20 * 60e3, read: false },
+      { id: 'n2', type: 'news', ticker: 'MSFT_US_EQ', sym: 'MSFT', title: 'Microsoft beats estimates as Azure growth accelerates', publisher: 'Reuters', url: 'https://x', time: n - 2 * 3600e3, read: false },
+      { id: 'n3', type: 'event', event: 'earnings', when: 'today', ticker: 'AAPL_US_EQ', sym: 'AAPL', name: 'Apple Inc', time: n - 5 * 3600e3, read: false },
+      { id: 'n4', type: 'news', ticker: 'CEZ_CZ_EQ', sym: 'CEZ', title: 'ČEZ raises dividend outlook for next year', publisher: 'Patria', url: 'https://x', time: n - 30 * 3600e3, read: true }] }; },
+    setAlert: () => ({ pct: 3 }), notifRead: () => true, checkNow: () => ({}), openNews: () => true,
     requestExport: () => ({ id: 10 }), download: () => ({ saved: true }), sync: () => true, retry: () => true, wipe: () => true
   };
 })();

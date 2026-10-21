@@ -128,8 +128,8 @@ export function ChartTip({ tip, x, y, w }) {
     <div class="chart-tip" style={`position:absolute;left:${(frac * 100).toFixed(2)}%;top:${y.toFixed(1)}px;` +
       `transform:translate(${-Math.round(frac * 100)}%,${above ? 'calc(-100% - 11px)' : '11px'});` +
       `pointer-events:none;z-index:6;white-space:nowrap;padding:7px 9px 6px;border-radius:7px;` +
-      `background:rgba(10,11,18,.84);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);` +
-      `box-shadow:0 6px 18px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.07)`}>
+      `background:color-mix(in srgb,var(--menu-bg,#1b1d2c) 94%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);` +
+      `box-shadow:0 6px 18px rgba(0,0,0,.3),inset 0 0 0 1px var(--menu-edge,rgba(255,255,255,.1))`}>
       <div style={`font:500 12px/1 ${F};color:var(--color-neutral-100);font-variant-numeric:tabular-nums;letter-spacing:-.01em`}>{tip.value}</div>
       <div style={`display:flex;gap:7px;margin-top:5px;font:400 10px/1 ${F};font-variant-numeric:tabular-nums`}>
         <span style="color:var(--color-neutral-500)">{tip.time}{tip.est ? ' · ' + t('est.') : ''}</span>
@@ -145,7 +145,7 @@ export function RangeTip({ r, x1, x2, w }) {
   const mid = (x1 + x2) / 2, frac = w ? Math.min(.85, Math.max(.15, mid / w)) : .5;
   return (
     <div class="chart-tip range-tip" style={`position:absolute;left:${(frac * 100).toFixed(2)}%;top:-6px;transform:translate(-50%,-100%);pointer-events:none;z-index:7;white-space:nowrap;padding:8px 11px 7px;border-radius:8px;` +
-      `background:rgba(10,11,18,.9);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 22px rgba(0,0,0,.4),inset 0 0 0 1px rgba(255,255,255,.08)`}>
+      `background:color-mix(in srgb,var(--menu-bg,#1b1d2c) 95%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 8px 22px rgba(0,0,0,.3),inset 0 0 0 1px var(--menu-edge,rgba(255,255,255,.1))`}>
       <div style={`display:flex;align-items:baseline;gap:8px;font:500 13px/1 ${F};font-variant-numeric:tabular-nums;color:${r.up ? UP : DOWN}`}>
         <span>{r.chg}</span><span style="font-size:11.5px">{r.pct}%</span></div>
       {r.label && <div style={`margin-top:4px;font:400 10px/1 ${F};color:var(--color-neutral-500)`}>{r.label}</div>}
@@ -292,7 +292,8 @@ export function chartRange(d, per, fmt, i, j) {
   const onPl = pa != null && pb != null;
   const chg = onPl ? pb - pa : vb - va;
   const dv = vb - va, dep = dv - chg;
-  const base = va;
+  // % of the money that was at work: value at the start plus what was deposited during the period
+  const base = va + Math.max(0, dep);
   return {
     chg: fmt.signed(chg, 0) + ' ' + d.currency,
     pct: fmt.signed(base ? (chg / base) * 100 : 0, 2),

@@ -185,7 +185,7 @@ function Bars({ months, series, fmt, cur, height = 120 }) {
         {months.map((k, i) => <span style={`flex:1;text-align:center;font:400 9.5px/1 ${F};color:var(--color-neutral-${hov === i ? 300 : 600})`}>{months.length > 14 && i % 2 ? '' : monthLabel(k)}</span>)}
       </div>
       {hov != null && (
-        <div class="chart-tip" style={`position:absolute;top:-6px;left:${((hov + 0.5) / months.length) * 100}%;transform:translate(-50%,-100%);pointer-events:none;white-space:nowrap;padding:7px 9px 6px;border-radius:7px;background:rgba(10,11,18,.84);backdrop-filter:blur(10px);box-shadow:0 6px 18px rgba(0,0,0,.35),inset 0 0 0 1px rgba(255,255,255,.07);z-index:5`}>
+        <div class="chart-tip" style={`position:absolute;top:-6px;left:${((hov + 0.5) / months.length) * 100}%;transform:translate(-50%,-100%);pointer-events:none;white-space:nowrap;padding:7px 9px 6px;border-radius:7px;background:color-mix(in srgb,var(--menu-bg,#1b1d2c) 94%,transparent);backdrop-filter:blur(10px);box-shadow:0 6px 18px rgba(0,0,0,.3),inset 0 0 0 1px var(--menu-edge,rgba(255,255,255,.1));z-index:5`}>
           <div style={`font:500 11px/1 ${F};color:var(--color-neutral-300);margin-bottom:5px`}>{(() => { const [y, m] = months[hov].split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString(locale(), { month: 'long', year: 'numeric' }); })()}</div>
           {series.map(s => <div style={`display:flex;gap:8px;align-items:center;font:400 11px/1.5 ${F};color:var(--color-neutral-200);font-variant-numeric:tabular-nums`}>
             <span style={`width:7px;height:7px;border-radius:2px;background:${s.color}`}></span>{s.label} <span style="margin-left:auto">{fmt(s.get(months[hov]) || 0, 0)} {cur}</span></div>)}
@@ -607,7 +607,10 @@ function Instrument({ ticker, m }) {
           <span style="flex:1"></span>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:7px">
             <span style={`font:300 30px/1 ${F};letter-spacing:-.03em;font-variant-numeric:tabular-nums`}>{last != null ? m.fmt(last, 2) : pos ? m.fmt(pos.price, 2) : '—'} <span style="font-size:13px;color:var(--color-neutral-500)">{pcur}</span></span>
-            {vals && <Chip color={up ? UP : DOWN} bg={tint(up ? UP : DOWN)}><i class={'ph ' + (up ? 'ph-trend-up' : 'ph-trend-down')}></i>{m.fmt.signed(first ? chg / first * 100 : 0, 2)}% · {m.fmt.signed(chg, 2)} · {range}</Chip>}
+            <span style="display:flex;gap:8px;align-items:center">
+              <AlertBell ticker={ticker} sym={sym} name={name} isin={(I && I.isin) || (pos && pos.isin)} />
+              {vals && <Chip color={up ? UP : DOWN} bg={tint(up ? UP : DOWN)}><i class={'ph ' + (up ? 'ph-trend-up' : 'ph-trend-down')}></i>{m.fmt.signed(first ? chg / first * 100 : 0, 2)}% · {m.fmt.signed(chg, 2)} · {range}</Chip>}
+            </span>
           </div>
         </div>
         <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:14px"><RangeChips range={range} onPick={setRange} list={PRICE_RANGES} size={11} padX={9} /></div>
@@ -1172,6 +1175,161 @@ function CalendarPage({ m }) {
   );
 }
 
+// ── notifications ──
+const relTime = ts => {
+  const s = (Date.now() - ts) / 1000;
+  if (s < 60) return t('just now');
+  if (s < 3600) return t('{n} min ago', { n: Math.round(s / 60) });
+  if (s < 86400) return t('{n} h ago', { n: Math.round(s / 3600) });
+  if (s < 7 * 86400) return t('{n} d ago', { n: Math.round(s / 86400) });
+  return dfmt(ts);
+};
+const NT = () => ({ news: [t('News'), 'ph-newspaper', CAT[5]], alert: [t('Price alert'), 'ph-lightning', CAT[2]], event: [t('Event'), 'ph-calendar-dots', CAT[0]] });
+function notifText(x, fmt) {
+  if (x.type === 'news') return { title: x.title, sub: [x.publisher, relTime(x.time)].filter(Boolean).join(' · ') };
+  if (x.type === 'alert') {
+    const up = x.pct >= 0;
+    return { title: t(up ? '{s} is up {p} % today' : '{s} is down {p} % today', { s: x.sym, p: fmt(Math.abs(x.pct), 2) }),
+      sub: t('your alert ±{a} %', { a: fmt(x.threshold, 1) }) + (x.price ? ' · ' + fmt(x.price, 2) + ' ' + (x.currency || '') : '') + ' · ' + relTime(x.time), up };
+  }
+  const ev = { earnings: t('results'), exdiv: t('ex-dividend day'), divpay: t('dividend payout') }[x.event] || x.event;
+  return { title: t(x.when === 'today' ? '{s}: {e} today' : '{s}: {e} tomorrow', { s: x.sym, e: ev }) + (x.estimate ? ' (' + t('estimate') + ')' : ''), sub: (x.name || '') + ' · ' + relTime(x.time) };
+}
+function NotifRow({ x, fmt, onOpen }) {
+  const [l, ic, c] = NT()[x.type] || NT().event;
+  const tx = notifText(x, fmt);
+  const col = x.type === 'alert' ? (tx.up ? UP : DOWN) : c;
+  return (
+    <div class={'lrow click nrow' + (x.read ? '' : ' unread')} onClick={() => onOpen(x)}>
+      <Logo ticker={x.ticker} sym={x.sym} badge={x.type === 'alert' ? (tx.up ? 'ph-trend-up' : 'ph-trend-down') : ic} badgeColor={col} />
+      <span style="display:flex;flex-direction:column;gap:4px;min-width:0;flex:1">
+        <span class="t1" style="white-space:normal;line-height:1.35">{tx.title}</span>
+        <span class="t2"><span style={`color:${col}`}>{l}</span> · {x.sym} · {tx.sub}</span>
+      </span>
+      {x.type === 'news' && x.url && <button class="btn btn-secondary" style="font-size:11.5px;padding:4px 9px" onClick={e => { e.stopPropagation(); api.lib('openNews', { id: x.id }); api.lib('notifRead', { ids: [x.id] }); }}>
+        <i class="ph ph-arrow-square-out"></i>{t('Read')}</button>}
+      {!x.read && <span class="ndot"></span>}
+    </div>
+  );
+}
+
+function NotificationsPage({ m }) {
+  const { nav, st } = useApp();
+  const [kind, setKind] = useState('');
+  const res = useLib('notifications', { kind }, [kind], ['notifications']);
+  const [busy, setBusy] = useState(false);
+  const data = res.data || { items: [], alerts: {} };
+  const open = x => { api.lib('notifRead', { ids: [x.id] }); nav.go('instrument', x.ticker); };
+  const alerts = Object.entries(data.alerts || {});
+  const held = (m.d && m.d.positions) || [];
+  const [addTk, setAddTk] = useState('');
+  const [addPct, setAddPct] = useState('3');
+  return (
+    <div class="grid">
+      <Card style="grid-column:span 8" title={t('Notifications')} right={<>
+        <Seg value={kind} onChange={setKind} size={10.5} options={[['', t('All')], ['news', t('News')], ['alert', t('Alerts')], ['event', t('Events')]]} />
+        <button class="tb" title={t('Check now')} disabled={busy} onClick={async () => { setBusy(true); await api.lib('checkNow'); res.reload(); setBusy(false); }}>{busy ? <Spinner size={12} /> : <i class="ph ph-arrow-clockwise"></i>}</button>
+        <button class="btn btn-ghost" style="font-size:12px" onClick={() => api.lib('notifRead', { ids: 'all' })}><i class="ph ph-checks"></i>{t('Mark all read')}</button></>}>
+        {data.items.length ? data.items.map(x => <NotifRow x={x} fmt={m.fmt} onOpen={open} />)
+          : <Empty icon="ph-bell" title={res.loading ? t('Loading…') : t('No notifications yet')} text={t('News about your companies, your price alerts and today’s results or dividend dates appear here.')} />}
+      </Card>
+      <Card style="grid-column:span 4" title={t('Price alerts')}>
+        <span class="t2" style="white-space:normal;line-height:1.5;margin-bottom:12px">{t('Get notified when an instrument moves more than the set % today (up or down). Checked every 5 minutes while the app runs.')}</span>
+        {alerts.map(([tk, a]) => (
+          <div class="lrow">
+            <SymCell sym={a.sym} name={a.name} ticker={tk} />
+            <span class="num" style="width:64px;text-align:right">± {m.fmt(a.pct, 1)} %</span>
+            <button class="tb" title={t('Remove')} onClick={() => api.lib('setAlert', { ticker: tk, pct: 0 }).then(() => res.reload())}><i class="ph ph-trash"></i></button>
+          </div>
+        ))}
+        <div class="aadd">
+          <select class="input" value={addTk} onChange={e => setAddTk(e.currentTarget.value)}>
+            <option value="">{t('Choose a holding…')}</option>
+            {held.filter(p => !data.alerts[p.ticker]).map(p => <option value={p.ticker}>{p.sym} · {p.name}</option>)}
+          </select>
+          <span class="pctin"><input class="input" type="number" min="0.5" max="50" step="0.5" value={addPct} onInput={e => setAddPct(e.currentTarget.value)} /><span>%</span></span>
+          <button class="btn btn-primary" style="font-size:12px" disabled={!addTk || !(Number(addPct) > 0)} onClick={() => {
+            const p = held.find(x => x.ticker === addTk);
+            api.lib('setAlert', { ticker: addTk, pct: Number(addPct), sym: p.sym, name: p.name, isin: p.isin }).then(() => { setAddTk(''); res.reload(); toast(t('Alert set'), 'ph-bell'); });
+          }}><i class="ph ph-plus"></i>{t('Add')}</button>
+        </div>
+        <span class="t2" style="white-space:normal;margin-top:10px">{t('Any instrument can also be watched from its page (bell icon).')}</span>
+      </Card>
+    </div>
+  );
+}
+
+// bell on an instrument page: set / change / remove the daily-move alert
+function AlertBell({ ticker, sym, name, isin }) {
+  const res = useLib('notifications', { kind: 'alert' }, [ticker], ['notifications']);
+  const cur = res.data && res.data.alerts && res.data.alerts[ticker];
+  const [open, setOpen] = useState(false);
+  const [pct, setPct] = useState('3');
+  const ref = useRef(null);
+  useEffect(() => { if (cur) setPct(String(cur.pct)); }, [cur && cur.pct]);
+  useEffect(() => {
+    if (!open) return;
+    const off = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    window.addEventListener('mousedown', off); return () => window.removeEventListener('mousedown', off);
+  }, [open]);
+  const save = v => api.lib('setAlert', { ticker, pct: v, sym, name, isin }).then(() => { setOpen(false); res.reload(); toast(v ? t('Alert set') : t('Alert removed'), v ? 'ph-bell' : 'ph-bell-slash'); });
+  return (
+    <span class="bellw" ref={ref}>
+      <button class={'tb bell' + (cur ? ' on' : '')} title={cur ? t('Alert at ±{p} %', { p: cur.pct }) : t('Set a price alert')} onClick={() => setOpen(o => !o)}>
+        <i class={'ph ' + (cur ? 'ph-bell-ringing' : 'ph-bell')}></i></button>
+      {open && (
+        <div class="dpop r bellpop">
+          <span class="t1" style="margin-bottom:4px">{t('Price alert')}</span>
+          <span class="t2" style="white-space:normal;line-height:1.45;margin-bottom:10px">{t('Notify me when {s} moves more than this today:', { s: sym })}</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="pctin"><input class="input" type="number" min="0.5" max="50" step="0.5" value={pct} onInput={e => setPct(e.currentTarget.value)} /><span>%</span></span>
+            <button class="btn btn-primary" style="font-size:12px" disabled={!(Number(pct) > 0)} onClick={() => save(Number(pct))}>{cur ? t('Save') : t('Set')}</button>
+            {cur && <button class="btn btn-ghost" style="font-size:12px" onClick={() => save(0)}>{t('Remove')}</button>}
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+// pop-up banners when the app opens: the newest unread notifications from the last 2 days
+function Banners() {
+  const { nav } = useApp();
+  const [list, setList] = useState([]);
+  const [fmt] = useState(() => makeFmt('cs'));
+  useEffect(() => {
+    let h1, h2;
+    h1 = setTimeout(async () => {
+      const r = await api.lib('notifications', {});
+      const fresh = ((r && r.items) || []).filter(x => !x.read && Date.now() - x.time < 2 * 86400e3).slice(0, 3);
+      setList(fresh.map(x => ({ ...x, show: true })));
+      h2 = setTimeout(() => setList(l => l.map(x => ({ ...x, show: false }))), 14e3);
+    }, 1600);
+    return () => { clearTimeout(h1); clearTimeout(h2); };
+  }, []);
+  if (!list.length) return null;
+  const close = id => setList(l => l.map(x => (x.id === id ? { ...x, show: false } : x)));
+  return (
+    <div class="banners">
+      {list.map((x, i) => {
+        const [l, ic, c] = NT()[x.type] || NT().event;
+        const tx = notifText(x, fmt);
+        return (
+          <div class={'banner' + (x.show ? '' : ' out')} style={`animation-delay:${i * .12}s`} onClick={() => { close(x.id); api.lib('notifRead', { ids: [x.id] }); nav.go('instrument', x.ticker); }}>
+            <Logo ticker={x.ticker} sym={x.sym} badge={ic} badgeColor={x.type === 'alert' ? (tx.up ? UP : DOWN) : c} />
+            <span style="display:flex;flex-direction:column;gap:4px;min-width:0;flex:1">
+              <span class="t2" style={`color:${c}`}>{l} · {x.sym}</span>
+              <span class="t1" style="white-space:normal;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{tx.title}</span>
+            </span>
+            <button class="tb" onClick={e => { e.stopPropagation(); close(x.id); }}><i class="ph ph-x"></i></button>
+          </div>
+        );
+      })}
+      {list.some(x => x.show) && <a class="link banner-all" onClick={() => { setList([]); nav.go('notifications'); }}>{t('All notifications')}<i class="ph ph-caret-right"></i></a>}
+    </div>
+  );
+}
+
 // ── settings page ────────────────────────────────────────────
 function SettingsPage({ tab, init }) {
   const { settings: s, st, set, nav } = useApp();
@@ -1203,6 +1361,7 @@ const NAV = () => [
   ['orders', t('Orders'), 'ph-list-checks'],
   ['pies', t('Pies'), 'ph-circle-half'],
   ['calendar', t('Calendar'), 'ph-calendar-dots'],
+  ['notifications', t('Notifications'), 'ph-bell'],
   ['reports', t('Reports'), 'ph-file-csv']
 ];
 
@@ -1394,6 +1553,7 @@ function App({ init }) {
   else if (page === 'pies') body = <Pies m={m} id={arg} />;
   else if (page === 'reports') body = <Reports m={m} />;
   else if (page === 'calendar') body = <CalendarPage m={m} />;
+  else if (page === 'notifications') body = <NotificationsPage m={m} />;
   else body = <Overview m={m} closed={closed} />;
 
   const ctx = { st: stFull, settings, set, setAppRange, nav, libTick, init };
@@ -1415,6 +1575,7 @@ function App({ init }) {
               <button class={'nav-i' + (page === k || (k === 'holdings' && page === 'instrument' && !String(arg).startsWith('yf:')) ? ' on' : '')} onClick={() => go(k)}>
                 <i class={'ph ' + icon}></i><span>{label}</span>
                 {k === 'orders' && libStatus.pendingCount ? <span class="badge">{libStatus.pendingCount}</span> : null}
+                {k === 'notifications' && libStatus.notifUnread ? <span class="badge hot">{libStatus.notifUnread > 99 ? '99+' : libStatus.notifUnread}</span> : null}
               </button>
             ))}
             <span style="flex:1"></span>
@@ -1443,6 +1604,7 @@ function App({ init }) {
           <main class="main-scroll scroll" key={page + ':' + (page === 'settings' ? '' : arg)}>{body}</main>
         </div>
         <Toasts />
+        {ready && st.connected && <Banners />}
         {settings.motion !== 'off' && <Boot ready={ready} bg={bg} />}
       </div>
     </Ctx.Provider>
@@ -1468,7 +1630,7 @@ function ErrorCard({ st, now }) {
 function parseRoute(r) {
   const [p, ...rest] = String(r || 'overview').split('/');
   const a = rest.join('/');
-  const page = ['overview', 'holdings', 'instrument', 'activity', 'orders', 'pies', 'reports', 'calendar', 'settings'].includes(p) ? p : 'overview';
+  const page = ['overview', 'holdings', 'instrument', 'activity', 'orders', 'pies', 'reports', 'calendar', 'notifications', 'settings'].includes(p) ? p : 'overview';
   return [page, a === '' ? undefined : page === 'pies' ? Number(a) : a];
 }
 
