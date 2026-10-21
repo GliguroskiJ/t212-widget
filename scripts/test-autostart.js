@@ -2,7 +2,7 @@
 // and a fake Electron that — like on the real machine — reports Off for our entry.
 const assert = require('assert');
 const { state, isEnabled, apply, reconcile, regValue, NAME, RUN, APPROVED } = require('../main/autostart');
-const EXE = 'C:\\Users\\gligu\\AppData\\Local\\Programs\\t212-widget\\T212 Widget.exe';
+const EXE = 'C:\\Users\\user\\AppData\\Local\\Programs\\t212-widget\\T212 Widget.exe';
 
 function machine(run, approved = {}) {
   const reg = { [RUN]: new Map(Object.entries(run)), [APPROVED]: new Map(Object.entries(approved)) };
@@ -22,9 +22,9 @@ function machine(run, approved = {}) {
   };
   return { reg, exec, app };
 }
-const THEIRS = { OneDrive: '"C:\\Program Files\\Microsoft OneDrive\\OneDrive.exe" /background', 'Docker Desktop': 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe',
-  'electron.app.CurseForge': 'C:\\Users\\gligu\\AppData\\Local\\Programs\\CurseForge Windows\\CurseForge.exe --minimized' };
-const THEIRS_OK = { Steam: '020000000000000000000000', Discord: '030000006a1b2c3d4e5f6071', 'Docker Desktop': '030000000000000000000000' };
+const THEIRS = { SyncApp: '"C:\\Program Files\\Sync App\\sync.exe" /background', 'Some Tool': 'C:\\Program Files\\Some Tool\\tool.exe',
+  'electron.app.OtherApp': 'C:\\Users\\user\\AppData\\Local\\Programs\\Other App\\Other.exe --minimized' };
+const THEIRS_OK = { AppOne: '020000000000000000000000', AppTwo: '030000006a1b2c3d4e5f6071', 'App Three': '030000000000000000000000' };
 
 // 1) exactly the reported machine: entry present, nothing in StartupApproved, Electron says Off → we say On
 let m = machine({ ...THEIRS, [NAME]: `"${EXE}"` }, THEIRS_OK);
@@ -32,8 +32,8 @@ assert.equal(state(m.app, 'win32', EXE, m.exec), 'on');
 assert.equal(isEnabled(m.app, 'win32', EXE, m.exec), true);
 assert.equal(reconcile(m.app, true, 'win32', EXE, m.exec), true);
 // 2) parsing: names with spaces, binary data
-assert.deepEqual(regValue(RUN, 'Docker Desktop', m.exec), { type: 'REG_SZ', data: 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe' });
-assert.equal(regValue(APPROVED, 'Steam', m.exec).data, '020000000000000000000000');
+assert.deepEqual(regValue(RUN, 'Some Tool', m.exec), { type: 'REG_SZ', data: 'C:\\Program Files\\Some Tool\\tool.exe' });
+assert.equal(regValue(APPROVED, 'AppOne', m.exec).data, '020000000000000000000000');
 assert.equal(regValue(RUN, 'Nope', m.exec), null);
 // 3) switched off in Task Manager (first byte 03) → 'disabled', reconcile keeps it off and doesn't touch it
 m = machine({ [NAME]: `"${EXE}"` }, { [NAME]: '030000000000000000000000' });

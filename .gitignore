@@ -8,3 +8,8 @@ settings.json
 history.json
 *.env
 .env*
+activity.json
+metadata.json
+calendar.json
+logos/
+*.bin
