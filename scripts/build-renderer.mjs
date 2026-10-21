@@ -13,6 +13,10 @@ for (const w of [300, 400, 500, 600]) for (const s of ['latin', 'latin-ext'])
   fs.copyFileSync(path.join(fontDir, `inter-${s}-${w}-normal.woff2`), path.join(out, 'fonts', `inter-${s}-${w}-normal.woff2`));
 const ph = path.join(root, 'node_modules/@phosphor-icons/web/src/regular');
 for (const f of ['style.css', 'Phosphor.woff2', 'Phosphor.woff', 'Phosphor.ttf']) fs.copyFileSync(path.join(ph, f), path.join(out, 'phosphor', f));
+// filled weight (a few icons, e.g. the watchlist star)
+const phf = path.join(root, 'node_modules/@phosphor-icons/web/src/fill');
+fs.mkdirSync(path.join(out, 'phosphor-fill'), { recursive: true });
+for (const f of ['style.css', 'Phosphor-Fill.woff2', 'Phosphor-Fill.woff', 'Phosphor-Fill.ttf']) fs.copyFileSync(path.join(phf, f), path.join(out, 'phosphor-fill', f));
 await esbuild.build({
   entryPoints: { widget: path.join(root, 'src/widget.jsx'), app: path.join(root, 'src/app.jsx'), update: path.join(root, 'src/update.jsx') },
   bundle: true, minify: true, outdir: out, format: 'iife', target: 'chrome120',

@@ -225,6 +225,7 @@ export function Chart({ values, values2, tipFor, rangeFor, w, h, pad, sw = 1.5, 
     return wrap(
       <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" style={`display:block;overflow:visible;${style}`}>
         <path d={line} fill="none" stroke="var(--color-neutral-500)" stroke-width="1.4" stroke-linecap="round" style="opacity:.4"></path>
+        {line2 && <path d={line2} fill="none" stroke="var(--color-neutral-300)" stroke-width="1.3" stroke-dasharray="4 4" opacity=".7" style="pointer-events:none"></path>}
         {band}
         {cross}
       </svg>
