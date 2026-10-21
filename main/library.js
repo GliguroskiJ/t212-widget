@@ -22,6 +22,7 @@ const KINDS = {
 const PRICE_RANGES = { '1D': ['1d', '5m'], '1W': ['5d', '30m'], '1M': ['1mo', '1d'], '3M': ['3mo', '1d'], '1Y': ['1y', '1d'], '5Y': ['5y', '1wk'], 'MAX': ['max', '1mo'] };
 const PRICE_TTL = { '1D': 120e3, '1W': 600e3 };
 const DAY = 86400e3;
+const RESCAN = 45 * DAY;   // incremental sync re-reads this much recent history
 const YF_TYPES = ['EQUITY', 'ETF', 'INDEX', 'MUTUALFUND', 'CRYPTOCURRENCY', 'CURRENCY', 'FUTURE'];
 const YF_SYMBOL = /^[A-Za-z0-9.^=\-]{1,24}$/;
 const LOGO_BASE = 'https://trading212equities.s3.eu-central-1.amazonaws.com/';
@@ -233,11 +234,17 @@ class Library extends EventEmitter {
     const known = new Set(list.map(x => x.key));
     const st = this.status[kind] = { state: 'syncing', progress: list.length, at: this.now() };
     this.emitChange(kind);
+    const seen = new Set();
+    let oldest = Infinity, scanned = false;
     const add = items => {
       let fresh = 0, hitKnown = false;
       for (const it of items) {
         const row = NORM[kind](it);
-        if (known.has(row.key)) { hitKnown = true; continue; }
+        seen.add(row.key);
+        if (row.time && row.time < oldest) oldest = row.time;
+        // stop only once we're past the re-scan window: card payments and transfers can be posted
+        // days later with an earlier date, so the newest page alone isn't enough to catch them
+        if (known.has(row.key)) { if (!row.time || row.time < this.now() - RESCAN) hitKnown = true; continue; }
         known.add(row.key);
         list.push(row);
         fresh++;
@@ -260,8 +267,13 @@ class Library extends EventEmitter {
         this.sortKind(kind);
         this.saveSoon();
         this.emitChange(kind);
-        if (!next) { if (firstEver) this.data.complete[kind] = true; break; }
-        if (hitKnown && !firstEver) break;
+        if (!next) { if (firstEver) this.data.complete[kind] = true; scanned = true; break; }
+        if (hitKnown && !firstEver) { scanned = true; break; }
+      }
+      // cash movements Trading 212 has since dropped (a reversed card payment, a cancelled transfer)
+      if (kind === 'transactions' && scanned && !firstEver && isFinite(oldest)) {
+        const keep = list.filter(x => !(x.time && x.time > oldest && !seen.has(x.key)));
+        if (keep.length !== list.length) { list.splice(0, list.length, ...keep); this.saveSoon(); }
       }
       // 2) the rest of an interrupted first download
       while (!this.data.complete[kind] && this.data.cursor[kind]) {

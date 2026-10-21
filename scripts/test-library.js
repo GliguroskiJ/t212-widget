@@ -90,6 +90,17 @@ srv.listen(0, async () => {
   assert.equal(lib.data.orders[0].id, 1201);
   console.log('incremental ok');
 
+  // 2b) a card payment posted late with an earlier date is picked up; one Trading 212 dropped is removed
+  txs.splice(2, 0, { reference: 'LATE', amount: -1129, type: 'WITHDRAW', currency: 'CZK', dateTime: iso(now - 30 * DAY) });
+  const gone = txs.splice(1, 1)[0];
+  await lib.sync(['transactions']);
+  assert.ok(lib.data.transactions.some(x => x.key === 'LATE'));
+  assert.ok(!lib.data.transactions.some(x => x.key === gone.reference));
+  assert.equal(lib.data.transactions.length, 7);
+  txs.splice(1, 0, gone); txs.splice(txs.findIndex(x => x.reference === 'LATE'), 1);
+  await lib.sync(['transactions']);
+  console.log('late/dropped cash ok');
+
   // 3) persisted + reloaded; a different account wipes it
   lib.save();
   let lib2 = new Library({ store, fetchImpl: fetch, limiter: fast() });
