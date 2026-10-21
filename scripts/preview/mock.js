@@ -107,7 +107,7 @@
       const n = a.range === '1D' ? 78 : a.range === '1W' ? 65 : a.range === '1M' ? 22 : a.range === '3M' ? 64 : a.range === '1Y' ? 252 : 260;
       const pts = pricePts(n, pos.avg * 1.05, 0.018, 7, span); const last = pts[pts.length - 1][1];
       return { ticker: a.ticker, range: a.range, symbol: pos.sym, pts, last, meta: { currency: pos.avgCur, prevClose: pts[0][1], dayLow: last * 0.98, dayHigh: last * 1.01, low52: last * 0.7, high52: last * 1.2, volume: 18234000, exchange: 'NasdaqGS', open: last * 0.99 } }; },
-    quotes: () => Object.fromEntries(POS.map((p, i) => [p.ticker, { last: p.avg * 1.1, prevClose: p.avg, pct: [0.42, 2.81, -0.66, 1.12, -1.4, -3.2][i], currency: p.avgCur }])),
+    quotes: () => Object.fromEntries(POS.map((p, i) => [p.ticker, { last: p.avg * 1.1, prevClose: p.avg, pct: [0.42, 2.81, -0.66, 1.12, -1.4, -3.2][i], currency: p.avgCur, open: p.avg, day: Array.from({ length: 78 }, (_, k) => p.avg * (1 + Math.sin(k / 6 + i) * 0.006 + k * [1, 3, -1, 2, -2, -4][i] * 0.0004 + Math.sin(k * 1.7 + i * 3) * 0.002)) }])),
     exports: () => [{ id: 9, status: 'Finished', from: now - 280 * DAY, to: now, link: 'https://x', include: { includeOrders: true, includeDividends: true, includeTransactions: true } },
       { id: 8, status: 'Processing', from: now - 30 * DAY, to: now, include: { includeDividends: true } },
       { id: 7, status: 'Failed', from: now - 700 * DAY, to: now - 365 * DAY, include: { includeOrders: true } }],

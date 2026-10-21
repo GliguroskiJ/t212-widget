@@ -350,6 +350,7 @@ const CS = {
   'Instrument': 'Instrument',
   'Price': 'Cena',
   'Today': 'Dnes',
+  'Last session, open → close': 'Poslední obchodní seance, open → close',
   '{m} markets': '{m} trhů',
   'Best': 'Nejlepší',
   'Worst': 'Nejhorší',

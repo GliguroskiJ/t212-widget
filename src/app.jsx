@@ -154,10 +154,19 @@ function Toasts() {
   return <div class="toasts">{list.map(x => <div key={x.id} class={'toast' + (x.out ? ' out' : '')}><i class={'ph ' + x.icon}></i>{x.text}</div>)}</div>;
 }
 
-function Sparkline({ values, color, w = 72, h = 20 }) {
+// `base` draws a faint dashed reference line (e.g. the session open) and keeps it inside the scale
+function Sparkline({ values, color, w = 72, h = 20, base }) {
+  const v = values && values.length > 1 ? values : [1, 1];
+  let d;
+  if (base != null && isFinite(base)) {
+    const lo = Math.min(base, ...v), hi = Math.max(base, ...v), r = hi - lo || 1, pad = 2;
+    const y = x => (pad + (1 - (x - lo) / r) * (h - pad * 2));
+    d = { line: v.map((x, i) => (i ? 'L' : 'M') + (i / (v.length - 1) * w).toFixed(1) + ' ' + y(x).toFixed(1)).join(' '), base: y(base) };
+  } else d = { line: linePath(v, w, h, 2) };
   return (
     <svg viewBox={`0 0 ${w} ${h}`} width={w} height={h} preserveAspectRatio="none" style="display:block;flex:none">
-      <path d={linePath(values && values.length > 1 ? values : [1, 1], w, h, 2)} fill="none" stroke={color} stroke-width="1.2" stroke-linecap="round" pathLength="1" stroke-dasharray="1" style="animation:ndraw .9s ease both"></path>
+      {d.base != null && <line x1="0" x2={w} y1={d.base} y2={d.base} stroke="var(--color-muted, currentColor)" stroke-opacity=".35" stroke-width="1" stroke-dasharray="2 3" vector-effect="non-scaling-stroke"></line>}
+      <path d={d.line} fill="none" stroke={color} stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" pathLength="1" stroke-dasharray="1" style="animation:ndraw .9s ease both"></path>
     </svg>
   );
 }
@@ -346,12 +355,17 @@ function Overview({ m, closed }) {
 
       <Card title={t('Holdings')} right={<More onClick={() => nav.go('holdings')}>{t('All {n}', { n: d.positions.length })}</More>} style="grid-column:span 7">
         <div style="display:flex;flex-direction:column;gap:2px">
-          {d.positions.length > 0 && <div class="lhead"><span class="sc">{t('Instrument')}</span><span style="width:72px;text-align:center">{t('Trend')}</span>
+          {d.positions.length > 0 && <div class="lhead"><span class="sc">{t('Instrument')}</span><span style="width:90px;text-align:center" title={t('Last session, open → close')}>{t('Today')}</span>
             <span style="width:110px;text-align:right">{t('Value')} ({m.cur})</span><span style="width:70px;text-align:right">{t('Return')}</span></div>}
           {d.positions.slice(0, 7).map(p => (
             <div class="lrow click" onClick={() => nav.go('instrument', p.ticker)}>
               <SymCell sym={p.sym} name={p.name} ticker={p.ticker} />
-              <Sparkline values={p.spark} color={p.plPct >= 0 ? UP : DOWN} />
+              {(() => {
+                const qd = q[p.ticker];
+                if (!qd || !qd.day || qd.day.length < 2) return <span style="width:90px"></span>;
+                const open = qd.open != null ? qd.open : qd.day[0], up = qd.day[qd.day.length - 1] >= open;
+                return <Sparkline values={qd.day} base={open} color={up ? UP : DOWN} w={90} h={24} />;
+              })()}
               <span class="num" style="width:110px;text-align:right">{m.fmt(p.value, 0)}</span>
               <span class="num" style={`width:70px;text-align:right;color:${p.plPct >= 0 ? UP : DOWN}`}>{m.fmt.signed(p.plPct, 2)}%</span>
             </div>

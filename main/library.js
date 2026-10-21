@@ -22,6 +22,8 @@ const KINDS = {
 const PRICE_RANGES = { '1D': ['1d', '5m'], '1W': ['5d', '30m'], '1M': ['1mo', '1d'], '3M': ['3mo', '1d'], '1Y': ['1y', '1d'], '5Y': ['5y', '1wk'], 'MAX': ['max', '1mo'] };
 const PRICE_TTL = { '1D': 120e3, '1W': 600e3 };
 const DAY = 86400e3;
+// evenly thin a series to at most n points (keeps the last one)
+const thin = (a, n) => a.length <= n ? a : Array.from({ length: n }, (_, i) => a[Math.round(i * (a.length - 1) / (n - 1))]);
 const RESCAN = 45 * DAY;   // incremental sync re-reads this much recent history
 const YF_TYPES = ['EQUITY', 'ETF', 'INDEX', 'MUTUALFUND', 'CRYPTOCURRENCY', 'CURRENCY', 'FUTURE'];
 const YF_SYMBOL = /^[A-Za-z0-9.^=\-]{1,24}$/;
@@ -880,7 +882,7 @@ class Library extends EventEmitter {
     let q = null;
     try {
       const r = await chart(this.fetch, sym, '1d', '5m');
-      if (r && r.meta && r.meta.prevClose) q = { last: r.last, prevClose: r.meta.prevClose, dayHigh: r.meta.dayHigh, dayLow: r.meta.dayLow, currency: r.meta.currency, open: r.pts.length ? r.pts[0][1] : null };
+      if (r && r.meta && r.meta.prevClose) q = { last: r.last, prevClose: r.meta.prevClose, dayHigh: r.meta.dayHigh, dayLow: r.meta.dayLow, currency: r.meta.currency, open: r.pts.length ? r.pts[0][1] : null, day: thin(r.pts.map(x => x[1]).filter(v => v != null), 80) };
     } catch {}
     this.dayCache[sym] = { at: this.now(), q };
     return q;
@@ -928,7 +930,7 @@ class Library extends EventEmitter {
         const sym = await this.resolveSymbol(p.ticker, p.isin, p.price);
         if (!sym) { map[p.ticker] = null; continue; }
         const q = await this.dayQuote(sym);
-        map[p.ticker] = q ? { last: q.last, prevClose: q.prevClose, pct: (q.last / q.prevClose - 1) * 100, symbol: sym, currency: q.currency } : null;
+        map[p.ticker] = q ? { last: q.last, prevClose: q.prevClose, pct: (q.last / q.prevClose - 1) * 100, symbol: sym, currency: q.currency, open: q.open, day: q.day || null } : null;
       } catch { map[p.ticker] = null; }
       await new Promise(r => setTimeout(r, 120));
     }
