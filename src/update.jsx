@@ -2,13 +2,13 @@
 import { render } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { applyTheme, applyMotion, ditheredBg, UP, DOWN } from './shared.js';
-import { t, setLang } from './i18n.js';
+import { t, setLang, lang } from './i18n.js';
 import { updErr, BLOCKER } from './updtext.js';
 import { Tile } from './ui.jsx';
 
 const api = window.api;
 const F = "'Inter',sans-serif";
-const W = 480, H = 350;
+const W = 480, H = 400;
 
 
 const Eyebrow = ({ children }) => (
@@ -17,6 +17,23 @@ const Eyebrow = ({ children }) => (
 const Spinner = () => (
   <span style="width:16px;height:16px;border-radius:50%;border:1.5px solid var(--color-accent-500);border-top-color:transparent;animation:nspin .9s linear infinite;box-sizing:border-box;flex:none"></span>
 );
+
+// "What's new": one block per version since the installed one, a line per change
+function Changes({ d }) {
+  const list = (d.changes || []).map(c => ({ v: c.version, lines: (lang() === 'cs' ? c.cs : c.en).length ? (lang() === 'cs' ? c.cs : c.en) : (c.cs.length ? c.cs : c.en) }))
+    .filter(c => c.lines.length);
+  if (!list.length) return <div class="scroll notes">{d.notes || t('No release notes.')}</div>;
+  return (
+    <div class="scroll notes changes">
+      {list.map(c => (
+        <div class="chv">
+          {list.length > 1 && <div class="chh">{t('Version {v}', { v: c.v })}</div>}
+          <ul>{c.lines.map(l => <li>{l}</li>)}</ul>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function Body({ d, u }) {
   const pct = Math.round(((u && u.progress) || 0) * 100);
@@ -32,7 +49,8 @@ function Body({ d, u }) {
         <span style={`font:300 22px/1.15 ${F};letter-spacing:-.02em;color:var(--color-neutral-100);margin-top:8px`}>{t('Version {v} is ready', { v: d.latest })}</span>
         <span style={`font:400 12px/1.5 ${F};color:var(--color-neutral-400);margin-top:6px`}>
           {blocked ? t('You have {c}.', { c: d.current }) : t('You have {c} · the widget restarts by itself after installing.', { c: d.current })}</span>
-        <div class="scroll notes">{d.notes || t('No release notes.')}</div>
+        <Eyebrow><span style="display:block;margin-top:16px">{t('What’s new')}</span></Eyebrow>
+        <Changes d={d} />
         {blocked && <div style={`display:flex;gap:8px;align-items:flex-start;margin-top:10px;font:400 11.5px/1.45 ${F};color:var(--color-neutral-300)`}>
           <i class="ph ph-info" style="font-size:14px;color:var(--color-accent-400);flex:none;margin-top:1px"></i><span>{t(blocked)}</span></div>}
         <div class="foot">

@@ -340,7 +340,7 @@ function createTray() {
 // after waking from sleep, every day at 12:00, and on demand. Nothing is downloaded without a yes.
 // Everything is shown in the app's own small window (theme, colour and text colour of the widget).
 const DAILY_HOUR = 12;
-const UPDATE_W = 480, UPDATE_H = 350, UPD_MARGIN = 28;
+const UPDATE_W = 480, UPDATE_H = 400, UPD_MARGIN = 28;
 let updateBusy = false, dailyTimer = null, lastPrompt = { version: null, at: 0 }, lastUpdStatus = null;
 let updWin = null, updDialog = null, updResolve = null;
 
@@ -441,7 +441,7 @@ async function promptUpdate(manual) {
   try {
     const u = updater.state;
     const blocker = installBlocker(u);
-    const answer = await showUpdateWindow({ mode: 'available', latest: u.latest, notes: u.notes, blocker });
+    const answer = await showUpdateWindow({ mode: 'available', latest: u.latest, notes: u.notes, changes: u.changes || [], blocker });
     lastPrompt = { version: u.latest, at: Date.now() };
     if (answer === 'skip') { store.set({ skippedVersion: u.latest }); broadcast('settings', store.all()); closeUpdateWindow(); return; }
     if (answer !== 'install' && answer !== 'open') { closeUpdateWindow(); return; }

@@ -52,6 +52,25 @@ function plainNotes(md, max = 700) {
   return txt.length > max ? txt.slice(0, max - 1).trimEnd() + '…' : txt;
 }
 
+// Release notes written from CHANGELOG.md: bullet lines, optionally split into "### cs" / "### en".
+// Returns { cs: [...], en: [...] } (a section without language headings goes to both).
+function parseChanges(md) {
+  const out = { cs: [], en: [] };
+  let lang = null;
+  for (const raw of String(md || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    const h = /^#{2,4}\s*(cs|en|cz|čeština|english)\b/i.exec(line);
+    if (h) { lang = /^(cs|cz|č)/i.test(h[1]) ? 'cs' : 'en'; continue; }
+    const m = /^[-*•]\s+(.+)$/.exec(line);
+    if (!m) continue;
+    const txt = m[1].replace(/\*\*|__|`/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').trim().slice(0, 240);
+    // GitHub's auto-generated "What's changed" lines aren't meant for people
+    if (!txt || / by @[\w-]+ in /.test(txt)) continue;
+    if (lang) out[lang].push(txt); else { out.cs.push(txt); out.en.push(txt); }
+  }
+  return out;
+}
+
 class UpdateError extends Error {
   constructor(kind, message) { super(message); this.kind = kind; }
 }
@@ -101,14 +120,32 @@ class Updater extends EventEmitter {
       const latest = String(rel.tag_name || '').replace(/^v/i, '');
       if (!SAFE_VER.test(latest)) { this.set({ status: 'none', checkedAt: Date.now(), latest: this.version }); return this.state; }
       const asset = pickAsset(rel.assets, this.platform, this.arch);
-      this.release = { latest, asset, url: rel.html_url, notes: plainNotes(rel.body) };
       const newer = cmpVer(latest, this.version) > 0;
-      this.set({ status: newer ? 'available' : 'none', latest, url: rel.html_url, checkedAt: Date.now(), hasAsset: !!asset, notes: this.release.notes });
+      const changes = newer ? await this.changesSince(rel, latest) : [];
+      this.release = { latest, asset, url: rel.html_url, notes: plainNotes(rel.body), changes };
+      this.set({ status: newer ? 'available' : 'none', latest, url: rel.html_url, checkedAt: Date.now(), hasAsset: !!asset, notes: this.release.notes, changes });
     } catch (e) {
       const err = e instanceof UpdateError ? e : new UpdateError('network', 'Could not reach GitHub — ' + (e && e.message || e));
       this.set({ status: 'error', error: { kind: err.kind, message: err.message }, checkedAt: Date.now() });
     }
     return this.state;
+  }
+
+  // what changed in every release between the installed version and the latest (newest first)
+  async changesSince(latestRel, latest) {
+    let rels = [latestRel];
+    try {
+      const r = await this.fetch(`${apiBase()}/repos/${this.repo}/releases?per_page=30`, { headers: this.headers({ Accept: 'application/vnd.github+json' }) });
+      if (r.ok) { const list = await r.json(); if (Array.isArray(list) && list.length) rels = list; }
+    } catch {}
+    const seen = new Set();
+    return rels
+      .filter(x => x && !x.draft && !x.prerelease)
+      .map(x => ({ version: String(x.tag_name || '').replace(/^v/i, ''), ...parseChanges(x.body) }))
+      .filter(x => SAFE_VER.test(x.version) && cmpVer(x.version, this.version) > 0 && cmpVer(x.version, latest) <= 0 && !seen.has(x.version) && seen.add(x.version))
+      .filter(x => x.cs.length || x.en.length)
+      .sort((a, b) => cmpVer(b.version, a.version))
+      .slice(0, 10);
   }
 
   async download() {
@@ -249,4 +286,4 @@ async function installMac(zip, bundle, pid, { runImpl = run, spawnImpl = spawn }
   return true;
 }
 
-module.exports = { apiBase, Updater, UpdateError, cmpVer, pickAsset, plainNotes, installWindows, startViaShell, psError, installMac, macBundle, macCanReplace, REPO };
+module.exports = { parseChanges, apiBase, Updater, UpdateError, cmpVer, pickAsset, plainNotes, installWindows, startViaShell, psError, installMac, macBundle, macCanReplace, REPO };

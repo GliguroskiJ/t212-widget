@@ -4,3 +4,10 @@
 .foot .btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .indet{animation:nindet 1.2s ease-in-out infinite}
 @keyframes nindet{0%{transform:translateX(-110%)}100%{transform:translateX(300%)}}
+
+.notes.changes{margin-top:8px;white-space:normal;color:var(--color-neutral-300)}
+.changes .chv+.chv{margin-top:10px}
+.changes .chh{font:500 10px/1 "Inter",sans-serif;letter-spacing:.08em;text-transform:uppercase;color:var(--color-neutral-500);margin-bottom:6px}
+.changes ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:5px}
+.changes li{position:relative;padding-left:14px}
+.changes li::before{content:"";position:absolute;left:2px;top:.62em;width:5px;height:5px;border-radius:50%;background:var(--color-accent-400)}

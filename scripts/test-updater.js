@@ -1,7 +1,7 @@
 // Updater against a fake GitHub API: check, errors, asset pick, verified download, macOS swap script.
 const assert = require('assert'); const http = require('http'); const crypto = require('crypto');
 const fs = require('fs'); const os = require('os'); const path = require('path'); const { execFileSync } = require('child_process');
-const { Updater, cmpVer, pickAsset, plainNotes, installMac, installWindows, startViaShell, macBundle, macCanReplace } = require('../main/updater');
+const { parseChanges, Updater, cmpVer, pickAsset, plainNotes, installMac, installWindows, startViaShell, macBundle, macCanReplace } = require('../main/updater');
 
 const EXE = Buffer.alloc(300 * 1024, 7), ZIP = Buffer.alloc(120 * 1024, 3);
 const sha = b => 'sha256:' + crypto.createHash('sha256').update(b).digest('hex');
@@ -161,5 +161,10 @@ srv.listen(0, async () => {
 
   }
 
+  // release notes from CHANGELOG.md
+  const pc = parseChanges('### cs\n- Oznámení ve Windows\n- **Watchlist**\n### en\n- System notifications\n\nFull Changelog: x');
+  assert.deepEqual(pc, { cs: ['Oznámení ve Windows', 'Watchlist'], en: ['System notifications'] });
+  assert.deepEqual(parseChanges('## What\'s Changed\n* Chart hover by @me in [#3](https://x)'), { cs: [], en: [] });
+  assert.deepEqual(parseChanges('- one\n- two'), { cs: ['one', 'two'], en: ['one', 'two'] });
   console.log('UPDATER TESTS PASSED'); srv.close(); process.exit(0);
 });

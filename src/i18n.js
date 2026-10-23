@@ -82,6 +82,7 @@ const CS = {
   'Hide': 'Skrýt',
   'Updates': 'Aktualizace',
   'Version {v}': 'Verze {v}',
+  'What’s new': 'Co je nového',
   'Not checked yet': 'Zatím nezkontrolováno',
   'Version {v} is available.': 'K dispozici je nová verze {v}.',
   'Downloading {p} %': 'Stahuji… {p} %',
