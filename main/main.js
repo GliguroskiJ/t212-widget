@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, Tray, Menu, screen, shell, safeStorage, nativeTheme, net, nativeImage, powerMonitor, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, screen, shell, safeStorage, nativeTheme, net, nativeImage, powerMonitor, dialog, Notification } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { Store } = require('./store');
@@ -282,7 +282,15 @@ const TRAY_CS = {
   // updates
   'Check for updates…': 'Zkontrolovat aktualizace…',
   'Install update {v}…': 'Nainstalovat aktualizaci {v}…',
-  'Downloading update… {p} %': 'Stahuji aktualizaci… {p} %'
+  'Downloading update… {p} %': 'Stahuji aktualizaci… {p} %',
+  // system notifications
+  'Price alert': 'Cenový alert', 'News': 'Zpráva', 'Event': 'Událost',
+  '{s} is up {p} % today': '{s} dnes roste o {p} %', '{s} is down {p} % today': '{s} dnes klesá o {p} %',
+  'your alert ±{a} %': 'tvůj alert ±{a} %',
+  'results': 'výsledky', 'ex-dividend day': 'ex-dividendový den', 'dividend payout': 'výplata dividendy',
+  '{s}: {e} today': '{s}: dnes {e}', '{s}: {e} tomorrow': '{s}: zítra {e}', 'estimate': 'odhad',
+  '{n} new news stories': '{n} nových zpráv', '{n} price alerts': '{n} cenových alertů', '{n} calendar events': '{n} událostí v kalendáři',
+  'T212 Widget is working': 'T212 Widget funguje', 'This is how alerts, news and events will look.': 'Takhle budou vypadat alerty, zprávy a události.'
 };
 const tr = s => ((store && store.get('language')) !== 'en' && TRAY_CS[s]) || s;
 const trv = (s, vars) => Object.entries(vars).reduce((a, [k, v]) => a.split('{' + k + '}').join(v), tr(s));
@@ -576,8 +584,7 @@ const LIB = {
   stats: () => lib.stats(),
   netDeposits: () => lib.netDeposits(),
   calendar: a => {
-    const pos = (poller.raw && poller.raw.positions || []).map(p => ({ ticker: p.instrument && p.instrument.ticker, isin: p.instrument && p.instrument.isin, price: p.currentPrice,
-      sym: require('./t212').shortTicker(p.instrument && p.instrument.ticker), name: (p.instrument && p.instrument.name) || '' })).filter(p => p.ticker);
+    const pos = watchedPositions();
     if (a.refresh || !lib.calData().at || Date.now() - lib.calData().at > 12 * 3600e3) lib.refreshCalendar(pos, !!a.refresh);
     return lib.calendar(pos);
   },
@@ -593,6 +600,7 @@ const LIB = {
   notifRemove: a => notifier.remove(str(a.id, 200)),
   notifClear: () => notifier.clear(),
   setAlert: a => notifier.setAlert(str(a.ticker), Number(a.pct), { sym: str(a.sym, 20), name: str(a.name, 120), isin: a.isin ? str(a.isin, 20) : null }),
+  testNote: () => showNote(tr('T212 Widget is working'), tr('This is how alerts, news and events will look.'), 'notifications'),
   checkNow: async () => { const pos = watchedPositions(); await notifier.checkNews(pos, true); await notifier.checkAlerts(pos); return notifier.list({}); },
   openNews: a => { const u = notifier.link(str(a.id, 200)); if (u) shell.openExternal(u); return !!u; },
   recent: a => lib.recent(a.limit),
@@ -624,6 +632,59 @@ const LIB = {
 };
 
 // holdings + watchlist (news and alerts cover both)
+// ── system notifications (Windows toast / macOS Notification Center) ──
+const liveNotes = new Set();   // keep references, otherwise a click on an old toast is lost (GC)
+function numFmt(v, d) {
+  const cs = store.get('numberFormat') === 'cs' || store.get('language') !== 'en';
+  return Number(v).toLocaleString(cs ? 'cs-CZ' : 'en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+function noteText(x) {
+  if (x.type === 'news') return { title: (x.sym ? x.sym + ' · ' : '') + tr('News'), body: x.title + (x.publisher ? '\n' + x.publisher : '') };
+  if (x.type === 'alert') {
+    const up = x.pct >= 0;
+    return { title: trv(up ? '{s} is up {p} % today' : '{s} is down {p} % today', { s: x.sym, p: numFmt(Math.abs(x.pct), 2) }),
+      body: (x.name ? x.name + ' · ' : '') + trv('your alert ±{a} %', { a: numFmt(x.threshold, 1) }) + (x.price ? ' · ' + numFmt(x.price, 2) + ' ' + (x.currency || '') : '') };
+  }
+  const ev = tr({ earnings: 'results', exdiv: 'ex-dividend day', divpay: 'dividend payout' }[x.event] || x.event);
+  return { title: trv(x.when === 'today' ? '{s}: {e} today' : '{s}: {e} tomorrow', { s: x.sym, e: ev }) + (x.estimate ? ' (' + tr('estimate') + ')' : ''), body: x.name || '' };
+}
+function showNote(title, body, route, onClick) {
+  if (!Notification.isSupported()) return false;
+  const n = new Notification({ title: String(title).slice(0, 120), body: String(body || '').slice(0, 300), silent: false });   // the app icon comes from the system (AppUserModelId / bundle)
+  liveNotes.add(n);
+  const done = () => liveNotes.delete(n);
+  n.on('click', () => { done(); if (onClick) onClick(); openApp(route); });
+  n.on('close', done);
+  n.on('failed', done);
+  n.show();
+  return true;
+}
+function osNotify(items) {
+  const on = store.get('osNotify') || {};
+  if (!on.enabled) return;
+  // the app window in front shows its own banners
+  if (appWin && !appWin.isDestroyed() && appWin.isVisible() && appWin.isFocused()) return;
+  const list = items.filter(x => !x.read && on[x.type] !== false && Date.now() - (x.time || 0) < 2 * 86400e3);
+  for (const type of ['alert', 'event', 'news']) {
+    const g = list.filter(x => x.type === type);
+    if (!g.length) continue;
+    // a burst (first start, many companies) → one summary instead of a pile of toasts
+    if (g.length > 3) {
+      const key = { news: '{n} new news stories', alert: '{n} price alerts', event: '{n} calendar events' }[type];
+      showNote(trv(key, { n: g.length }), [...new Set(g.map(x => x.sym))].slice(0, 8).join(', '), 'notifications');
+      continue;
+    }
+    for (const x of g) {
+      const tx = noteText(x);
+      const route = type === 'news' ? 'notifications' : 'instrument/' + x.ticker;
+      showNote(tx.title, tx.body, route, () => {
+        notifier.markRead([x.id]);
+        if (type === 'news') { const u = notifier.link(x.id); if (u) shell.openExternal(u); }
+      });
+    }
+  }
+}
+
 function watchedPositions() {
   const held = heldPositions();
   const extra = (store.get('watchlist') || []).filter(w => w && w.ticker && !held.some(h => h.ticker === w.ticker))
@@ -683,10 +744,15 @@ app.whenReady().then(() => {
   notifier = new Notifier({ lib, dir: app.getPath('userData') });
   lib.notifUnread = notifier.unread();
   notifier.on('change', n => { lib.notifUnread = n; lib.emitChange('notifications'); });
-  lib.on('change', e => { if (e.what === 'calendar') notifier.checkEvents(lib.calendar(heldPositions()).events); });
+  notifier.on('fresh', items => { try { osNotify(items); } catch {} });
+  lib.on('change', e => { if (e.what === 'calendar') notifier.checkEvents(lib.calendar(watchedPositions()).events); });
+  poller.calendarPositions = () => watchedPositions();
   const notifTick = () => {
     const pos = watchedPositions();
     if (!pos.length) return;
+    // instruments added to the watchlist get their calendar right away (not only on the 12 h refresh)
+    const cal = lib.calData();
+    if (pos.some(p => !cal.by[p.ticker])) lib.refreshCalendar(pos).catch(() => {});
     notifier.checkAlerts(pos).catch(() => {});
     notifier.checkNews(pos).catch(() => {});
     notifier.checkEvents(lib.calendar(pos).events);

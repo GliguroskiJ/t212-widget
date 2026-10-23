@@ -16,8 +16,11 @@ const lib = {
 (async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't212n-'));
   const n = new Notifier({ lib, dir, now: () => now });
+  const fresh = [];
+  n.on('fresh', items => fresh.push(...items));
   const pos = [{ ticker: 'ATOp_EQ', sym: 'ATO', name: 'Atos' }];
   assert.equal(await n.checkNews(pos), 2);
+  assert.deepEqual(fresh.map(x => x.title), ['Atos posts Q3 revenue'], 'only the unread story goes to the system notification');
   let l = n.list();
   assert.deepEqual(l.items.map(x => x.title), ['Atos posts Q3 revenue', 'Old story']);
   assert.equal(l.items[0].read, false, 'fresh news unread');
@@ -30,6 +33,7 @@ const lib = {
   n.setAlert('ATOp_EQ', 3, { sym: 'ATO', name: 'Atos' });
   assert.equal(await n.checkAlerts(pos), 0);
   pct = -3.4; assert.equal(await n.checkAlerts(pos), 1);
+  assert.equal(fresh[fresh.length - 1].type, 'alert');
   assert.equal(await n.checkAlerts(pos), 0, 'once a day per direction');
   pct = 3.1; assert.equal(await n.checkAlerts(pos), 1, 'other direction fires');
   // events

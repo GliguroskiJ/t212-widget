@@ -32,6 +32,7 @@ const DEFAULTS = {
   popoverSize: 'medium',       // size of the menu-bar panel
   menuBarText: 'value',        // macOS menu-bar title: 'value' | 'change' | 'none'
   firstLaunchDone: false,
+  osNotify: { enabled: true, alert: true, news: true, event: true },  // system (Windows / macOS) notifications
   watchlist: [],               // extra instruments to follow: [{ ticker, sym, name, isin }]
   appRange: '1M',              // chart range on the app's overview (separate from the widget's)
   appBounds: null,             // app window position/size

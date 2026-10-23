@@ -23,16 +23,23 @@ class Notifier extends EventEmitter {
     const d = readJson(this.file, null) || {};
     this.d = { items: Array.isArray(d.items) ? d.items : [], alerts: d.alerts || {}, seen: d.seen || {}, lastNews: d.lastNews || 0, newsInit: !!d.newsInit };
     this._t = null;
+    this._fresh = [];        // new unread items since the last 'change' → system notifications
   }
 
   save() { try { atomicWrite(this.file, JSON.stringify(this.d)); } catch {} }
   saveSoon() { clearTimeout(this._t); this._t = setTimeout(() => this.save(), 500); }
-  changed() { this.saveSoon(); this.emit('change', this.unread()); }
+  changed() {
+    this.saveSoon();
+    this.emit('change', this.unread());
+    if (this._fresh.length) this.emit('fresh', this._fresh.splice(0));
+  }
   unread() { return this.d.items.filter(x => !x.read).length; }
 
   add(item) {
     if (this.d.items.some(x => x.key === item.key)) return false;
-    this.d.items.unshift({ id: item.key, read: false, time: this.now(), ...item });
+    const x = { id: item.key, read: false, time: this.now(), ...item };
+    this.d.items.unshift(x);
+    if (!x.read) this._fresh.push(x);
     this.d.items.sort((a, b) => b.time - a.time);
     if (this.d.items.length > MAX) this.d.items.length = MAX;
     return true;

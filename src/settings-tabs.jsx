@@ -468,6 +468,26 @@ function Updates({ s, set, info }) {
   );
 }
 
+function OsNotify({ s, set }) {
+  const n = { enabled: true, alert: true, news: true, event: true, ...(s.osNotify || {}) };
+  const put = patch => set({ osNotify: { ...n, ...patch } });
+  const [sent, setSent] = useState(false);
+  return (
+    <Section label={t('System notifications')}>
+      <Row title={MAC ? t('Notifications in macOS') : t('Notifications in Windows')} desc={t('For your holdings and everything on the watchlist. Not shown while the app window is in front — the app has its own banners.')}>
+        <Switch on={n.enabled} onChange={v => put({ enabled: v })} /></Row>
+      {n.enabled && <>
+        <Row title={t('Price alerts')} desc={t('When an instrument moves more than the % you set on its page.')}><Switch on={n.alert} onChange={v => put({ alert: v })} /></Row>
+        <Row title={t('News')} desc={t('New stories tagged with the company. Several at once arrive as one summary.')}><Switch on={n.news} onChange={v => put({ news: v })} /></Row>
+        <Row title={t('Calendar')} desc={t('Results, ex-dividend and dividend payout dates — the day before and on the day.')}><Switch on={n.event} onChange={v => put({ event: v })} /></Row>
+        <Row title={t('Test notification')} desc={MAC ? t('If nothing appears, allow notifications for T212 Widget in System Settings → Notifications.') : t('If nothing appears, check Settings → System → Notifications and Focus / Do not disturb.')}>
+          <button type="button" class="btn btn-secondary" style="font-size:12.5px" onClick={async () => { await api.lib('testNote'); setSent(true); setTimeout(() => setSent(false), 2500); }}>
+            <i class={'ph ' + (sent ? 'ph-check' : 'ph-bell-ringing')}></i>{sent ? t('Sent') : t('Send test')}</button></Row>
+      </>}
+    </Section>
+  );
+}
+
 export function SystemTab({ s, set, info }) {
   return (
     <>
@@ -477,6 +497,7 @@ export function SystemTab({ s, set, info }) {
       <Section label={MAC ? 'macOS' : t('Windows')}>
         <Row title={MAC ? t('Open at login') : t('Start with Windows')} desc={t('Launch in the background when you sign in — the widget appears, the app opens from the tray.')}><Switch on={s.startWithWindows} onChange={v => set({ startWithWindows: v })} /></Row>
       </Section>
+      <OsNotify s={s} set={set} />
       <Updates s={s} set={set} info={info} />
       <Section label={t('App')}>
         <Row title="T212 Widget" desc={t('Unofficial desktop app using the Trading 212 public API. Read-only — it can\u2019t place or cancel orders.')}>
