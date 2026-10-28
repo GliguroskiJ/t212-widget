@@ -8,7 +8,7 @@ import { t, setLang, locale } from './i18n.js';
 import {
   F, useNow, Tile, Mark, Dot, Eyebrow, FillChart, Chart, RangeChips, useModel, Pill, GrowBar, axisLabels, Alloc, Connect, errorCopy
 } from './ui.jsx';
-import { SETTINGS_TABS, setMac, Seg, AccountTab, AppearanceTab, DataTab, SystemTab, WidgetTab } from './settings-tabs.jsx';
+import { SETTINGS_TABS, setMac, Seg, Switch, AccountTab, AppearanceTab, DataTab, SystemTab, WidgetTab } from './settings-tabs.jsx';
 
 const api = window.api;
 const Ctx = createContext(null);
@@ -1221,9 +1221,134 @@ function NotifRow({ x, fmt, onOpen }) {
         <span class="t1" style="white-space:normal;line-height:1.35">{tx.title}</span>
         <span class="t2"><span style={`color:${col}`}>{l}</span> · {x.sym} · {tx.sub}</span>
       </span>
-      {x.type === 'news' && x.url && <button class="btn btn-secondary" style="font-size:11.5px;padding:4px 9px" onClick={e => { e.stopPropagation(); api.lib('openNews', { id: x.id }); api.lib('notifRead', { ids: [x.id] }); }}>
-        <i class="ph ph-arrow-square-out"></i>{t('Read')}</button>}
       {!x.read && <span class="ndot"></span>}
+    </div>
+  );
+}
+
+// ── news ─────────────────────────────────────────────────────
+const NEWS_GROUPS = () => [['news', t('News outlets')], ['analysis', t('Analysis & research')], ['press', t('Press releases')], ['cz', t('Czech media')], ['other', t('Other sources')]];
+
+function NewsSources({ onClose }) {
+  const { settings, set } = useApp();
+  const res = useLib('newsSources', {}, [JSON.stringify(settings.newsSources || {}), JSON.stringify(settings.newsFeeds || {})], ['news']);
+  const d = res.data;
+  if (!d) return <div style="display:flex;justify-content:center;padding:20px"><Spinner /></div>;
+  const off = settings.newsSources || {};
+  const toggle = (k, on) => { const n = { ...off }; if (on) delete n[k]; else n[k] = false; set({ newsSources: n }); };
+  const group = (g, on) => { const n = { ...off }; for (const x of d.sources) if (x.group === g) { if (on) delete n[x.key]; else n[x.key] = false; } set({ newsSources: n }); };
+  const feed = (k, on) => set({ newsFeeds: { ...d.feeds, [k]: on } });
+  const FEEDS = [['yahoo', 'Yahoo Finance', t('Reuters, AP, Zacks, Simply Wall St, GuruFocus, GlobeNewswire and more')],
+    ['google', 'Google News', t('Bloomberg, CNBC, FT, WSJ, MarketWatch… — stocks only')],
+    ['googleCz', 'Google News CZ', t('Patria, Kurzy.cz, E15, Seznam Zprávy… — stocks only')]];
+  return (
+    <div class="nsrc">
+      <div class="nsrc-feeds">
+        {FEEDS.map(([k, name, desc]) => (
+          <label class="nfeed"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span class="t1">{name}</span><span class="t2" style="white-space:normal">{desc}</span></span>
+            <Switch on={d.feeds[k] !== false} onChange={v => feed(k, v)} /></label>
+        ))}
+      </div>
+      {NEWS_GROUPS().map(([g, label]) => {
+        const list = d.sources.filter(x => x.group === g);
+        if (!list.length) return null;
+        const allOn = list.every(x => x.on);
+        return (
+          <div class="nsrc-group">
+            <div class="nsrc-head"><span>{label}</span><a class="link" onClick={() => group(g, !allOn)}>{allOn ? t('Turn all off') : t('Turn all on')}</a></div>
+            <div class="nsrc-list">
+              {list.map(x => (
+                <label class={'nsrc-item' + (x.on ? '' : ' off')} onClick={e => { e.preventDefault(); toggle(x.key, !x.on); }}>
+                  <span class="ncheck"><i class={'ph ' + (x.on ? 'ph-check' : '')}></i></span>
+                  <span class="t1" style="min-width:0;overflow:hidden;text-overflow:ellipsis">{x.name}</span>
+                  {x.count > 0 && <span class="ncount">{x.count}</span>}
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      <div style="display:flex;justify-content:flex-end;margin-top:4px"><button class="btn btn-secondary" style="font-size:12px" onClick={onClose}><i class="ph ph-check"></i>{t('Done')}</button></div>
+    </div>
+  );
+}
+
+function NewsTile({ x, syms, focus, onSource }) {
+  const ref = useRef(null);
+  const [meta, setMeta] = useState(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (x.hasMeta && !x.hasImg) { setMeta({ summary: x.summary, image: null }); return; }
+    let live = true;
+    const io = new IntersectionObserver(es => {
+      if (!es.some(e => e.isIntersecting)) return;
+      io.disconnect();
+      api.lib('newsMeta', { id: x.id }).then(r => { if (live) setMeta(r || { summary: x.summary, image: null }); });
+    }, { rootMargin: '300px' });
+    io.observe(el);
+    return () => { live = false; io.disconnect(); };
+  }, [x.id]);
+  useEffect(() => { if (focus && ref.current) ref.current.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [focus]);
+  const summary = (meta && meta.summary) || x.summary;
+  const tk = x.tickers[0];
+  return (
+    <article ref={ref} class={'ntile' + (focus ? ' focus' : '')}>
+      <div class="nimg">
+        {meta && meta.image ? <img src={meta.image} alt="" draggable={false} loading="lazy" />
+          : <div class="nph"><Logo ticker={tk} sym={syms[tk] || tk} lg /></div>}
+      </div>
+      <div class="nbody">
+        <div class="nmeta"><a class="npub" title={t('Only this source')} onClick={() => onSource(x.pub, x.publisher)}>{x.publisher}</a><span>·</span><span title={dtfmt(x.time)}>{relTime(x.time)}</span></div>
+        <h3 class="ntitle">{x.title}</h3>
+        {summary ? <p class="nsum">{summary}</p> : (!meta && x.src !== 'google' ? <p class="nsum nskel"><span></span><span></span></p> : null)}
+        <div class="nfoot">
+          <span class="ntks">{x.tickers.slice(0, 3).map(k => <span class="ntk">{syms[k] || k.split('_')[0]}</span>)}</span>
+          <button class="btn btn-secondary" style="font-size:12px;padding:5px 11px" onClick={() => api.lib('openNews', { id: x.id })}>{t('Read')}<i class="ph ph-arrow-up-right"></i></button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function NewsPage({ m, focus }) {
+  const { settings } = useApp();
+  const [ticker, setTicker] = useState('');
+  const [source, setSource] = useState(null);
+  const [limit, setLimit] = useState(48);
+  const [showSrc, setShowSrc] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const res = useLib('news', { ticker, source: source && source.key, limit }, [ticker, source && source.key, limit, JSON.stringify(settings.newsSources || {})], ['news']);
+  const held = (m.d && m.d.positions) || [];
+  const watch = (Array.isArray(settings.watchlist) ? settings.watchlist : []).filter(w => !held.some(h => h.ticker === w.ticker));
+  const all = held.map(p => ({ ticker: p.ticker, sym: p.sym })).concat(watch.map(w => ({ ticker: w.ticker, sym: w.sym || w.ticker })));
+  const syms = Object.fromEntries(all.map(p => [p.ticker, p.sym]));
+  const d = res.data || { items: [], total: 0 };
+  const refresh = async () => { setBusy(true); await api.lib('newsRefresh'); res.reload(); setBusy(false); };
+  return (
+    <div class="grid">
+      <Card style="grid-column:1/-1" title={t('News feed')} right={<>
+        <span class="muted">{d.lastRun ? t('updated {t}', { t: relTime(d.lastRun) }) : ''}</span>
+        <button class="tb" title={t('Check now')} disabled={busy || d.running} onClick={refresh}>{busy || d.running ? <Spinner size={12} /> : <i class="ph ph-arrow-clockwise"></i>}</button>
+        <button class={'btn ' + (showSrc ? 'btn-primary' : 'btn-secondary')} style="font-size:12px" onClick={() => setShowSrc(v => !v)}><i class="ph ph-sliders-horizontal"></i>{t('Sources')}</button></>}>
+        <span class="t2" style="white-space:normal;line-height:1.5">{t('From your holdings and watchlist, newest first. New articles from the sources you keep on also arrive as notifications.')}</span>
+        <div class="nchips">
+          <button class={'nchip' + (!ticker ? ' on' : '')} onClick={() => setTicker('')}>{t('All')}</button>
+          {all.map(p => <button class={'nchip' + (ticker === p.ticker ? ' on' : '')} onClick={() => setTicker(ticker === p.ticker ? '' : p.ticker)}>{p.sym}</button>)}
+          {source && <button class="nchip on" onClick={() => setSource(null)}>{source.name}<i class="ph ph-x"></i></button>}
+        </div>
+        {showSrc && <NewsSources onClose={() => setShowSrc(false)} />}
+      </Card>
+      {d.items.length ? (
+        <div class="ngrid" style="grid-column:1/-1">
+          {d.items.map(x => <NewsTile key={x.id} x={x} syms={syms} focus={focus === x.id} onSource={(key, name) => setSource({ key, name })} />)}
+        </div>
+      ) : (
+        <Card style="grid-column:1/-1"><Empty icon="ph-newspaper" title={res.loading || d.running ? t('Loading…') : t('No news yet')}
+          text={t('Articles about your holdings and watchlist appear here — the first download takes a minute.')} /></Card>
+      )}
+      {d.total > d.items.length && <div style="grid-column:1/-1;display:flex;justify-content:center">
+        <button class="btn btn-secondary" style="font-size:12.5px" onClick={() => setLimit(l => l + 48)}><i class="ph ph-arrow-down"></i>{t('Show more')} ({d.total - d.items.length})</button></div>}
     </div>
   );
 }
@@ -1234,7 +1359,7 @@ function NotificationsPage({ m }) {
   const res = useLib('notifications', { kind }, [kind], ['notifications']);
   const [busy, setBusy] = useState(false);
   const data = res.data || { items: [], alerts: {} };
-  const open = x => { api.lib('notifRead', { ids: [x.id] }); nav.go('instrument', x.ticker); };
+  const open = x => { api.lib('notifRead', { ids: [x.id] }); if (x.type === 'news') nav.go('news', x.newsId); else nav.go('instrument', x.ticker); };
   const alerts = Object.entries(data.alerts || {});
   const held = (m.d && m.d.positions) || [];
   const [addTk, setAddTk] = useState('');
@@ -1330,7 +1455,7 @@ function Banners() {
         const [l, ic, c] = NT()[x.type] || NT().event;
         const tx = notifText(x, fmt);
         return (
-          <div class={'banner' + (x.show ? '' : ' out')} style={`animation-delay:${i * .12}s`} onClick={() => { close(x.id); api.lib('notifRead', { ids: [x.id] }); nav.go('instrument', x.ticker); }}>
+          <div class={'banner' + (x.show ? '' : ' out')} style={`animation-delay:${i * .12}s`} onClick={() => { close(x.id); api.lib('notifRead', { ids: [x.id] }); if (x.type === 'news') nav.go('news', x.newsId); else nav.go('instrument', x.ticker); }}>
             <Logo ticker={x.ticker} sym={x.sym} badge={ic} badgeColor={x.type === 'alert' ? (tx.up ? UP : DOWN) : c} />
             <span style="display:flex;flex-direction:column;gap:4px;min-width:0;flex:1">
               <span class="t2" style={`color:${c}`}>{l} · {x.sym}</span>
@@ -1570,6 +1695,7 @@ const NAV = () => [
   ['overview', t('Overview'), 'ph-squares-four'],
   ['holdings', t('Holdings'), 'ph-chart-pie-slice'],
   ['watchlist', t('Watchlist'), 'ph-star'],
+  ['news', t('News feed'), 'ph-newspaper'],
   ['activity', t('Activity'), 'ph-clock-counter-clockwise'],
   ['orders', t('Orders'), 'ph-list-checks'],
   ['pies', t('Pies'), 'ph-circle-half'],
@@ -1769,6 +1895,7 @@ function App({ init }) {
   else if (page === 'calendar') body = <CalendarPage m={m} />;
   else if (page === 'notifications') body = <NotificationsPage m={m} />;
   else if (page === 'watchlist') body = <WatchlistPage m={m} />;
+  else if (page === 'news') body = <NewsPage m={m} focus={arg} />;
   else if (page === 'tax') body = <TaxPage m={m} />;
   else body = <Overview m={m} closed={closed} />;
 
@@ -1846,7 +1973,7 @@ function ErrorCard({ st, now }) {
 function parseRoute(r) {
   const [p, ...rest] = String(r || 'overview').split('/');
   const a = rest.join('/');
-  const page = ['overview', 'holdings', 'instrument', 'activity', 'orders', 'pies', 'reports', 'calendar', 'notifications', 'watchlist', 'tax', 'settings'].includes(p) ? p : 'overview';
+  const page = ['overview', 'holdings', 'instrument', 'activity', 'orders', 'pies', 'reports', 'calendar', 'notifications', 'watchlist', 'news', 'tax', 'settings'].includes(p) ? p : 'overview';
   return [page, a === '' ? undefined : page === 'pies' ? Number(a) : a];
 }
 

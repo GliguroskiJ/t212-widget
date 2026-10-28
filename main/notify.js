@@ -12,7 +12,6 @@ const MAX = 300;
 function readJson(f, d) { try { return JSON.parse(fs.readFileSync(f, 'utf8')); } catch { return d; } }
 function atomicWrite(f, s) { const t = f + '.tmp'; fs.writeFileSync(t, s); fs.renameSync(t, f); }
 const dayStr = t => { const d = new Date(t); return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); };
-const httpsOk = u => { try { return new URL(u).protocol === 'https:'; } catch { return false; } };
 
 class Notifier extends EventEmitter {
   constructor({ lib, dir, now }) {
@@ -21,7 +20,7 @@ class Notifier extends EventEmitter {
     this.now = now || Date.now;
     this.file = path.join(dir, 'notifications.json');
     const d = readJson(this.file, null) || {};
-    this.d = { items: Array.isArray(d.items) ? d.items : [], alerts: d.alerts || {}, seen: d.seen || {}, lastNews: d.lastNews || 0, newsInit: !!d.newsInit };
+    this.d = { items: Array.isArray(d.items) ? d.items : [], alerts: d.alerts || {} };
     this._t = null;
     this._fresh = [];        // new unread items since the last 'change' → system notifications
   }
@@ -56,7 +55,6 @@ class Notifier extends EventEmitter {
   }
   remove(id) { this.d.items = this.d.items.filter(x => x.id !== id); this.changed(); return true; }
   clear() { this.d.items = []; this.changed(); return true; }
-  link(id) { const x = this.d.items.find(i => i.id === id); return x && x.url && httpsOk(x.url) ? x.url : null; }
 
   // ── price-move alerts ──────────────────────────────────────
   setAlert(ticker, pct, meta = {}) {
@@ -91,38 +89,16 @@ class Notifier extends EventEmitter {
     return n;
   }
 
-  // ── news about held companies ──────────────────────────────
-  async checkNews(positions, force) {
-    if (!force && this.now() - this.d.lastNews < 30 * 60e3) return 0;
-    this.d.lastNews = this.now();
-    const first = !this.d.newsInit;
+  // ── news about held and watched companies (fetched by news.js) ──
+  addNews(items, positions = []) {
+    const by = Object.fromEntries(positions.map(p => [p.ticker, p]));
     let n = 0;
-    for (const p of positions.slice(0, 40)) {
-      let sym;
-      try { sym = await this.lib.resolveSymbol(p.ticker, p.isin, p.price); } catch {}
-      if (!sym) continue;
-      try {
-        const r = await this.lib.fetch(`https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(sym)}&quotesCount=0&newsCount=8&listsCount=0`, { headers: { Accept: 'application/json' } });
-        if (!r.ok) continue;
-        const j = await r.json();
-        for (const it of j.news || []) {
-          if (!it.uuid || !it.title || this.d.seen[it.uuid]) continue;
-          // only stories actually tagged with this company
-          if (Array.isArray(it.relatedTickers) && it.relatedTickers.length && !it.relatedTickers.some(x => String(x).toUpperCase() === sym.toUpperCase())) continue;
-          const t = (Number(it.providerPublishTime) || 0) * 1000 || this.now();
-          if (this.now() - t > 7 * DAY) continue;
-          this.d.seen[it.uuid] = t;
-          const fresh = this.now() - t < DAY;
-          if (this.add({ key: 'news:' + it.uuid, type: 'news', ticker: p.ticker, sym: p.sym || sym, name: p.name || '', title: String(it.title).slice(0, 300),
-            publisher: it.publisher || '', url: httpsOk(it.link) ? it.link : null, time: t, read: first ? !fresh : false })) n++;
-        }
-      } catch {}
-      await new Promise(r => setTimeout(r, 200));
+    for (const x of items) {
+      const p = by[x.tickers[0]] || {};
+      if (this.add({ key: 'news:' + x.id, type: 'news', newsId: x.id, ticker: x.tickers[0], sym: p.sym || x.tickers[0], name: p.name || '',
+        title: String(x.title).slice(0, 300), publisher: x.publisher || '', time: x.time })) n++;
     }
-    // forget old "seen" ids
-    for (const [k, t] of Object.entries(this.d.seen)) if (this.now() - t > 30 * DAY) delete this.d.seen[k];
-    this.d.newsInit = true;
-    this.changed();
+    if (n) this.changed();
     return n;
   }
 

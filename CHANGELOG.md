@@ -4,6 +4,18 @@ Each version: `## X.Y.Z`, then `### cs` and `### en` with one `- ` line per chan
 The release workflow publishes the section of the tagged version as the GitHub release notes,
 and the update window in the app shows these lines (in the app's language).
 
+## 1.9.9
+### cs
+- Nová sekce Novinky: dlaždice s obrázkem, nadpisem a úryvkem článku, od nejnovějších, s tlačítkem Číst
+- Víc zdrojů: Yahoo Finance (Reuters, AP, Zacks, Simply Wall St, GuruFocus, GlobeNewswire…), Google News a česká média
+- Každý zdroj jde vypnout v Novinky → Zdroje; vypnuté zdroje neposílají ani oznámení
+- Kliknutí na oznámení o zprávě otevře článek přímo v Novinkách
+### en
+- New News section: tiles with picture, headline and a snippet, newest first, with a Read button
+- More sources: Yahoo Finance (Reuters, AP, Zacks, Simply Wall St, GuruFocus, GlobeNewswire…), Google News and Czech media
+- Every source can be switched off in News → Sources; switched-off sources send no notifications either
+- Clicking a news notification opens the article in News
+
 ## 1.9.8
 ### cs
 - Okno s aktualizací ukazuje, co je nového — po řádcích, za všechny verze od té tvojí

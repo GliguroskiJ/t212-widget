@@ -6,6 +6,7 @@ const { Store } = require('./store');
 const { Poller } = require('./t212');
 const { Library } = require('./library');
 const { Notifier } = require('./notify');
+const { News } = require('./news');
 const { Updater, installWindows, installMac, macBundle, macCanReplace } = require('./updater');
 const autostart = require('./autostart');
 
@@ -21,7 +22,7 @@ const APP_W = 1280, APP_H = 820, APP_MIN_W = 980, APP_MIN_H = 640;
 app.setAppUserModelId('cz.jovan.t212widget');
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
-let store, poller, lib, notifier, widget, appWin, tray, popover, updater;
+let store, poller, lib, notifier, news, widget, appWin, tray, popover, updater;
 const IS_MAC = process.platform === 'darwin';
 let lastState = null;
 let quitting = false;
@@ -601,8 +602,12 @@ const LIB = {
   notifClear: () => notifier.clear(),
   setAlert: a => notifier.setAlert(str(a.ticker), Number(a.pct), { sym: str(a.sym, 20), name: str(a.name, 120), isin: a.isin ? str(a.isin, 20) : null }),
   testNote: () => showNote(tr('T212 Widget is working'), tr('This is how alerts, news and events will look.'), 'notifications'),
-  checkNow: async () => { const pos = watchedPositions(); await notifier.checkNews(pos, true); await notifier.checkAlerts(pos); return notifier.list({}); },
-  openNews: a => { const u = notifier.link(str(a.id, 200)); if (u) shell.openExternal(u); return !!u; },
+  checkNow: async () => { const pos = watchedPositions(); await newsTick(true); await notifier.checkAlerts(pos); return notifier.list({}); },
+  openNews: a => { const u = news.link(str(a.id, 60)); if (u) shell.openExternal(u); return !!u; },
+  news: a => news.list({ ticker: a.ticker ? str(a.ticker) : null, source: a.source ? str(a.source, 60) : null, limit: Number(a.limit) || 60, offset: Number(a.offset) || 0 }),
+  newsSources: () => news.sources(),
+  newsMeta: a => news.meta(str(a.id, 60)),
+  newsRefresh: async () => { await newsTick(true); return news.list({}); },
   recent: a => lib.recent(a.limit),
   activity: a => lib.activity({ kind: str(a.kind, 20), ticker: a.ticker ? str(a.ticker) : null, q: a.q ? str(a.q) : '', type: a.type ? str(a.type, 40) : '',
     from: Number(a.from) || null, to: Number(a.to) || null, offset: Math.max(0, Number(a.offset) || 0), limit: Math.max(1, Number(a.limit) || 100) }),
@@ -671,20 +676,25 @@ function osNotify(items) {
     // a burst (first start, many companies) → one summary instead of a pile of toasts
     if (g.length > 3) {
       const key = { news: '{n} new news stories', alert: '{n} price alerts', event: '{n} calendar events' }[type];
-      showNote(trv(key, { n: g.length }), [...new Set(g.map(x => x.sym))].slice(0, 8).join(', '), 'notifications');
+      showNote(trv(key, { n: g.length }), [...new Set(g.map(x => x.sym))].slice(0, 8).join(', '), type === 'news' ? 'news' : 'notifications');
       continue;
     }
     for (const x of g) {
       const tx = noteText(x);
-      const route = type === 'news' ? 'notifications' : 'instrument/' + x.ticker;
-      showNote(tx.title, tx.body, route, () => {
-        notifier.markRead([x.id]);
-        if (type === 'news') { const u = notifier.link(x.id); if (u) shell.openExternal(u); }
-      });
+      const route = type === 'news' ? 'news/' + (x.newsId || '') : 'instrument/' + x.ticker;
+      showNote(tx.title, tx.body, route, () => notifier.markRead([x.id]));
     }
   }
 }
 
+// news of holdings + watchlist → news page; new articles from enabled sources → notifications
+async function newsTick(force) {
+  const pos = watchedPositions();
+  if (!pos.length) return 0;
+  const fresh = await news.refresh(pos, force);
+  lib.emitChange('news');
+  return notifier.addNews(fresh.filter(x => news.enabled(x)), pos);
+}
 function watchedPositions() {
   const held = heldPositions();
   const extra = (store.get('watchlist') || []).filter(w => w && w.ticker && !held.some(h => h.ticker === w.ticker))
@@ -745,6 +755,7 @@ app.whenReady().then(() => {
   lib.notifUnread = notifier.unread();
   notifier.on('change', n => { lib.notifUnread = n; lib.emitChange('notifications'); });
   notifier.on('fresh', items => { try { osNotify(items); } catch {} });
+  news = new News({ lib, dir: app.getPath('userData'), settings: () => store.all() });
   lib.on('change', e => { if (e.what === 'calendar') notifier.checkEvents(lib.calendar(watchedPositions()).events); });
   poller.calendarPositions = () => watchedPositions();
   const notifTick = () => {
@@ -754,7 +765,7 @@ app.whenReady().then(() => {
     const cal = lib.calData();
     if (pos.some(p => !cal.by[p.ticker])) lib.refreshCalendar(pos).catch(() => {});
     notifier.checkAlerts(pos).catch(() => {});
-    notifier.checkNews(pos).catch(() => {});
+    newsTick().catch(() => {});
     notifier.checkEvents(lib.calendar(pos).events);
   };
   setTimeout(notifTick, 20e3);
