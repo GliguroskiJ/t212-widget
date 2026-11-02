@@ -7,6 +7,7 @@ const { Poller } = require('./t212');
 const { Library } = require('./library');
 const { Notifier } = require('./notify');
 const { News } = require('./news');
+const { SP500, t212Map } = require('./sp500');
 const { Updater, installWindows, installMac, macBundle, macCanReplace } = require('./updater');
 const autostart = require('./autostart');
 
@@ -240,6 +241,10 @@ function openSettings(tab) { openApp('settings/' + (tab || 'account')); }
 
 // ── settings side effects ────────────────────────────────────
 function applySettings(patch) {
+  // sidebar lists come from the renderer: keep them short arrays of short strings
+  for (const k of ['navOrder', 'navHidden']) {
+    if (k in patch) patch[k] = Array.isArray(patch[k]) ? patch[k].filter(x => typeof x === 'string').map(x => x.slice(0, 32)).slice(0, 40) : [];
+  }
   const prev = store.all();
   const next = store.set(patch);
   if ('startWithWindows' in patch) applyAutostart(next.startWithWindows);
@@ -579,6 +584,23 @@ function registerIpc() {
 const RANGES = ['1D', '1W', '1M', '1Y', 'ALL'];
 const str = (v, n = 64) => String(v == null ? '' : v).slice(0, n);
 const HIST = ['orders', 'dividends', 'transactions'];
+// S&P 500 heatmap (Wikipedia constituents + Yahoo quotes, cached in userData/sp500.json)
+let sp500 = null;
+function sp500Svc() {
+  if (!sp500) sp500 = new SP500({ fetchImpl: (u, o) => net.fetch(u, o), dir: app.getPath('userData'), crumb: f => lib.yahooCrumb(f), onChange: () => lib.emitChange('sp500') });
+  return sp500;
+}
+// each stock gets its Trading 212 ticker when there is one (click → that instrument page, else yf:SYMBOL)
+function sp500Out(p) {
+  lib.loadMetadata().catch(() => {});
+  const map = t212Map(lib.instrumentIndex(), store.history && store.history.symbols);
+  lib.extNames = lib.extNames || {};
+  for (const x of p.items) {
+    x.tk = map[x.y] || null;
+    if (!x.tk && !lib.extNames['yf:' + x.y]) lib.extNames['yf:' + x.y] = { name: x.n, type: 'STOCK', exchange: null };
+  }
+  return p;
+}
 const LIB = {
   status: () => lib.statusPayload(),
   series: a => poller.seriesFor(RANGES.includes(a.range) ? a.range : '1M'),
@@ -608,6 +630,8 @@ const LIB = {
   newsSources: () => news.sources(),
   newsMeta: a => news.meta(str(a.id, 60)),
   newsRefresh: async () => { await newsTick(true); return news.list({}); },
+  sp500: async () => sp500Out(await sp500Svc().get({})),
+  sp500Refresh: async () => sp500Out(await sp500Svc().get({ force: true })),
   recent: a => lib.recent(a.limit),
   activity: a => lib.activity({ kind: str(a.kind, 20), ticker: a.ticker ? str(a.ticker) : null, q: a.q ? str(a.q) : '', type: a.type ? str(a.type, 40) : '',
     from: Number(a.from) || null, to: Number(a.to) || null, offset: Math.max(0, Number(a.offset) || 0), limit: Math.max(1, Number(a.limit) || 100) }),
@@ -692,6 +716,7 @@ async function newsTick(force) {
   const pos = watchedPositions();
   if (!pos.length) return 0;
   const fresh = await news.refresh(pos, force);
+  notifier.pruneNews(id => news.has(id));
   lib.emitChange('news');
   return notifier.addNews(fresh.filter(x => news.enabled(x)), pos);
 }
@@ -756,6 +781,7 @@ app.whenReady().then(() => {
   notifier.on('change', n => { lib.notifUnread = n; lib.emitChange('notifications'); });
   notifier.on('fresh', items => { try { osNotify(items); } catch {} });
   news = new News({ lib, dir: app.getPath('userData'), settings: () => store.all() });
+  notifier.pruneNews(id => news.has(id));   // articles that failed the (stricter) relevance rules take their notifications along
   lib.on('change', e => { if (e.what === 'calendar') notifier.checkEvents(lib.calendar(watchedPositions()).events); });
   poller.calendarPositions = () => watchedPositions();
   const notifTick = () => {

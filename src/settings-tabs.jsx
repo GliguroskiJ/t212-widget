@@ -1,10 +1,11 @@
 // Settings of the whole app — rendered as the Settings page of the app window.
 // The Widget tab holds what only concerns the desktop widget / menu-bar panel.
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useRef, useLayoutEffect } from 'preact/hooks';
 import { THEMES, themeDef, UP, DOWN, applyTheme, applyMotion, agoStr, ACCENT_PRESETS, DEFAULT_ACCENT, ditheredBg, TEXT_PRESETS, resolveText, SOLID_PRESETS, GRADIENT_PRESETS, DEFAULT_BG, DEFAULT_GRADIENT } from './shared.js';
 import { t, setLang } from './i18n.js';
 import { updErr } from './updtext.js';
 import { marketStatus } from '../main/market.js';
+import { navItems, moveKey, toggleHidden } from './navorder.js';
 
 const api = window.api;
 let MAC = false;
@@ -340,7 +341,7 @@ function GradientPicker({ s, set }) {
   );
 }
 
-export function AppearanceTab({ s, set }) {
+export function AppearanceTab({ s, set, nav }) {
   const tintable = !['solid', 'gradient'].includes(s.theme);
   return (
     <>
@@ -375,7 +376,138 @@ export function AppearanceTab({ s, set }) {
         <Row title={t('Motion')} desc={t('Subtle keeps number roll-ups but stops breathing and pulsing; Off shows final values immediately.')}>
           <Seg value={s.motion} onChange={v => set({ motion: v })} options={[['full', t('Full')], ['subtle', t('Subtle')], ['off', t('Off')]]} /></Row>
       </Section>
+      {nav && <MenuEditor s={s} set={set} nav={nav} />}
     </>
+  );
+}
+
+// ── sidebar menu: order + visibility ─────────────────────────
+// FLIP: children with data-k slide from where they were to where they are now. Positions are kept
+// relative to the container (scroll-proof); `snap()` records an explicit "before" (e.g. a dropped row).
+export function useFlip(ref, sig) {
+  const last = useRef(null);
+  const pending = useRef(null);
+  const prevSig = useRef(sig);
+  const measure = () => {
+    const box = ref.current.getBoundingClientRect(), m = {};
+    for (const el of ref.current.children) if (el.dataset.k) m[el.dataset.k] = el.getBoundingClientRect().top - box.top;
+    return m;
+  };
+  useLayoutEffect(() => {
+    if (!ref.current) return;
+    const base = pending.current || (prevSig.current !== sig ? last.current : null);
+    pending.current = null; prevSig.current = sig;
+    // plain re-renders (clock ticks, a drag in progress) leave inline transforms alone
+    if (!base) { if (!ref.current.querySelector('[data-k][style*="transform"]')) last.current = measure(); return; }
+    for (const el of ref.current.children) if (el.dataset.k) el.style.transform = '';
+    const now = measure();
+    last.current = now;
+    if (document.body.classList.contains('m-off')) return;
+    for (const el of ref.current.children) {
+      const k = el.dataset.k;
+      if (!k || !el.animate) continue;
+      if (base[k] == null) { el.animate([{ opacity: 0, transform: 'translateX(-6px)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' }); continue; }
+      const dy = base[k] - now[k];
+      if (Math.abs(dy) >= 1) el.animate([{ transform: `translateY(${dy}px)` }, { transform: 'none' }], { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    }
+  });
+  return { snap: () => { if (ref.current) pending.current = measure(); } };
+}
+
+// the sidebar's "Edit menu" asks for this section: scroll to it (now, or once it mounts)
+let menuWanted = false;
+export const openMenuEditor = () => { menuWanted = true; window.dispatchEvent(new Event('t212-menu-edit')); };
+
+export function MenuEditor({ s, set, nav }) {
+  const items = navItems(nav, s.navOrder, s.navHidden);
+  const sig = items.map(i => i.key).join();
+  const sec = useRef(null), list = useRef(null);
+  const flip = useFlip(list, sig);
+  const [drag, setDrag] = useState(null);
+  const [glow, setGlow] = useState(false);
+  const refocus = useRef(null);
+  const custom = (s.navOrder || []).length > 0 || (s.navHidden || []).length > 0;
+  const hiddenN = items.filter(i => i.hidden).length;
+  useEffect(() => {
+    const show = () => {
+      if (!menuWanted || !sec.current) return;
+      menuWanted = false;
+      setTimeout(() => { sec.current && sec.current.scrollIntoView({ block: 'start', behavior: 'smooth' }); setGlow(true); setTimeout(() => setGlow(false), 1400); }, 60);
+    };
+    show();
+    window.addEventListener('t212-menu-edit', show);
+    return () => window.removeEventListener('t212-menu-edit', show);
+  }, []);
+  useLayoutEffect(() => {
+    if (!refocus.current || !list.current) return;
+    const b = list.current.querySelector(`[data-k="${refocus.current[0]}"] .${refocus.current[1]}`);
+    refocus.current = null;
+    if (b && document.activeElement !== b) b.focus({ preventScroll: true });
+  }, [sig]);
+  const move = (k, to, focusCls) => { flip.snap(); refocus.current = focusCls ? [k, focusCls] : null; set({ navOrder: moveKey(nav, s.navOrder, k, to) }); };
+
+  // drag with pointer events (works the same in Electron on Windows and macOS, no ghost image)
+  const down = (e, k, idx) => {
+    if (e.button !== 0 || !list.current) return;
+    e.preventDefault();
+    const handle = e.currentTarget;
+    const rows = [...list.current.children];
+    const tops = rows.map(r => r.getBoundingClientRect().top);
+    const step = rows.length > 1 ? tops[1] - tops[0] : rows[0].getBoundingClientRect().height;
+    const el = rows[idx], y0 = e.clientY;
+    let to = idx;
+    try { handle.setPointerCapture(e.pointerId); } catch {}
+    setDrag(k);
+    const mv = ev => {
+      const dy = Math.max(-idx * step - 6, Math.min((rows.length - 1 - idx) * step + 6, ev.clientY - y0));
+      el.style.transform = `translateY(${dy}px)`;
+      to = Math.max(0, Math.min(rows.length - 1, idx + Math.round(dy / step)));
+      rows.forEach((r, i) => {
+        if (i === idx) return;
+        const sh = idx < to && i > idx && i <= to ? -step : idx > to && i < idx && i >= to ? step : 0;
+        r.style.transform = sh ? `translateY(${sh}px)` : '';
+      });
+    };
+    const end = () => {
+      handle.removeEventListener('pointermove', mv); handle.removeEventListener('pointerup', end); handle.removeEventListener('pointercancel', end);
+      flip.snap();
+      setDrag(null);
+      if (to !== idx) set({ navOrder: moveKey(nav, s.navOrder, k, to) });
+    };
+    handle.addEventListener('pointermove', mv); handle.addEventListener('pointerup', end); handle.addEventListener('pointercancel', end);
+  };
+  const keyMove = (e, k, idx) => {
+    if (e.key === 'ArrowUp' && idx > 0) { e.preventDefault(); move(k, idx - 1, 'ngrip'); }
+    else if (e.key === 'ArrowDown' && idx < items.length - 1) { e.preventDefault(); move(k, idx + 1, 'ngrip'); }
+  };
+  return (
+    <div ref={sec} id="menu-editor" style="scroll-margin-top:8px">
+      <Section label={t('Menu')}>
+        <Row title={t('Sidebar tabs')} desc={t('Drag to reorder, switch off what you don’t use. Hidden pages still open from notifications and links. Overview always stays. Tip: right-click the sidebar.')}>
+          {hiddenN > 0 && <span class="muted" style="font-size:11.5px;white-space:nowrap">{t('{n} hidden', { n: hiddenN })}</span>}
+          <button type="button" class="btn btn-ghost" style="font-size:12px" disabled={!custom} onClick={() => { flip.snap(); set({ navOrder: [], navHidden: [] }); }}>
+            <i class="ph ph-arrow-counter-clockwise"></i>{t('Reset to default')}</button>
+        </Row>
+        <div ref={list} class={'nedit' + (drag ? ' dragging' : '') + (glow ? ' glow' : '')} role="list">
+          {items.map((it, i) => (
+            <div key={it.key} data-k={it.key} role="listitem" class={'nrow' + (it.hidden ? ' off' : '') + (drag === it.key ? ' drag' : '')}>
+              <button type="button" class="ngrip" title={t('Drag to reorder (or use ↑ ↓)')} aria-label={t('Move {x}', { x: it.label })}
+                onPointerDown={e => down(e, it.key, i)} onKeyDown={e => keyMove(e, it.key, i)}><i class="ph ph-dots-six-vertical"></i></button>
+              <i class={'ph ' + it.icon + ' nico'}></i>
+              <span class="nlab">{it.label}</span>
+              {it.locked && <span class="nlock"><i class="ph ph-lock-simple"></i>{t('Always shown')}</span>}
+              <span style="flex:1"></span>
+              <span class="nmv">
+                <button type="button" class="tb nup" title={t('Move up')} disabled={i === 0} onClick={() => move(it.key, i - 1, 'nup')}><i class="ph ph-caret-up"></i></button>
+                <button type="button" class="tb ndn" title={t('Move down')} disabled={i === items.length - 1} onClick={() => move(it.key, i + 1, 'ndn')}><i class="ph ph-caret-down"></i></button>
+              </span>
+              {it.locked ? <span class="sw on locked" title={t('Always shown')} aria-disabled="true"><span class="knob"></span></span>
+                : <Switch on={!it.hidden} label={it.label} onChange={v => set({ navHidden: toggleHidden(s.navHidden, it.key, !v) })} />}
+            </div>
+          ))}
+        </div>
+      </Section>
+    </div>
   );
 }
 

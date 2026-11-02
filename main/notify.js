@@ -102,6 +102,15 @@ class Notifier extends EventEmitter {
     return n;
   }
 
+  // drop news notifications whose article is gone or no longer passes the relevance rules
+  pruneNews(valid) {
+    const before = this.d.items.length;
+    this.d.items = this.d.items.filter(x => x.type !== 'news' || !x.newsId || valid(x.newsId));
+    const n = before - this.d.items.length;
+    if (n) this.changed();
+    return n;
+  }
+
   // ── today's / tomorrow's calendar events ───────────────────
   checkEvents(events) {
     const today = dayStr(this.now()), tomorrow = dayStr(this.now() + DAY);

@@ -4,6 +4,16 @@ Each version: `## X.Y.Z`, then `### cs` and `### en` with one `- ` line per chan
 The release workflow publishes the section of the tagged version as the GitHub release notes,
 and the update window in the app shows these lines (in the app's language).
 
+## 1.10.0
+### cs
+- Nová záložka Heatmapa S&P 500: aktuální složení indexu podle tržní kapitalizace, rozdělené podle sektorů a odvětví, s proklikem na akcie
+- Novinky jen o konkrétní firmě: zprávy musí mít štítek daného tickeru (žádné Atossa místo Atosu, žádné „grab a share“)
+- Levé menu jde upravit: přetažením změníš pořadí, záložky můžeš skrýt (Nastavení → Vzhled → Menu nebo pravým tlačítkem v menu)
+### en
+- New S&P 500 heatmap tab: the current index make-up sized by market cap, grouped by sector and industry, click through to each stock
+- News only about the exact company: articles must be tagged with that ticker (no Atossa for Atos, no “grab a share”)
+- The left menu can be customised: drag to reorder, hide tabs (Settings → Appearance → Menu or right-click the menu)
+
 ## 1.9.9
 ### cs
 - Nová sekce Novinky: dlaždice s obrázkem, nadpisem a úryvkem článku, od nejnovějších, s tlačítkem Číst

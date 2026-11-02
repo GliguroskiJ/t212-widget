@@ -5,10 +5,12 @@ import { render, createContext } from 'preact';
 import { useState, useEffect, useRef, useMemo, useContext, useCallback } from 'preact/hooks';
 import { UP, DOWN, applyTheme, ditheredBg, applyMotion, makeFmt, agoStr, hhmm, linePath, accentRamp, tint } from './shared.js';
 import { t, setLang, locale } from './i18n.js';
+import { layoutHeatmap, heatColor, tileText, HEAT_STEPS } from './treemap.js';
 import {
   F, useNow, Tile, Mark, Dot, Eyebrow, FillChart, Chart, RangeChips, useModel, Pill, GrowBar, axisLabels, Alloc, Connect, errorCopy
 } from './ui.jsx';
-import { SETTINGS_TABS, setMac, Seg, Switch, AccountTab, AppearanceTab, DataTab, SystemTab, WidgetTab } from './settings-tabs.jsx';
+import { SETTINGS_TABS, setMac, Seg, Switch, AccountTab, AppearanceTab, DataTab, SystemTab, WidgetTab, useFlip, openMenuEditor } from './settings-tabs.jsx';
+import { visibleNav, toggleHidden, LOCKED } from './navorder.js';
 
 const api = window.api;
 const Ctx = createContext(null);
@@ -1353,6 +1355,202 @@ function NewsPage({ m, focus }) {
   );
 }
 
+// ── S&P 500 heatmap (finviz-style): size = market cap, colour = today's change, sector → industry ──
+const usSym = tk => { const r = /^(.+?)_US_EQ$/.exec(tk || ''); return r ? r[1].replace(/[._]/g, '-').toUpperCase() : null; };
+const capWeighted = list => { let c = 0, w = 0; for (const x of list) if (x.cap > 0 && x.chg != null) { c += x.cap * x.chg; w += x.cap; } return w ? c / w : null; };
+const pctTxt = (v, fmt) => (v == null ? '—' : fmt.signed(v, 2) + ' %');
+
+function HeatTip({ hov, tree, held, fmt, box }) {
+  const x = hov.item;
+  const peers = (tree.byInd[x.sec + '|' + x.ind] || []).slice(0, 10);
+  if (!peers.includes(x)) peers.push(x);
+  const h = held(x);
+  const W = 300, H = 132 + (peers.length > 1 ? 26 + peers.length * 21 : 0) + (h ? 22 : 0);
+  let left = hov.mx + 16, top = hov.my + 16;
+  if (left + W > box[0] - 4) left = Math.max(4, hov.mx - W - 16);
+  if (top + H > box[1] - 4) top = Math.max(4, box[1] - H - 4);
+  return (
+    <div class="hm-tip" style={`left:${left}px;top:${top}px;width:${W}px`}>
+      <div class="hm-tip-h">{t(x.sec)}<i class="ph ph-caret-right"></i>{x.ind}</div>
+      <div class="hm-tip-main" style={`--hc:${heatColor(x.chg)}`}>
+        <span style="display:flex;flex-direction:column;gap:5px;min-width:0;flex:1">
+          <span class="hm-tip-sym">{x.s}</span>
+          <span class="t2" style="white-space:normal;line-height:1.3">{x.n}</span>
+        </span>
+        <span style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+          <span class="hm-tip-chg">{pctTxt(x.chg, fmt)}</span>
+          <span class="num" style="font-size:12px">{x.px != null ? fmt(x.px, 2) + ' ' + (x.cur || 'USD') : '—'}</span>
+        </span>
+      </div>
+      <div class="hm-tip-facts">
+        <span>{t('Market cap')}</span><b>{x.cap ? bigNum(x.cap, fmt) + ' ' + (x.cur || 'USD') : '—'}</b>
+        <span>{t('Index weight')}</span><b>{x.cap && tree.total ? fmt(x.cap / tree.total * 100, 2) + ' %' : '—'}</b>
+      </div>
+      {h && <div class="hm-tip-held"><i class="ph ph-briefcase"></i>{t('In your portfolio')}</div>}
+      {peers.length > 1 && <>
+        <div class="hm-tip-sub">{t('{ind} · {n} companies', { ind: x.ind, n: (tree.byInd[x.sec + '|' + x.ind] || []).length })}</div>
+        {peers.map(p => (
+          <div class={'hm-peer' + (p === x ? ' on' : '')}>
+            <span class="hm-peer-sym">{p.s}</span>
+            <span class="hm-peer-name">{p.n}</span>
+            <span class="hm-peer-chg" style={`background:${heatColor(p.chg)}`}>{pctTxt(p.chg, fmt)}</span>
+          </div>
+        ))}
+      </>}
+    </div>
+  );
+}
+
+function HeatmapPage({ m }) {
+  const res = useLib('sp500', {}, [], ['sp500']);
+  const [busy, setBusy] = useState(false);
+  const [sector, setSector] = useState(null);
+  const [showHeld, setShowHeld] = useState(true);
+  const [hov, setHov] = useState(null);
+  const [box, setBox] = useState([0, 0]);
+  const ref = useRef(null);
+  const fmt = m.fmt;
+  const d = res.data || null;
+
+  // refresh while the page is open (main serves cached quotes for a few minutes)
+  useEffect(() => {
+    const h = setInterval(() => { if (!document.hidden) res.reload(); }, 60e3);
+    return () => clearInterval(h);
+  }, []);
+  useEffect(() => {
+    const k = e => { if (e.key === 'Escape') setSector(null); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, []);
+  // the map fills whatever room the window gives it
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => { const r = e.contentRect; setBox(b => (b[0] === Math.floor(r.width) && b[1] === Math.floor(r.height) ? b : [Math.floor(r.width), Math.floor(r.height)])); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [!!(d && d.items.length)]);
+
+  const positions = (m.d && m.d.positions) || [];
+  const heldKey = positions.map(p => p.ticker).join();
+  const held = useMemo(() => {
+    const tk = new Set(positions.map(p => p.ticker)), ys = new Set(positions.map(p => usSym(p.ticker)).filter(Boolean));
+    return x => (x.tk && tk.has(x.tk)) || ys.has(x.y);
+  }, [heldKey]);
+
+  // sector → industry → stock, biggest first
+  const tree = useMemo(() => {
+    const items = ((d && d.items) || []).filter(x => x.cap > 0);
+    const secs = {}, byInd = {};
+    for (const x of items) {
+      const s = secs[x.sec] || (secs[x.sec] = { key: x.sec, name: x.sec, inds: {}, list: [] });
+      s.list.push(x);
+      const i = s.inds[x.ind] || (s.inds[x.ind] = { key: x.sec + '|' + x.ind, name: x.ind, children: [] });
+      i.children.push({ key: x.y, value: x.cap, x });
+      (byInd[x.sec + '|' + x.ind] || (byInd[x.sec + '|' + x.ind] = [])).push(x);
+    }
+    for (const k in byInd) byInd[k].sort((a, b) => b.cap - a.cap);
+    const sectors = Object.values(secs).map(s => ({ key: s.key, name: s.name, list: s.list, children: Object.values(s.inds), cap: s.list.reduce((a, x) => a + x.cap, 0), chg: capWeighted(s.list) }))
+      .sort((a, b) => b.cap - a.cap);
+    return { sectors, byInd, items, total: items.reduce((a, x) => a + x.cap, 0), missing: ((d && d.items) || []).length - items.length };
+  }, [d]);
+  const shown = sector ? tree.sectors.filter(s => s.key === sector) : tree.sectors;
+  const L = useMemo(() => layoutHeatmap(shown, box[0], box[1], sector ? { sectorHead: 0, industryHead: 16, industryGap: 3 } : {}), [tree, sector, box[0], box[1]]);
+  const secInfo = Object.fromEntries(tree.sectors.map(s => [s.key, s]));
+
+  const refresh = async () => { setBusy(true); await api.lib('sp500Refresh'); setBusy(false); res.reload(); };
+  const tileAt = e => { const el = e.target.closest && e.target.closest('[data-i]'); return el ? L.tiles[Number(el.dataset.i)] : null; };
+  const onMove = e => {
+    const tl = tileAt(e);
+    if (!tl) { if (hov) setHov(null); return; }
+    const r = ref.current.getBoundingClientRect();
+    setHov({ tile: tl, item: tl.item.x, mx: e.clientX - r.left, my: e.clientY - r.top });
+  };
+  const nav = useNav();
+  const open = x => nav.go('instrument', x.tk || 'yf:' + x.y);
+
+  // tiles only re-render when the layout or holdings change (hover is an overlay)
+  const tiles = useMemo(() => L.tiles.map((tl, i) => {
+    const x = tl.item.x, tx = tileText(tl.w, tl.h, x.s), mine = showHeld && held(x);
+    return (
+      <div class={'hm-t' + (mine ? ' held' : '')} data-i={i} style={`left:${tl.x}px;top:${tl.y}px;width:${tl.w}px;height:${tl.h}px;background:${heatColor(x.chg)}`}>
+        {tx.ticker && <span class="hm-s" style={`font-size:${tx.fs}px`}>{x.s}</span>}
+        {tx.pct && <span class="hm-p" style={`font-size:${tx.fs2}px`}>{pctTxt(x.chg, fmt)}</span>}
+      </div>
+    );
+  }), [L, showHeld, held, fmt]);
+
+  const all = tree.items;
+  const up = all.filter(x => x.chg > 0).length, down = all.filter(x => x.chg < 0).length;
+  const idx = capWeighted(sector ? (secInfo[sector] || { list: [] }).list : all);
+  const nHeld = all.filter(held).length;
+  const err = d && d.problem;
+  const closed = d && d.marketState && d.marketState !== 'REGULAR';
+
+  if (!d || !d.items.length) {
+    return (
+      <div class="grid">
+        <Card style="grid-column:1/-1">
+          {res.loading || busy || (d && d.refreshing)
+            ? <Empty icon="ph-grid-four" title={t('Loading the S&P 500…')} text={t('The first download of all 500 companies takes a few seconds.')}><Spinner size={18} /></Empty>
+            : <Empty icon="ph-warning-circle" title={t('The S&P 500 map could not be loaded')} text={(err && err.message) || (res.err && res.err.message) || t('Check your internet connection.')}>
+                <button class="btn btn-primary" style="font-size:12.5px;margin-top:6px" onClick={refresh}>{t('Retry')}</button>
+              </Empty>}
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div class="hm-page">
+      <section class="card hm-card">
+        <div class="hm-bar">
+          {sector
+            ? <button class="btn btn-secondary hm-back" onClick={() => setSector(null)}><i class="ph ph-arrow-left"></i>{t('All sectors')}</button>
+            : <span class="hm-title">S&amp;P 500</span>}
+          {sector && <span class="hm-title">{t(sector)}</span>}
+          <span class="hm-idx" style={`color:${idx == null ? 'var(--color-neutral-400)' : idx >= 0 ? UP : DOWN}`} title={t('Change weighted by market cap')}>{pctTxt(idx, fmt)}</span>
+          {!sector && <span class="muted hm-breadth"><span style={`color:${UP}`}>▲ {up}</span><span style={`color:${DOWN}`}>▼ {down}</span></span>}
+          {closed && <span class="muted">{t('Market closed · last session')}</span>}
+          <span style="flex:1"></span>
+          <select class="input hm-sel" value={sector || ''} onChange={e => setSector(e.currentTarget.value || null)}>
+            <option value="">{t('All sectors')}</option>
+            {tree.sectors.map(s => <option value={s.key}>{t(s.key)}</option>)}
+          </select>
+          <button class={'nchip hm-hold' + (showHeld ? ' on' : '')} title={t('Outline the stocks you hold')} onClick={() => setShowHeld(v => !v)}>
+            <i class="ph ph-briefcase"></i>{t('Your holdings')}{nHeld ? <span class="hm-n">{nHeld}</span> : null}
+          </button>
+          <span class="muted hm-upd" title={d.listAt ? t('Constituents from Wikipedia, {d}', { d: dtfmt(d.listAt) }) : ''}>{d.at ? t('updated {t}', { t: hhmm(d.at) }) : ''}</span>
+          <button class="tb" title={t('Refresh now')} disabled={busy} onClick={refresh}>{busy || d.refreshing ? <Spinner size={12} /> : <i class="ph ph-arrow-clockwise"></i>}</button>
+        </div>
+        {err && <div class="hm-err"><i class="ph ph-warning-circle"></i>{err.partial ? t('Some quotes are missing: {e}', { e: err.message }) : t('Showing the last data — {e}', { e: err.message })}</div>}
+        <div class="hm-map" ref={ref} onMouseMove={onMove} onMouseLeave={() => setHov(null)} onClick={e => { const tl = tileAt(e); if (tl) open(tl.item.x); }}>
+          {L.sectors.map(s => s.head > 0 && (
+            <div class="hm-sec" style={`left:${s.x}px;top:${s.y}px;width:${s.w}px;height:${s.head}px`} title={sector ? t('Back to all sectors') : t('Zoom into {s}', { s: t(s.key) })}
+              onClick={e => { e.stopPropagation(); setSector(sector ? null : s.key); }}>
+              <span class="hm-sec-n">{t(s.name)}</span>
+              {s.w > 150 && secInfo[s.key] && secInfo[s.key].chg != null && <span class="hm-sec-c" style={`color:${secInfo[s.key].chg >= 0 ? UP : DOWN}`}>{fmt.signed(secInfo[s.key].chg, 2)} %</span>}
+              <i class={'ph ' + (sector ? 'ph-arrows-in-simple' : 'ph-magnifying-glass-plus')}></i>
+            </div>
+          ))}
+          {L.industries.map(i => i.head > 0 && <div class="hm-ind" style={`left:${i.x}px;top:${i.y}px;width:${i.w}px;height:${i.head}px`}>{i.name}</div>)}
+          {tiles}
+          {hov && <div class="hm-hover" style={`left:${hov.tile.x}px;top:${hov.tile.y}px;width:${hov.tile.w}px;height:${hov.tile.h}px`}></div>}
+          {hov && <HeatTip hov={hov} tree={tree} held={held} fmt={fmt} box={box} />}
+        </div>
+        <div class="hm-foot">
+          <span class="hm-legend">
+            {HEAT_STEPS.map(v => <span style={`background:${heatColor(v)}`}>{v > 0 ? '+' : v < 0 ? '−' : ''}{Math.abs(v)} %</span>)}
+          </span>
+          <span class="muted">{t('Size = market cap · colour = today’s change')}{tree.missing > 0 ? ' · ' + t('{n} without data', { n: tree.missing }) : ''}</span>
+          <span style="flex:1"></span>
+          <span class="muted">{t('Sources: Wikipedia, Yahoo Finance')}</span>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function NotificationsPage({ m }) {
   const { nav, st } = useApp();
   const [kind, setKind] = useState('');
@@ -1682,7 +1880,7 @@ function SettingsPage({ tab, init }) {
       <div key={cur} style="display:flex;flex-direction:column;gap:14px;max-width:880px;animation:nfade .35s ease both">
         {cur === 'account' && <AccountTab s={s} st={st} set={set} lib={st.lib} />}
         {cur === 'widget' && <WidgetTab s={s} set={set} />}
-        {cur === 'appearance' && <AppearanceTab s={s} set={set} />}
+        {cur === 'appearance' && <AppearanceTab s={s} set={set} nav={NAV()} />}
         {cur === 'data' && <DataTab s={s} set={set} st={st} info={init} lib={st.lib} />}
         {cur === 'system' && <SystemTab s={s} set={set} info={init} />}
       </div>
@@ -1696,6 +1894,7 @@ const NAV = () => [
   ['holdings', t('Holdings'), 'ph-chart-pie-slice'],
   ['watchlist', t('Watchlist'), 'ph-star'],
   ['news', t('News feed'), 'ph-newspaper'],
+  ['heatmap', t('S&P 500 heatmap'), 'ph-grid-four'],
   ['activity', t('Activity'), 'ph-clock-counter-clockwise'],
   ['orders', t('Orders'), 'ph-list-checks'],
   ['pies', t('Pies'), 'ph-circle-half'],
@@ -1804,6 +2003,57 @@ function SideStatus({ st, now }) {
   );
 }
 
+// the user's tabs (order + hidden from Settings → Appearance → Menu); right-click for quick edits
+function SideNav({ page, arg, lib, go }) {
+  const { settings, set } = useApp();
+  const list = visibleNav(NAV(), settings.navOrder, settings.navHidden);
+  const ref = useRef(null);
+  useFlip(ref, list.map(x => x[0]).join());
+  const [cm, setCm] = useState(null);
+  useEffect(() => {
+    if (!cm) return;
+    const off = e => { if (!e.target.closest || !e.target.closest('.navcm')) setCm(null); };
+    const key = e => { if (e.key === 'Escape') setCm(null); };
+    const close = () => setCm(null);
+    window.addEventListener('mousedown', off); window.addEventListener('keydown', key); window.addEventListener('blur', close); window.addEventListener('resize', close);
+    return () => { window.removeEventListener('mousedown', off); window.removeEventListener('keydown', key); window.removeEventListener('blur', close); window.removeEventListener('resize', close); };
+  }, [cm]);
+  const custom = (settings.navOrder || []).length > 0 || (settings.navHidden || []).length > 0;
+  const edit = () => { setCm(null); openMenuEditor(); go('settings', 'appearance'); };
+  const menu = e => {
+    e.preventDefault();
+    const b = e.target.closest && e.target.closest('[data-k]');
+    const k = b ? b.dataset.k : null;
+    setCm({ x: Math.min(e.clientX, window.innerWidth - 220), y: Math.min(e.clientY, window.innerHeight - 130), k, label: k ? (NAV().find(x => x[0] === k) || [])[1] : '' });
+  };
+  return (
+    <>
+      <div class="nav-list" ref={ref} onContextMenu={menu}>
+        {list.map(([k, label, icon]) => (
+          <button key={k} data-k={k} class={'nav-i' + (page === k || (k === 'holdings' && page === 'instrument' && !String(arg).startsWith('yf:')) ? ' on' : '')} onClick={() => go(k)}>
+            <i class={'ph ' + icon}></i><span>{label}</span>
+            {k === 'orders' && lib.pendingCount ? <span class="badge">{lib.pendingCount}</span> : null}
+            {k === 'notifications' && lib.notifUnread ? <span class="badge hot">{lib.notifUnread > 99 ? '99+' : lib.notifUnread}</span> : null}
+          </button>
+        ))}
+      </div>
+      <div class="nav-gap" onContextMenu={menu}>
+        <button class="nav-edit" title={t('Reorder or hide tabs')} onClick={edit}><i class="ph ph-pencil-simple"></i>{t('Edit menu')}</button>
+      </div>
+      {cm && (
+        <div class="menu navcm" style={`left:${cm.x}px;top:${cm.y}px`} onContextMenu={e => e.preventDefault()}>
+          {cm.k && !LOCKED.includes(cm.k) && <button class="mi" onClick={() => {
+            setCm(null); set({ navHidden: toggleHidden(settings.navHidden, cm.k, true) });
+            toast(t('“{x}” hidden — bring it back in Settings → Appearance', { x: cm.label }), 'ph-eye-slash');
+          }}><i class="ph ph-eye-slash"></i>{t('Hide “{x}”', { x: cm.label })}</button>}
+          <button class="mi" onClick={edit}><i class="ph ph-pencil-simple"></i>{t('Edit menu…')}</button>
+          {custom && <button class="mi" onClick={() => { setCm(null); set({ navOrder: [], navHidden: [] }); }}><i class="ph ph-arrow-counter-clockwise"></i>{t('Reset menu')}</button>}
+        </div>
+      )}
+    </>
+  );
+}
+
 function titleFor(route, m) {
   const [p, a] = route;
   if (p === 'instrument') {
@@ -1896,6 +2146,7 @@ function App({ init }) {
   else if (page === 'notifications') body = <NotificationsPage m={m} />;
   else if (page === 'watchlist') body = <WatchlistPage m={m} />;
   else if (page === 'news') body = <NewsPage m={m} focus={arg} />;
+  else if (page === 'heatmap') body = <HeatmapPage m={m} />;
   else if (page === 'tax') body = <TaxPage m={m} />;
   else body = <Overview m={m} closed={closed} />;
 
@@ -1914,14 +2165,7 @@ function App({ init }) {
             </span>
           </div>
           <nav class="nav">
-            {NAV().map(([k, label, icon]) => (
-              <button class={'nav-i' + (page === k || (k === 'holdings' && page === 'instrument' && !String(arg).startsWith('yf:')) ? ' on' : '')} onClick={() => go(k)}>
-                <i class={'ph ' + icon}></i><span>{label}</span>
-                {k === 'orders' && libStatus.pendingCount ? <span class="badge">{libStatus.pendingCount}</span> : null}
-                {k === 'notifications' && libStatus.notifUnread ? <span class="badge hot">{libStatus.notifUnread > 99 ? '99+' : libStatus.notifUnread}</span> : null}
-              </button>
-            ))}
-            <span style="flex:1"></span>
+            <SideNav page={page} arg={arg} lib={libStatus} go={go} />
             <button class={'nav-i' + (widgetOn ? ' w-on' : '')} title={widgetOn ? t('Hide the widget') : t('Show the widget on the desktop')} onClick={() => {
               if (widgetOn) { api.hideWidget(); toast(t('Widget hidden'), 'ph-eye-slash'); }
               else { api.showWidget(); toast(MAC && settings.macMode === 'menubar' ? t('Widget shown on the desktop and in the menu bar') : t('Widget shown on the desktop'), 'ph-app-window'); }
@@ -1973,7 +2217,7 @@ function ErrorCard({ st, now }) {
 function parseRoute(r) {
   const [p, ...rest] = String(r || 'overview').split('/');
   const a = rest.join('/');
-  const page = ['overview', 'holdings', 'instrument', 'activity', 'orders', 'pies', 'reports', 'calendar', 'notifications', 'watchlist', 'news', 'tax', 'settings'].includes(p) ? p : 'overview';
+  const page = ['overview', 'holdings', 'instrument', 'activity', 'orders', 'pies', 'reports', 'calendar', 'notifications', 'watchlist', 'news', 'heatmap', 'tax', 'settings'].includes(p) ? p : 'overview';
   return [page, a === '' ? undefined : page === 'pies' ? Number(a) : a];
 }
 

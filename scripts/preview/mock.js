@@ -89,7 +89,46 @@
     { id: 2, name: 'Tech růst', status: 'BEHIND', goal: 0, progress: 0, value: 128900, invested: 141000, result: -12100, resultPct: -8.6, cash: 120, dividends: { gained: 210 }, count: 5 },
     { id: 3, name: null, status: 'ON_TRACK', goal: 100000, progress: 0.31, value: 31000, invested: 29500, result: 1500, resultPct: 5.1, cash: 0, dividends: null, count: 3 }
   ];
+
+  // S&P 500 heatmap: ~500 fake constituents across the 11 GICS sectors, caps roughly like the real index
+  const SP = (() => {
+    let sd = 2024; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const SEC = {
+      'Information Technology': [['Semiconductors', 'NVDA:4300 AVGO:1500 AMD:270 QCOM:180 TXN:170 MU:130 INTC:110 ADI:110', 14], ['Systems Software', 'MSFT:3700 ORCL:700 PANW:120 CRWD:110', 6], ['Technology Hardware, Storage & Peripherals', 'AAPL:3500 DELL:90', 5], ['Application Software', 'CRM:250 ADBE:160 INTU:180 NOW:200', 9], ['IT Consulting & Other Services', 'ACN:160 IBM:250', 5], ['Semiconductor Materials & Equipment', 'AMAT:150 LRCX:130 KLAC:110', 4], ['Communications Equipment', 'CSCO:270 ANET:170', 4], ['Electronic Components', 'APH:130 GLW:60', 4]],
+      'Communication Services': [['Interactive Media & Services', 'GOOGL:2400 GOOG:2100 META:1800', 2], ['Movies & Entertainment', 'NFLX:500 DIS:200', 4], ['Integrated Telecommunication Services', 'VZ:180 T:190', 2], ['Wireless Telecommunication Services', 'TMUS:260', 1], ['Cable & Satellite', 'CMCSA:130 CHTR:50', 2], ['Advertising', 'OMC:15', 2]],
+      'Consumer Discretionary': [['Broadline Retail', 'AMZN:2300 EBAY:40', 2], ['Automobile Manufacturers', 'TSLA:1400 GM:55 F:45', 1], ['Restaurants', 'MCD:220 SBUX:100 CMG:60', 6], ['Home Improvement Retail', 'HD:390 LOW:140', 1], ['Hotels, Resorts & Cruise Lines', 'BKNG:170 MAR:75', 6], ['Apparel Retail', 'TJX:150 ROST:50', 2], ['Footwear', 'NKE:100', 1], ['Homebuilding', 'DHI:50 LEN:35', 3]],
+      'Financials': [['Diversified Banks', 'JPM:830 BAC:380 WFC:270 C:180', 3], ['Transaction & Payment Processing Services', 'V:670 MA:530 PYPL:70', 4], ['Multi-Sector Holdings', 'BRK-B:1050', 0], ['Investment Banking & Brokerage', 'GS:230 MS:230 SCHW:170', 3], ['Asset Management & Custody Banks', 'BLK:170 BX:190 KKR:120', 5], ['Property & Casualty Insurance', 'PGR:150 CB:115', 6], ['Financial Exchanges & Data', 'SPGI:160 CME:100 ICE:95', 4], ['Regional Banks', 'PNC:75', 8], ['Life & Health Insurance', 'MET:55', 5]],
+      'Health Care': [['Pharmaceuticals', 'LLY:700 JNJ:400 MRK:220 PFE:140 BMY:95', 4], ['Managed Health Care', 'UNH:300 CI:85 ELV:75', 3], ['Health Care Equipment', 'ABT:220 ISRG:190 SYK:140 BSX:150 MDT:110', 8], ['Biotechnology', 'ABBV:380 AMGN:160 GILD:140 VRTX:110', 6], ['Life Sciences Tools & Services', 'TMO:180 DHR:140', 6], ['Health Care Distributors', 'MCK:90 COR:50', 2]],
+      'Industrials': [['Aerospace & Defense', 'GE:300 RTX:210 BA:160 LMT:110 GD:85', 7], ['Rail Transportation', 'UNP:140 CSX:65', 1], ['Industrial Machinery & Supplies & Components', 'ETN:140 PH:85 ITW:75', 8], ['Construction Machinery & Heavy Transportation Equipment', 'CAT:200 DE:130 PCAR:55', 3], ['Electrical Components & Equipment', 'GEV:160 EMR:75', 4], ['Air Freight & Logistics', 'UPS:80 FDX:60', 2], ['Building Products', 'TT:90 JCI:75', 5], ['Human Resource & Employment Services', 'ADP:120 PAYX:50', 3], ['Passenger Airlines', 'DAL:40 UAL:30', 2]],
+      'Consumer Staples': [['Consumer Staples Merchandise Retail', 'WMT:800 COST:420 TGT:45', 1], ['Household Products', 'PG:370 CL:70 KMB:45', 2], ['Soft Drinks & Non-alcoholic Beverages', 'KO:300 PEP:200 MNST:55', 2], ['Tobacco', 'PM:270 MO:100', 0], ['Packaged Foods & Meats', 'MDLZ:85 GIS:30 HSY:35', 8], ['Distillers & Vintners', 'BF-B:15 STZ:30', 0]],
+      'Energy': [['Integrated Oil & Gas', 'XOM:480 CVX:270', 1], ['Oil & Gas Exploration & Production', 'COP:120 EOG:65', 6], ['Oil & Gas Storage & Transportation', 'WMB:70 KMI:60 OKE:55', 2], ['Oil & Gas Refining & Marketing', 'MPC:50 PSX:50', 1], ['Oil & Gas Equipment & Services', 'SLB:50 BKR:40', 1]],
+      'Utilities': [['Electric Utilities', 'NEE:150 SO:100 DUK:90 CEG:100', 12], ['Multi-Utilities', 'SRE:55 D:50', 8], ['Independent Power Producers & Energy Traders', 'VST:60', 1]],
+      'Real Estate': [['Telecom Tower REITs', 'AMT:95 CCI:45', 0], ['Industrial REITs', 'PLD:105', 0], ['Data Center REITs', 'EQIX:80 DLR:55', 0], ['Retail REITs', 'SPG:60 O:50', 3], ['Health Care REITs', 'WELL:100 VTR:30', 1], ['Multi-Family Residential REITs', 'AVB:30', 4], ['Self-Storage REITs', 'PSA:50', 1]],
+      'Materials': [['Specialty Chemicals', 'LIN:220 SHW:90 ECL:75', 5], ['Copper', 'FCX:60', 0], ['Construction Materials', 'VMC:35 MLM:35', 0], ['Commodity Chemicals', 'DOW:20', 2], ['Fertilizers & Agricultural Chemicals', 'CTVA:45', 2], ['Steel', 'NUE:35', 1], ['Paper & Plastic Packaging Products & Materials', 'IP:25', 5], ['Gold', 'NEM:70', 0]]
+    };
+    const sectorBias = { 'Information Technology': 1.1, 'Energy': -1.2, 'Utilities': -0.4, 'Health Care': 0.3, 'Financials': 0.5, 'Communication Services': 0.8, 'Real Estate': -0.6, 'Consumer Staples': -0.2, 'Industrials': 0.2, 'Materials': -0.8, 'Consumer Discretionary': 0.4 };
+    const used = new Set(), items = [];
+    const L = 'ABCDEFGHIJKLMNOPRSTUVWXYZ';
+    const fake = () => { let s; do { s = ''; const n = 2 + Math.floor(r() * 3); for (let i = 0; i < n; i++) s += L[Math.floor(r() * L.length)]; } while (used.has(s)); return s; };
+    const norm = () => (r() + r() + r() - 1.5) * 1.6;
+    for (const [sec, inds] of Object.entries(SEC)) for (const [ind, named, extra] of inds) {
+      const ib = norm() * 0.5;
+      const list = named.split(' ').map(x => x.split(':')).map(([s, c]) => [s, Number(c) * 1e9]);
+      for (let k = 0; k < extra + 1; k++) list.push([fake(), (8 + Math.pow(r(), 2.2) * 90) * 1e9]);
+      for (const [s, cap] of list) {
+        used.add(s);
+        const chg = sectorBias[sec] + ib + norm() * 1.1;
+        items.push({ s: s.replace('-', '.'), y: s, n: s.length <= 4 && named.includes(s + ':') ? ({ NVDA: 'NVIDIA Corporation', MSFT: 'Microsoft Corporation', AAPL: 'Apple Inc.', TSLA: 'Tesla, Inc.', AMZN: 'Amazon.com, Inc.', GOOGL: 'Alphabet Inc. (Class A)', META: 'Meta Platforms, Inc.', JPM: 'JPMorgan Chase & Co.' }[s] || s + ' Corp.') : s + ' Holdings Inc.',
+          sec, ind, cap, chg: Math.round(chg * 100) / 100, px: Math.round((20 + r() * 480) * 100) / 100, cur: 'USD', tk: ['NVDA', 'MSFT', 'AAPL', 'TSLA'].includes(s) ? s + '_US_EQ' : null });
+      }
+    }
+    return items;
+  })();
+  if (cfg.sp500 === 'few') SP.splice(20);
   const LIB = {
+    sp500: () => cfg.sp500 === 'error' ? { items: [], at: null, listAt: null, problem: { message: 'Could not load the S&P 500 list: getaddrinfo ENOTFOUND en.wikipedia.org' } }
+      : { items: SP, at: now - 70e3, listAt: now - 5 * 3600e3, problem: cfg.sp500 === 'stale' ? { message: 'Yahoo Finance HTTP 429' } : null, refreshing: false, marketState: cfg.sp500 === 'closed' ? 'CLOSED' : 'REGULAR' },
+    sp500Refresh: () => LIB.sp500(),
     status: () => lstat,
     series: a => ({ range: a.range, series: data.series, period: data.period }),
     stats, recent: a => [...orders.slice(0, 4).map(x => ({ ...x, kind: 'orders' })), ...dividends.slice(0, 2).map(x => ({ ...x, kind: 'dividends' })), ...txs.slice(0, 2).map(x => ({ ...x, kind: 'transactions' }))].sort((a, b) => b.time - a.time).slice(0, a.limit || 8),
