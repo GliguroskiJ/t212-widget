@@ -4,6 +4,16 @@ Each version: `## X.Y.Z`, then `### cs` and `### en` with one `- ` line per chan
 The release workflow publishes the section of the tagged version as the GitHub release notes,
 and the update window in the app shows these lines (in the app's language).
 
+## 1.11.0
+### cs
+- Heatmapy: kromě S&P 500 i Nasdaq-100, Dow Jones, DAX 40, EURO STOXX 50, FTSE 100 a heatmapa vlastního portfolia
+- Cenové alerty umí víc pravidel: denní pohyb, cena nad / pod úrovní a růst nebo pokles o X % od průměrné nákupní ceny
+- Alerty u akcií mimo portfolio a watchlist se kontrolují i bez otevřených pozic
+### en
+- Heatmaps: besides the S&P 500 also Nasdaq-100, Dow Jones, DAX 40, EURO STOXX 50, FTSE 100 and a heatmap of your own portfolio
+- Price alerts support several rules: daily move, price above / below a level and up or down X % from your average buy price
+- Alerts on instruments outside the portfolio and watchlist are checked even without open positions
+
 ## 1.10.2
 ### cs
 - Grafy mají i období 6M a YTD (portfolio v aplikaci i ve widgetu, grafy instrumentů)

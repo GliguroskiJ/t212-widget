@@ -7,7 +7,7 @@ const { Poller } = require('./t212');
 const { Library } = require('./library');
 const { Notifier } = require('./notify');
 const { News } = require('./news');
-const { SP500, t212Map } = require('./sp500');
+const { IndexMap, PortfolioMap, HEATMAPS, t212Map } = require('./indices');
 const { Updater, installWindows, installMac, macBundle, macCanReplace } = require('./updater');
 const autostart = require('./autostart');
 
@@ -245,6 +245,7 @@ function applySettings(patch) {
   for (const k of ['navOrder', 'navHidden']) {
     if (k in patch) patch[k] = Array.isArray(patch[k]) ? patch[k].filter(x => typeof x === 'string').map(x => x.slice(0, 32)).slice(0, 40) : [];
   }
+  if ('heatmapIndex' in patch && !HEATMAPS.includes(patch.heatmapIndex)) delete patch.heatmapIndex;
   if ('newsSubs' in patch) {
     const out = {};
     const src = patch.newsSubs && typeof patch.newsSubs === 'object' ? patch.newsSubs : {};
@@ -308,6 +309,10 @@ const TRAY_CS = {
   'Price alert': 'Cenový alert', 'News': 'Zpráva', 'Event': 'Událost',
   '{s} is up {p} % today': '{s} dnes roste o {p} %', '{s} is down {p} % today': '{s} dnes klesá o {p} %',
   'your alert ±{a} %': 'tvůj alert ±{a} %',
+  '{s} crossed above {v}': '{s} stoupla nad {v}', '{s} fell below {v}': '{s} klesla pod {v}',
+  '{s} is {p} % above your average price ({a})': '{s} je {p} % nad tvou průměrnou cenou ({a})',
+  '{s} is {p} % below your average price ({a})': '{s} je {p} % pod tvou průměrnou cenou ({a})',
+  'your alert {a} % from average': 'tvůj alert {a} % od průměru', 'price {p}': 'cena {p}',
   'results': 'výsledky', 'ex-dividend day': 'ex-dividendový den', 'dividend payout': 'výplata dividendy',
   '{s}: {e} today': '{s}: dnes {e}', '{s}: {e} tomorrow': '{s}: zítra {e}', 'estimate': 'odhad',
   '{n} new news stories': '{n} nových zpráv', '{n} price alerts': '{n} cenových alertů', '{n} calendar events': '{n} událostí v kalendáři',
@@ -599,14 +604,31 @@ function registerIpc() {
 const RANGES = ['1D', '1W', '1M', '6M', 'YTD', '1Y', 'ALL'];
 const str = (v, n = 64) => String(v == null ? '' : v).slice(0, n);
 const HIST = ['orders', 'dividends', 'transactions'];
-// S&P 500 heatmap (Wikipedia constituents + Yahoo quotes, cached in userData/sp500.json)
-let sp500 = null;
-function sp500Svc() {
-  if (!sp500) sp500 = new SP500({ fetchImpl: (u, o) => net.fetch(u, o), dir: app.getPath('userData'), crumb: f => lib.yahooCrumb(f), onChange: () => lib.emitChange('sp500') });
-  return sp500;
+// index heatmaps (Wikipedia constituents + Yahoo quotes, one cache file per index in userData) and
+// "My portfolio" (own positions grouped by Yahoo sector / fund category). Services start on first use and
+// only refresh while their map is shown (the page asks every minute).
+const heatSvcs = {};
+function heatSvc(id) {
+  if (heatSvcs[id]) return heatSvcs[id];
+  const common = { fetchImpl: (u, o) => net.fetch(u, o), dir: app.getPath('userData'), crumb: f => lib.yahooCrumb(f), onChange: () => lib.emitChange('heatmap') };
+  heatSvcs[id] = id === 'portfolio'
+    ? new PortfolioMap({ ...common, resolve: (tk, isin, px) => lib.resolveSymbol(tk, isin, px), summary: (sym, mods) => lib.quoteSummary(sym, mods) })
+    : new IndexMap({ ...common, index: id });
+  return heatSvcs[id];
+}
+// held positions with their value in the account currency (+ the instrument type: ETFs group without Yahoo)
+function heatPositions() {
+  const { shortTicker } = require('./t212');
+  const idx = lib.instrumentIndex() || {};
+  return ((poller && poller.raw && poller.raw.positions) || []).map(p => {
+    const ins = p.instrument || {}, tk = ins.ticker;
+    return { ticker: tk, isin: ins.isin || null, price: p.currentPrice, sym: shortTicker(tk), name: ins.name || '', value: (p.walletImpact && p.walletImpact.currentValue) || 0,
+      type: (idx[tk] && idx[tk].type) || null, cur: ins.currency || null };
+  }).filter(p => p.ticker);
 }
 // each stock gets its Trading 212 ticker when there is one (click → that instrument page, else yf:SYMBOL)
-function sp500Out(p) {
+function heatOut(p) {
+  if (p.kind === 'portfolio') return p;
   lib.loadMetadata().catch(() => {});
   const map = t212Map(lib.instrumentIndex(), store.history && store.history.symbols);
   lib.extNames = lib.extNames || {};
@@ -616,6 +638,15 @@ function sp500Out(p) {
   }
   return p;
 }
+async function heatmap(a, force) {
+  const id = HEATMAPS.includes(a && a.index) ? a.index : 'sp500';
+  if (id === 'portfolio') {
+    lib.loadMetadata().catch(() => {});
+    const cur = poller && poller.raw && poller.raw.summary && poller.raw.summary.currency;
+    return heatSvc(id).get(heatPositions(), { force, currency: cur || null });
+  }
+  return heatOut(await heatSvc(id).get({ force }));
+}
 const LIB = {
   status: () => lib.statusPayload(),
   series: a => poller.seriesFor(RANGES.includes(a.range) ? a.range : '1M'),
@@ -623,7 +654,7 @@ const LIB = {
   netDeposits: () => lib.netDeposits(),
   calendar: a => {
     const pos = watchedPositions();
-    if (a.refresh || !lib.calData().at || Date.now() - lib.calData().at > 12 * 3600e3) lib.refreshCalendar(pos, !!a.refresh);
+    if (a.refresh || !lib.calData().at || Date.now() - lib.calData().at > 12 * 3600e3) lib.refreshCalendar(pos, !!a.refresh).catch(() => {});
     return lib.calendar(pos);
   },
   keyStats: a => lib.stats4(str(a.ticker)),
@@ -637,7 +668,11 @@ const LIB = {
   notifRead: a => notifier.markRead(a.ids === 'all' ? 'all' : (Array.isArray(a.ids) ? a.ids.slice(0, 500).map(x => str(x, 200)) : [])),
   notifRemove: a => notifier.remove(str(a.id, 200)),
   notifClear: () => notifier.clear(),
-  setAlert: a => notifier.setAlert(str(a.ticker), Number(a.pct), { sym: str(a.sym, 20), name: str(a.name, 120), isin: a.isin ? str(a.isin, 20) : null }),
+  // { clear: true } removes every rule; { rules: {day, above, below, gainPct, lossPct} } replaces them (validated in notify.js);
+  // { pct } (legacy) sets just the daily-move rule
+  setAlert: a => notifier.setAlert(str(a.ticker), a.clear ? null : a.rules && typeof a.rules === 'object'
+    ? Object.fromEntries(['day', 'above', 'below', 'gainPct', 'lossPct'].map(k => [k, a.rules[k] == null ? null : Number(a.rules[k])]))
+    : Number(a.pct) || 0, { sym: str(a.sym, 20), name: str(a.name, 120), isin: a.isin ? str(a.isin, 20) : null, cur: a.cur ? str(a.cur, 8) : null }),
   testNote: () => showNote(tr('T212 Widget is working'), tr('This is how alerts, news and events will look.'), 'notifications'),
   checkNow: async () => { const pos = watchedPositions(); await newsTick(true); await notifier.checkAlerts(pos); return notifier.list({}); },
   openNews: a => { const u = news.link(str(a.id, 60)); if (u) shell.openExternal(u); return !!u; },
@@ -645,8 +680,10 @@ const LIB = {
   newsSources: () => news.sources(),
   newsMeta: a => news.meta(str(a.id, 60)),
   newsRefresh: async () => { await newsTick(true); return news.list({}); },
-  sp500: async () => sp500Out(await sp500Svc().get({})),
-  sp500Refresh: async () => sp500Out(await sp500Svc().get({ force: true })),
+  heatmap: a => heatmap(a, false),
+  heatmapRefresh: a => heatmap(a, true),
+  sp500: () => heatmap({ index: 'sp500' }, false),
+  sp500Refresh: () => heatmap({ index: 'sp500' }, true),
   recent: a => lib.recent(a.limit),
   activity: a => lib.activity({ kind: str(a.kind, 20), ticker: a.ticker ? str(a.ticker) : null, q: a.q ? str(a.q) : '', type: a.type ? str(a.type, 40) : '',
     from: Number(a.from) || null, to: Number(a.to) || null, offset: Math.max(0, Number(a.offset) || 0), limit: Math.max(1, Number(a.limit) || 100) }),
@@ -684,6 +721,16 @@ function numFmt(v, d) {
 }
 function noteText(x) {
   if (x.type === 'news') return { title: (x.sym ? x.sym + ' · ' : '') + tr('News'), body: x.title + (x.publisher ? '\n' + x.publisher : '') };
+  if (x.type === 'alert' && x.rule && x.rule !== 'day') {
+    const cur = x.currency ? ' ' + x.currency : '';
+    const px = v => numFmt(v, v < 1 ? 4 : 2) + cur;
+    const head = x.name ? x.name + ' · ' : '';
+    if (x.rule === 'above' || x.rule === 'below')
+      return { title: trv(x.rule === 'above' ? '{s} crossed above {v}' : '{s} fell below {v}', { s: x.sym, v: px(x.level) }), body: head + trv('price {p}', { p: px(x.price) }) };
+    const gain = x.rule === 'gain';
+    return { title: trv(gain ? '{s} is {p} % above your average price ({a})' : '{s} is {p} % below your average price ({a})', { s: x.sym, p: numFmt(Math.abs(x.pct), 1), a: px(x.avg) }),
+      body: head + trv('your alert {a} % from average', { a: (gain ? '+' : '−') + numFmt(x.threshold, 1) }) + ' · ' + trv('price {p}', { p: px(x.price) }) };
+  }
   if (x.type === 'alert') {
     const up = x.pct >= 0;
     return { title: trv(up ? '{s} is up {p} % today' : '{s} is down {p} % today', { s: x.sym, p: numFmt(Math.abs(x.pct), 2) }),
@@ -759,7 +806,8 @@ function watchedPositions() {
 function heldPositions() {
   const { shortTicker } = require('./t212');
   return ((poller && poller.raw && poller.raw.positions) || []).map(p => ({ ticker: p.instrument && p.instrument.ticker, isin: p.instrument && p.instrument.isin,
-    price: p.currentPrice, sym: shortTicker(p.instrument && p.instrument.ticker), name: (p.instrument && p.instrument.name) || '', held: true })).filter(p => p.ticker);
+    price: p.currentPrice, avg: p.averagePricePaid, avgCur: (p.instrument && p.instrument.currency) || '',   // avg in instrument currency (alerts vs. purchase price)
+    sym: shortTicker(p.instrument && p.instrument.ticker), name: (p.instrument && p.instrument.name) || '', held: true })).filter(p => p.ticker);
 }
 
 const isoDay = ts => new Date(ts).toISOString().slice(0, 10);
@@ -816,12 +864,13 @@ app.whenReady().then(() => {
   poller.calendarPositions = () => watchedPositions();
   const notifTick = () => {
     const pos = watchedPositions();
+    // alerts can exist for instruments that are neither held nor watched (set on a yf: page) → always checked
+    notifier.checkAlerts(pos).catch(() => {});
+    newsTick().catch(() => {});
     if (!pos.length) return;
     // instruments added to the watchlist get their calendar right away (not only on the 12 h refresh)
     const cal = lib.calData();
     if (pos.some(p => !cal.by[p.ticker])) lib.refreshCalendar(pos).catch(() => {});
-    notifier.checkAlerts(pos).catch(() => {});
-    newsTick().catch(() => {});
     notifier.checkEvents(lib.calendar(eventPositions()).events);
   };
   setTimeout(notifTick, 20e3);

@@ -1,12 +1,12 @@
 {
   "name": "t212-widget",
-  "version": "1.10.2",
+  "version": "1.11.0",
   "description": "Trading 212 desktop widget and read-only portfolio app",
   "main": "main/main.js",
   "scripts": {
     "build:ui": "node scripts/build-renderer.mjs",
     "start": "npm run build:ui && electron .",
-    "test": "node scripts/test-poller.js && node scripts/test-backfill.js && node scripts/test-period.js && node scripts/test-updater.js && node scripts/test-autostart.js && node scripts/test-library.js && node scripts/test-fullhistory.js && node scripts/test-notify.js && node scripts/test-tax.js && node scripts/test-navorder.js && node scripts/test-sp500.js && node scripts/test-treemap.js",
+    "test": "node scripts/test-poller.js && node scripts/test-backfill.js && node scripts/test-period.js && node scripts/test-updater.js && node scripts/test-autostart.js && node scripts/test-library.js && node scripts/test-fullhistory.js && node scripts/test-notify.js && node scripts/test-tax.js && node scripts/test-navorder.js && node scripts/test-sp500.js && node scripts/test-indices.js && node scripts/test-treemap.js",
     "dist": "node scripts/patch-builder.js && npm run build:ui && electron-builder --win nsis --x64 --publish never",
     "dist:win": "node scripts/patch-builder.js && npm run build:ui && electron-builder --win nsis --x64 --publish never",
     "dist:mac": "node scripts/patch-builder.js && npm run build:ui && electron-builder --mac --publish never"

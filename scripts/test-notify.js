@@ -1,6 +1,6 @@
 // News (feeds, sources, dedupe, teaser + picture), notifications (news, price-move alerts, calendar events).
 const assert = require('assert'); const os = require('os'); const fs = require('fs'); const path = require('path');
-const { Notifier } = require('../main/notify');
+const { Notifier, cleanRules, avgInQuote } = require('../main/notify');
 const { News, pubKey, parseRss, cleanName, tagged, matcher, headlineMatches, googleQuery } = require('../main/news');
 const now = Date.UTC(2026, 9, 21, 12);
 let pct = 1.5;
@@ -182,5 +182,90 @@ const lib = {
   n.save();
   const n2 = new Notifier({ lib, dir, now: () => now });
   assert.equal(n2.list().items.length, 4);
+
+  // ── alert rules: price levels, % from the average buy price, migration, GBX ──
+  assert.deepStrictEqual(cleanRules({ day: '3', above: 150, below: -1, gainPct: 'x', lossPct: 120 }), { day: 3, above: 150, below: null, gainPct: null, lossPct: 99 });
+  assert.equal(cleanRules({ day: 0, above: null, below: Infinity }), null, 'nothing valid → no alert');
+  assert.equal(cleanRules({ day: 80 }).day, 50, 'clamped');
+  // GBX (Trading 212) vs GBp / GBP (Yahoo)
+  assert.equal(avgInQuote(1250, 'GBX', 'GBp'), 1250);
+  assert.equal(avgInQuote(1250, 'GBX', 'GBP'), 12.5);
+  assert.equal(avgInQuote(12.5, 'GBP', 'GBp'), 1250);
+  assert.equal(avgInQuote(84.2, 'USD', 'USD'), 84.2);
+  assert.equal(avgInQuote(1250, '', 'GBP', 1300, 13.1), 12.5, 'unknown unit: pence/pound ratio snaps to ×0.01');
+  assert.ok(Math.abs(avgInQuote(100, 'USD', 'EUR', 110, 99) - 90) < 1e-9, 'other currency: today’s ratio');
+  assert.equal(avgInQuote(100, 'USD', 'EUR'), null, 'different currencies without a reference price');
+
+  const q = { last: 140, prevClose: 139, currency: 'USD' };
+  const rlib = { resolveSymbol: async () => 'NVDA', dayQuote: async s => ({ ...q, currency: s === 'BARC.L' ? 'GBp' : q.currency }) };
+  const dir4 = fs.mkdtempSync(path.join(os.tmpdir(), 't212n-'));
+  // an old-format alert on disk is read as a day rule
+  fs.writeFileSync(path.join(dir4, 'notifications.json'), JSON.stringify({ items: [], alerts: { NVDA_US_EQ: { pct: 3, sym: 'NVDA', name: 'NVIDIA', isin: 'US67066G1040', since: now - 1 } } }));
+  let t = now;
+  const nr = new Notifier({ lib: rlib, dir: dir4, now: () => t });
+  const fired = [];
+  nr.on('fresh', items => fired.push(...items));
+  assert.deepStrictEqual(nr.list().alerts.NVDA_US_EQ.rules, { day: 3, above: null, below: null, gainPct: null, lossPct: null }, 'old format migrated');
+  assert.equal(nr.list().alerts.NVDA_US_EQ.isin, 'US67066G1040');
+  // legacy setAlert(ticker, pct) changes only the day rule and keeps the others
+  nr.setAlert('NVDA_US_EQ', { day: 3, above: 150, below: 120 });
+  nr.setAlert('NVDA_US_EQ', 5);
+  assert.deepStrictEqual(nr.list().alerts.NVDA_US_EQ.rules, { day: 5, above: 150, below: 120, gainPct: null, lossPct: null });
+  assert.equal(nr.list().alerts.NVDA_US_EQ.sym, 'NVDA', 'meta kept');
+  nr.setAlert('NVDA_US_EQ', { above: 150, below: 120 });
+  const npos = [{ ticker: 'NVDA_US_EQ', price: 140, avg: 100, avgCur: 'USD' }];
+  assert.equal(await nr.checkAlerts(npos), 0, 'between the levels: nothing');
+  q.last = 150.5; assert.equal(await nr.checkAlerts(npos), 1, 'crossed above');
+  let x = fired[fired.length - 1];
+  assert.equal(x.rule, 'above'); assert.equal(x.level, 150); assert.equal(x.price, 150.5); assert.equal(x.currency, 'USD');
+  t += 300e3; assert.equal(await nr.checkAlerts(npos), 0, 'fires once');
+  q.last = 149.8; t += 300e3; assert.equal(await nr.checkAlerts(npos), 0, 'dip inside the hysteresis band');
+  q.last = 150.2; t += 300e3; assert.equal(await nr.checkAlerts(npos), 0, '… does not re-arm');
+  assert.equal(nr.list().alerts.NVDA_US_EQ.state.above.armed, false);
+  q.last = 149; t += 300e3; assert.equal(await nr.checkAlerts(npos), 0, 'back below level − 0.5 % → re-armed');
+  assert.equal(nr.list().alerts.NVDA_US_EQ.state.above.armed, true);
+  q.last = 151; t += 300e3; assert.equal(await nr.checkAlerts(npos), 1, 'fires again after re-arming');
+  q.last = 119; t += 300e3; assert.equal(await nr.checkAlerts(npos), 1, 'fell below');
+  x = fired[fired.length - 1]; assert.equal(x.rule, 'below'); assert.equal(x.level, 120);
+  // saving the same level keeps its state, a new level re-arms
+  nr.setAlert('NVDA_US_EQ', { above: 150, below: 120 });
+  t += 300e3; assert.equal(await nr.checkAlerts(npos), 0, 'unchanged rule stays disarmed');
+  nr.setAlert('NVDA_US_EQ', { above: 150, below: 125 });
+  t += 300e3; assert.equal(await nr.checkAlerts(npos), 1, 'changed level → armed, already met → fires');
+  // day rule (q.prevClose 139 → 119 is −14 %) fires once a day
+  nr.setAlert('NVDA_US_EQ', { day: 10 });
+  t += 300e3; assert.equal(await nr.checkAlerts(npos), 1); x = fired[fired.length - 1];
+  assert.equal(x.rule, 'day'); assert.equal(x.threshold, 10); assert.ok(x.pct < -14);
+  t += 300e3; assert.equal(await nr.checkAlerts(npos), 0, 'day move: once a day per direction');
+  // % from the average buy price (holdings only)
+  q.prevClose = 0; q.last = 118;
+  nr.setAlert('NVDA_US_EQ', { gainPct: 20, lossPct: 15 });
+  assert.equal(await nr.checkAlerts([{ ticker: 'NVDA_US_EQ', price: 118 }]), 0, 'not held (no avg) → nothing');
+  t += 300e3; assert.equal(await nr.checkAlerts(npos), 0, '+18 %: not yet');
+  q.last = 120.5; t += 300e3; assert.equal(await nr.checkAlerts(npos), 1, '+20.5 % from avg');
+  x = fired[fired.length - 1]; assert.equal(x.rule, 'gain'); assert.equal(x.avg, 100); assert.equal(x.threshold, 20); assert.ok(Math.abs(x.pct - 20.5) < 1e-9);
+  q.last = 119.8; t += 300e3; assert.equal(await nr.checkAlerts(npos), 0, 'hysteresis');
+  q.last = 84; t += 300e3; assert.equal(await nr.checkAlerts(npos), 1, '−16 % from avg');
+  x = fired[fired.length - 1]; assert.equal(x.rule, 'loss'); assert.ok(x.pct < -15);
+  t += 300e3; assert.equal(await nr.checkAlerts(npos), 0, 'once');
+  // London listing: avg in GBX (Trading 212), Yahoo quote in GBp; and in GBP
+  nr.setAlert('BARCl_EQ', { lossPct: 10, above: 300 }, { sym: 'BARC', name: 'Barclays' });
+  const bl = { resolveSymbol: async () => 'BARC.L', dayQuote: async () => ({ last: 265, prevClose: 270, currency: 'GBp' }) };
+  nr.lib = bl;
+  const bpos = [{ ticker: 'BARCl_EQ', price: 265, avg: 300, avgCur: 'GBX' }];
+  nr.d.alerts = { BARCl_EQ: nr.d.alerts.BARCl_EQ };
+  t += 300e3; assert.equal(await nr.checkAlerts(bpos), 1, 'GBX avg 300 vs 265 GBp = −11.7 %');
+  x = fired[fired.length - 1]; assert.equal(x.rule, 'loss'); assert.equal(x.avg, 300); assert.equal(x.currency, 'GBp');
+  nr.setAlert('BARCl_EQ', { lossPct: 12 });
+  nr.lib = { resolveSymbol: async () => 'BARC.L', dayQuote: async () => ({ last: 2.6, prevClose: 2.7, currency: 'GBP' }) };
+  t += 300e3; assert.equal(await nr.checkAlerts(bpos), 1, 'GBX avg 300 → 3.00 GBP; 2.60 is −13.3 %');
+  x = fired[fired.length - 1]; assert.ok(Math.abs(x.avg - 3) < 1e-9); assert.ok(Math.abs(x.pct + 13.333) < 0.01);
+  // remove all
+  nr.setAlert('BARCl_EQ', null); assert.deepStrictEqual(nr.list().alerts, {});
+  // persisted in the new format
+  nr.setAlert('NVDA_US_EQ', { above: 150 }, { sym: 'NVDA' }); nr.save();
+  const saved = JSON.parse(fs.readFileSync(path.join(dir4, 'notifications.json'), 'utf8')).alerts.NVDA_US_EQ;
+  assert.equal(saved.rules.above, 150); assert.ok(!('pct' in saved));
+  assert.equal(new Notifier({ lib: rlib, dir: dir4, now: () => t }).list().alerts.NVDA_US_EQ.rules.above, 150);
   console.log('NOTIFY + NEWS TESTS PASSED');
 })().catch(e => { console.error(e); process.exit(1); });

@@ -761,12 +761,13 @@ class Library extends EventEmitter {
     return this.crumb;
   }
 
-  async quoteSummary(sym) {
+  async quoteSummary(sym, modules) {
+    const mods = /^[a-zA-Z,]{1,200}$/.test(modules || '') ? modules : 'calendarEvents,summaryDetail,defaultKeyStatistics';
     const go = async force => {
       const c = await this.yahooCrumb(force);
       const headers = { Accept: 'application/json' };
       if (c.cookie) headers.Cookie = c.cookie;
-      return this.fetch(`https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=calendarEvents,summaryDetail,defaultKeyStatistics&crumb=${encodeURIComponent(c.crumb)}`, { credentials: 'include', headers });
+      return this.fetch(`https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(sym)}?modules=${mods}&crumb=${encodeURIComponent(c.crumb)}`, { credentials: 'include', headers });
     };
     let r = await go(false);
     if (r.status === 401 || r.status === 403) r = await go(true);

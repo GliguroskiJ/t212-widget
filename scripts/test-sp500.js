@@ -79,7 +79,8 @@ assert.deepStrictEqual(parseQuotes(null), {});
 // ── T212 ticker map ──
 const tm = t212Map({ AAPL_US_EQ: { type: 'STOCK' }, BRK_B_US_EQ: { type: 'STOCK', shortName: 'BRK.B' }, SPY_US_EQ: { type: 'ETF' }, VWCEd_EQ: { type: 'ETF' } }, { GOOGL_US_EQ: 'GOOGL', CEZ_CZ_EQ: 'CEZ.PR' });
 assert.strictEqual(tm.AAPL, 'AAPL_US_EQ'); assert.strictEqual(tm['BRK-B'], 'BRK_B_US_EQ'); assert.strictEqual(tm.GOOGL, 'GOOGL_US_EQ');
-assert.ok(!tm.SPY && !tm['CEZ.PR']);
+assert.ok(!tm.SPY, 'ETFs are left out');
+assert.strictEqual(tm['CEZ.PR'], 'CEZ_CZ_EQ', 'non-US holdings map too (index heatmaps outside the US)');
 
 // ── service: batching, crumb retry, cache, failure keeps last data ──
 (async () => {

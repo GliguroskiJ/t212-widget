@@ -269,7 +269,25 @@ input[type=date].input{color-scheme:dark;font-size:12.5px;min-height:34px}
 .pctin span{position:absolute;right:9px;font:400 12px/1 "Inter",sans-serif;color:var(--color-neutral-500)}
 .bellw{position:relative}
 .tb.bell.on{color:var(--color-accent-300);background:rgba(var(--acc-rgb),.12)}
-.bellpop{width:290px;display:flex;flex-direction:column}
+.bellpop{width:322px;display:flex;flex-direction:column;padding:12px}
+.ahead{display:flex;gap:12px;flex-wrap:wrap;margin:5px 0 10px}
+.ahead b{font-weight:500;color:var(--color-neutral-200);font-variant-numeric:tabular-nums}
+.arow{display:flex;align-items:center;gap:8px;padding:5px 6px 5px 8px;margin:0 -6px 0 -8px;border-radius:7px;transition:background .15s ease}
+.arow + .arow{margin-top:2px}
+.arow.on{background:rgba(var(--acc-rgb),.07)}
+.arow .numin{width:104px}
+.arow:not(.on) .numin input{color:var(--color-neutral-500)}
+.acheck{flex:1;min-width:0;display:flex;align-items:center;gap:9px;font:400 12px/1.2 "Inter",sans-serif;color:var(--color-neutral-300);cursor:pointer}
+.arow.on .acheck{color:var(--color-neutral-100)}
+.acheck input{accent-color:var(--color-accent-500);width:14px;height:14px;margin:0;flex:none}
+.ahint{font:400 10.5px/1.2 "Inter",sans-serif;color:var(--color-neutral-500);font-variant-numeric:tabular-nums}
+.ahint.warn{color:#d9a54a}
+.arule{padding:4px 0 10px;border-bottom:1px solid rgba(var(--ink-rgb),.05)}
+.arule:last-of-type{border-bottom:0}
+.achips{display:flex;flex-wrap:wrap;gap:5px;padding-left:42px}
+.achip{--c:var(--color-accent-300);display:inline-flex;align-items:center;gap:4px;padding:4px 7px;border-radius:5px;font:500 10.5px/1 "Inter",sans-serif;white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--c);background:color-mix(in srgb,var(--c) 13%,transparent)}
+.achip i{font-size:11px}
+.achip.off{opacity:.55}
 .banners{position:fixed;top:72px;right:20px;z-index:60;pointer-events:none;display:flex;flex-direction:column;gap:8px;width:360px;align-items:stretch}
 .banner{display:flex;align-items:flex-start;gap:11px;padding:12px 12px 12px 14px;border-radius:12px;cursor:pointer;background:var(--menu-bg,#232532);box-shadow:0 14px 34px rgba(0,0,0,.5),inset 0 0 0 1px rgba(var(--acc-rgb),.25);animation:nbanner .5s cubic-bezier(.2,.8,.2,1) both;transition:opacity .4s ease,transform .4s ease}
 .banner:hover{box-shadow:0 14px 34px rgba(0,0,0,.5),inset 0 0 0 1px rgba(var(--acc-rgb),.5)}
@@ -427,3 +445,16 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .hm-foot{display:flex;align-items:center;gap:14px;flex-wrap:wrap;row-gap:6px}
 .hm-legend{display:inline-flex;gap:1px;border-radius:5px;overflow:hidden}
 .hm-legend span{min-width:42px;padding:4px 0;text-align:center;font:500 10px/1 "Inter",sans-serif;color:#fff;font-variant-numeric:tabular-nums}
+/* index picker: one segmented strip, "My portfolio" set apart at the end */
+.hm-tabs{display:flex;align-items:center;gap:2px;padding:3px;border-radius:9px;background:rgba(var(--ink-rgb),.045);box-shadow:inset 0 0 0 1px rgba(var(--ink-rgb),.06);overflow-x:auto;scrollbar-width:none;flex:none}
+.hm-tabs::-webkit-scrollbar{display:none}
+.hm-tab{display:inline-flex;align-items:center;gap:6px;flex:none;border:0;border-radius:6px;padding:7px 12px;background:transparent;cursor:pointer;white-space:nowrap;
+  font:500 12px/1 "Inter",sans-serif;color:var(--color-neutral-400);transition:background .15s ease,color .15s ease}
+.hm-tab:hover{background:rgba(var(--ink-rgb),.06);color:var(--color-neutral-100)}
+.hm-tab.on{background:var(--color-accent-900);color:var(--color-accent-200);box-shadow:inset 0 0 0 1px var(--color-accent-700)}
+.hm-tab.mine{margin-left:auto}
+.hm-tab.mine::before{content:"";width:1px;height:16px;margin:0 8px 0 -6px;background:rgba(var(--ink-rgb),.12)}
+.hm-tab.mine.on::before{display:none}
+.hm-tab i{font-size:12px}
+.hm-tip-y{margin-left:7px;font:500 10.5px/1 "Inter",sans-serif;letter-spacing:0;color:var(--color-neutral-500);vertical-align:middle}
+.hm-empty{flex:1;display:flex;align-items:center;justify-content:center;min-height:300px}

@@ -3,6 +3,12 @@
   const cfg = window.__MOCK || {};
   function series(n, base, vol, seed) { let v = base, s = seed, out = []; for (let i = 0; i < n; i++) { s = (s * 1103515245 + 12345) % 2147483648; v = v * (1 + (s / 2147483648 - 0.48) * vol); out.push(v); } return out; }
   const now = Date.now();
+  // price alerts in the notify.js format (rules + per-rule state of the level rules)
+  const ALERTS = {
+    NVDA_US_EQ: { sym: 'NVDA', name: 'NVIDIA Corp', cur: 'USD', rules: { day: 3, above: 160, below: null, gainPct: null, lossPct: 15 }, state: {} },
+    TSLA_US_EQ: { sym: 'TSLA', name: 'Tesla Inc', cur: 'USD', rules: { day: null, above: null, below: 200, gainPct: null, lossPct: 10 }, state: { loss: { armed: false, at: now - 3 * 3600e3 } } },
+    MSFT_US_EQ: { sym: 'MSFT', name: 'Microsoft Corp', cur: 'USD', rules: { day: 4, above: null, below: null, gainPct: null, lossPct: null }, state: {} }
+  };
   const S = series(48, 1276228.1, 0.0055, 991);
   S[S.length - 1] = 1284640.5;
   const POS = [
@@ -125,10 +131,70 @@
     return items;
   })();
   if (cfg.sp500 === 'few') SP.splice(20);
+  // the other index maps: name:cap(bn, local currency):group lists, changes made up (seeded)
+  const HM = (() => {
+    let sd = 77; const r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const mk = (spec, cur, suf, levels, bias) => {
+      const out = [];
+      for (const [sec, inds] of Object.entries(spec)) for (const [ind, list] of Object.entries(inds)) for (const e of list.split(' ')) {
+        const [s, cap, n] = e.split(':');
+        const base = s.replace(/\.$/, '').replace(/\.[A-Z]{2}$/, '');
+        out.push({ s: base.replace(/_/g, '.'), y: /\.[A-Z]{2}$/.test(s) ? s : base.replace(/_/g, '-') + suf, n: (n || s).replace(/_/g, ' '), sec, ind: levels === 1 ? sec : ind, cap: Number(cap) * 1e9,
+          chg: Math.round(((bias[sec] || 0) + (r() + r() + r() - 1.5) * 2.2) * 100) / 100, px: Math.round((10 + r() * 300) * 100) / 100, cur, tk: null });
+      }
+      return out;
+    };
+    const dax = mk({
+      'Software': { x: 'SAP:290:SAP' }, 'Industrial': { x: 'SIE:150:Siemens ENR:70:Siemens_Energy MTX:15:MTU_Aero_Engines' }, 'Aerospace & Defence': { x: 'AIR.PA:130:Airbus RHM:70:Rheinmetall' },
+      'Financial Services': { x: 'ALV:130:Allianz MUV2:75:Munich_Re DBK:55:Deutsche_Bank CBK:35:Commerzbank DB1:45:Deutsche_Börse HNR1:30:Hannover_Rück' },
+      'Telecommunication': { x: 'DTE:150:Deutsche_Telekom' }, 'Automobile': { x: 'MBG:60:Mercedes-Benz BMW:55:BMW VOW3:50:Volkswagen P911:45:Porsche DTG:30:Daimler_Truck CON:13:Continental PAH3:12:Porsche_SE' },
+      'Chemicals': { x: 'BAS:42:BASF SY1:12:Symrise' }, 'Pharma & Healthcare': { x: 'MRK:60:Merck_KGaA BAYN:28:Bayer SHL:55:Siemens_Healthineers FRE:22:Fresenius QIA:9:Qiagen' },
+      'Technology': { x: 'IFX:48:Infineon' }, 'Transportation & Logistics': { x: 'DHL:48:DHL_Group' }, 'Utilities': { x: 'EOAN:35:E.ON RWE:25:RWE' },
+      'Apparel': { x: 'ADS:38:Adidas' }, 'Retail': { x: 'ZAL:8:Zalando' }, 'Construction': { x: 'HEI:20:Heidelberg_Materials' }, 'Consumer': { x: 'BEI:25:Beiersdorf HEN3:30:Henkel' },
+      'Real Estate': { x: 'VNA:24:Vonovia' }, 'Basic Resources': { x: 'BNR:12:Brenntag' }
+    }, 'EUR', '.DE', 1, { 'Software': -1.4, 'Automobile': 0.9, 'Financial Services': 0.6, 'Aerospace & Defence': 1.6 });
+    const sx5e = mk({
+      'Technology': { x: 'ASML.AS:270:ASML SAP.DE:290:SAP IFX.DE:48:Infineon PRX.AS:80:Prosus' }, 'Consumer Discretionary': { x: 'MC.PA:280:LVMH RMS.PA:240:Hermès ITX.MC:160:Inditex RACE.MI:75:Ferrari OR.PA:200:L’Oréal MBG.DE:60:Mercedes-Benz BMW.DE:55:BMW VOW.DE:50:Volkswagen' },
+      'Financials': { x: 'SAN.MC:130:Banco_Santander BBVA.MC:85:BBVA BNP.PA:80:BNP_Paribas ALV.DE:130:Allianz MUV2.DE:75:Munich_Re UCG.MI:90:UniCredit ISP.MI:85:Intesa_Sanpaolo INGA.AS:65:ING CS.PA:75:AXA DB1.DE:45:Deutsche_Börse NDA-FI.HE:42:Nordea ADYEN.AS:45:Adyen' },
+      'Industrials': { x: 'SIE.DE:150:Siemens AIR.PA:130:Airbus SAF.PA:110:Safran SU.PA:130:Schneider_Electric DG.PA:65:Vinci RHM.DE:70:Rheinmetall' }, 'Health Care': { x: 'SAN.PA:120:Sanofi EL.PA:110:EssilorLuxottica ARGX.AS:40:argenx BAYN.DE:28:Bayer' },
+      'Energy': { x: 'TTE.PA:130:TotalEnergies ENI.MI:45:Eni' }, 'Utilities': { x: 'IBE.MC:100:Iberdrola ENEL.MI:75:Enel ENR.DE:70:Siemens_Energy' }, 'Consumer Staples': { x: 'ABI.BR:110:AB_InBev AD.AS:32:Ahold_Delhaize BN.PA:45:Danone' },
+      'Telecommunications': { x: 'DTE.DE:150:Deutsche_Telekom' }, 'Materials': { x: 'AI.PA:100:Air_Liquide BAS.DE:42:BASF SGO.PA:45:Saint-Gobain' }
+    }, 'EUR', '', 1, { 'Technology': -1.1, 'Financials': 0.7 });
+    const ftse = mk({
+      'Financials': { 'Banks': 'HSBA:170:HSBC BARC:45:Barclays LLOY:45:Lloyds NWG:40:NatWest STAN:30:Standard_Chartered', 'Life Insurance': 'LGEN:14:Legal_&_General AV.:15:Aviva', 'Investment Banking and Brokerage Services': 'LSEG:55:LSEG III:35:3i' },
+      'Health Care': { 'Pharmaceuticals and Biotechnology': 'AZN:180:AstraZeneca GSK:65:GSK HIK:5:Hikma', 'Medical Equipment and Services': 'SN.:11:Smith_&_Nephew' },
+      'Energy': { 'Non-Renewable Energy': 'SHEL:170:Shell BP.:65:BP' }, 'Basic Materials': { 'Industrial Metals and Mining': 'RIO:80:Rio_Tinto GLEN:45:Glencore AAL:30:Anglo_American', 'Precious Metals and Mining': 'FRES:8:Fresnillo' },
+      'Consumer Staples': { 'Personal Care, Drug and Grocery Stores': 'ULVR:120:Unilever TSCO:28:Tesco', 'Beverages': 'DGE:50:Diageo', 'Tobacco': 'BATS:75:British_American_Tobacco IMB:22:Imperial_Brands' },
+      'Industrials': { 'Aerospace and Defense': 'RR.:70:Rolls-Royce BA.:40:BAE_Systems', 'Industrial Support Services': 'EXPN:35:Experian RELX:70:RELX', 'General Industrials': 'SMIN:7:Smiths' },
+      'Consumer Discretionary': { 'Travel and Leisure': 'CPG:35:Compass IHG:15:IHG', 'Retailers': 'NXT:13:Next', 'Media': 'PSON:8:Pearson' },
+      'Utilities': { 'Electricity': 'SSE:20:SSE', 'Gas, Water and Multi-utilities': 'NG.:50:National_Grid SVT:8:Severn_Trent' }, 'Telecommunications': { 'Telecommunications Service Providers': 'VOD:20:Vodafone BT_A:15:BT_Group' }
+    }, 'GBp', '.L', 2, { 'Energy': -1.3, 'Basic Materials': 1.2 });
+    const pick = (secs, n) => SP.filter(x => !secs || secs.includes(x.sec)).slice(0, n);
+    const ndx = pick(['Information Technology', 'Communication Services', 'Consumer Discretionary', 'Health Care', 'Consumer Staples', 'Industrials', 'Utilities'], 101);
+    const DOW = 'AAPL MSFT NVDA AMZN GOOGL JPM V WMT UNH HD PG JNJ KO CVX MRK CSCO IBM MCD DIS AXP GS CAT AMGN HON CRM BA MMM SHW TRV VZ'.split(' ');
+    const dji = SP.filter(x => DOW.includes(x.y)).map(x => ({ ...x, ind: x.sec }));
+    const SEC = { VWCEd_EQ: ['ETFs', 'Global Large-Cap Blend Equity'], NVDA_US_EQ: ['Technology', 'Semiconductors'], MSFT_US_EQ: ['Technology', 'Software - Infrastructure'], AAPL_US_EQ: ['Technology', 'Consumer Electronics'],
+      CEZ_CZ_EQ: ['Utilities', 'Utilities - Diversified'], TSLA_US_EQ: ['Consumer Cyclical', 'Auto Manufacturers'] };
+    const qs = [0.42, 2.81, -0.66, 1.12, -1.4, -3.2];
+    const extra = [['EQQQd_EQ', 'EQQQ', 'Invesco EQQQ Nasdaq-100', 61200, 'ETFs', 'Technology Sector Equity', 1.31, 'EUR'], ['SAPd_EQ', 'SAP', 'SAP SE', 52400, 'Technology', 'Software - Application', -2.1, 'EUR'],
+      ['KOMB_CZ_EQ', 'KOMB', 'Komerční banka', 40900, 'Financial Services', 'Banks - Regional', 0.35, 'CZK'], ['JPM_US_EQ', 'JPM', 'JPMorgan Chase & Co.', 33100, 'Financial Services', 'Banks - Diversified', 0.84, 'USD'],
+      ['O_US_EQ', 'O', 'Realty Income', 18200, 'Real Estate', 'REIT - Retail', -0.55, 'USD'], ['ULVRl_EQ', 'ULVR', 'Unilever', 14100, 'Consumer Defensive', 'Household & Personal Products', 0.12, 'GBX']];
+    const pf = POS.map((p, i) => ({ s: p.sym, y: p.sym, n: p.name, sec: SEC[p.ticker][0], ind: SEC[p.ticker][1], cap: p.value, chg: qs[i], px: p.price, cur: p.avgCur, tk: p.ticker }))
+      .concat(extra.map(e => ({ s: e[1], y: e[1], n: e[2], sec: e[4], ind: e[5], cap: e[3], chg: e[6], px: 100, cur: e[7], tk: e[0] })));
+    return { ndx: [ndx, 2, 'Nasdaq-100'], dji: [dji, 1, 'Dow Jones'], dax: [dax, 1, 'DAX 40'], sx5e: [sx5e, 1, 'EURO STOXX 50'], ftse: [ftse, 2, 'FTSE 100'], portfolio: [pf, 2, 'My portfolio'] };
+  })();
   const LIB = {
     sp500: () => cfg.sp500 === 'error' ? { items: [], at: null, listAt: null, problem: { message: 'Could not load the S&P 500 list: getaddrinfo ENOTFOUND en.wikipedia.org' } }
-      : { items: SP, at: now - 70e3, listAt: now - 5 * 3600e3, problem: cfg.sp500 === 'stale' ? { message: 'Yahoo Finance HTTP 429' } : null, refreshing: false, marketState: cfg.sp500 === 'closed' ? 'CLOSED' : 'REGULAR' },
+      : { index: 'sp500', name: 'S&P 500', levels: 2, items: SP, at: now - 70e3, listAt: now - 5 * 3600e3, problem: cfg.sp500 === 'stale' ? { message: 'Yahoo Finance HTTP 429' } : null, refreshing: false, marketState: cfg.sp500 === 'closed' ? 'CLOSED' : 'REGULAR' },
     sp500Refresh: () => LIB.sp500(),
+    heatmap: a => {
+      const id = a.index || 'sp500';
+      if (id === 'sp500') return { ...LIB.sp500(), index: 'sp500' };
+      const [items, levels, name] = HM[id] || HM.dax;
+      return { index: id, name, levels, items, kind: id === 'portfolio' ? 'portfolio' : undefined, currency: id === 'portfolio' ? 'CZK' : undefined,
+        at: now - 70e3, listAt: id === 'portfolio' ? null : now - 5 * 3600e3, problem: null, refreshing: false, marketState: id === 'portfolio' ? null : 'REGULAR' };
+    },
+    heatmapRefresh: a => LIB.heatmap(a),
     status: () => lstat,
     series: a => ({ range: a.range, series: data.series, period: data.period }),
     stats, recent: a => [...orders.slice(0, 4).map(x => ({ ...x, kind: 'orders' })), ...dividends.slice(0, 2).map(x => ({ ...x, kind: 'dividends' })), ...txs.slice(0, 2).map(x => ({ ...x, kind: 'transactions' }))].sort((a, b) => b.time - a.time).slice(0, a.limit || 8),
@@ -168,12 +234,14 @@
     newsSources: () => ({ feeds: { yahoo: true, google: true, googleCz: true }, sources: [['reuters', 'Reuters', 'news', 12], ['ap', 'Associated Press', 'news', 4], ['bloomberg', 'Bloomberg', 'news', 3], ['cnbc', 'CNBC', 'news', 0], ['ft', 'Financial Times', 'news', 0],
       ['zacks', 'Zacks', 'analysis', 9], ['simplywallst', 'Simply Wall St', 'analysis', 7], ['gurufocus', 'GuruFocus', 'analysis', 5], ['motleyfool', 'The Motley Fool', 'analysis', 2], ['globenewswire', 'GlobeNewswire', 'press', 3], ['businesswire', 'Business Wire', 'press', 1],
       ['patria', 'Patria.cz', 'cz', 2], ['kurzy', 'Kurzy.cz', 'cz', 1], ['insidermonkey', 'Insider Monkey', 'analysis', 0], ['fool-uk', 'Fool UK', 'other', 1]].map(([key, name, group, count]) => ({ key, name, group, count, on: key !== 'insidermonkey' })) }),
-    notifications: () => { const n = Date.now(); return { unread: 3, alerts: { NVDA_US_EQ: { pct: 3, sym: 'NVDA', name: 'NVIDIA Corp' } }, items: [
-      { id: 'n1', type: 'alert', ticker: 'NVDA_US_EQ', sym: 'NVDA', name: 'NVIDIA Corp', pct: 3.4, threshold: 3, price: 145.2, currency: 'USD', time: n - 20 * 60e3, read: false },
+    notifications: () => { const n = Date.now(); return { unread: 3, alerts: ALERTS, items: [
+      { id: 'n1', type: 'alert', rule: 'day', ticker: 'NVDA_US_EQ', sym: 'NVDA', name: 'NVIDIA Corp', pct: 3.4, threshold: 3, price: 145.2, currency: 'USD', time: n - 20 * 60e3, read: false },
+      { id: 'n5', type: 'alert', rule: 'above', ticker: 'NVDA_US_EQ', sym: 'NVDA', name: 'NVIDIA Corp', level: 140, price: 141.3, currency: 'USD', time: n - 50 * 60e3, read: false },
+      { id: 'n6', type: 'alert', rule: 'loss', ticker: 'TSLA_US_EQ', sym: 'TSLA', name: 'Tesla Inc', pct: -10.4, threshold: 10, avg: 241.3, price: 216.2, currency: 'USD', time: n - 3 * 3600e3, read: true },
       { id: 'n2', type: 'news', ticker: 'MSFT_US_EQ', sym: 'MSFT', title: 'Microsoft beats estimates as Azure growth accelerates', publisher: 'Reuters', url: 'https://x', time: n - 2 * 3600e3, read: false },
       { id: 'n3', type: 'event', event: 'earnings', when: 'today', ticker: 'AAPL_US_EQ', sym: 'AAPL', name: 'Apple Inc', time: n - 5 * 3600e3, read: false },
       { id: 'n4', type: 'news', ticker: 'CEZ_CZ_EQ', sym: 'CEZ', title: 'ČEZ raises dividend outlook for next year', publisher: 'Patria', url: 'https://x', time: n - 30 * 3600e3, read: true }] }; },
-    setAlert: () => ({ pct: 3 }), notifRead: () => true, checkNow: () => ({}), openNews: () => true,
+    setAlert: a => { if (a.clear) delete ALERTS[a.ticker]; else ALERTS[a.ticker] = { ...(ALERTS[a.ticker] || {}), sym: a.sym, name: a.name, cur: a.cur || 'USD', rules: a.rules || { ...((ALERTS[a.ticker] || {}).rules || {}), day: a.pct }, state: {} }; return ALERTS[a.ticker] || null; }, notifRead: () => true, checkNow: () => ({}), openNews: () => true,
     tax: a => ({ year: a.year, currency: 'CZK', years: [2026, 2025, 2024, 2023],
       sales: { gross: 184500, valueTest: false, valueLimit: 100000, timeCap: a.year === 2025 ? 40e6 : null, timeExemptProceeds: 96000, taxProceeds: 88500, taxCost: 71200, profit: 17300, taxBase: 17300, unknownCost: false,
         rows: [{ time: now - 40 * DAY, ticker: 'AAPL_US_EQ', sym: 'AAPL', qty: 10, days: 1210, proceeds: 96000, pl: 41000, status: 'time' },

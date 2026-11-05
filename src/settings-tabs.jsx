@@ -609,7 +609,7 @@ function OsNotify({ s, set }) {
       <Row title={MAC ? t('Notifications in macOS') : t('Notifications in Windows')} desc={t('Price alerts you set; news and calendar for holdings and instruments with news switched on. Not shown while the app window is in front — the app has its own banners.')}>
         <Switch on={n.enabled} onChange={v => put({ enabled: v })} /></Row>
       {n.enabled && <>
-        <Row title={t('Price alerts')} desc={t('When an instrument moves more than the % you set on its page.')}><Switch on={n.alert} onChange={v => put({ alert: v })} /></Row>
+        <Row title={t('Price alerts')} desc={t('When an instrument hits a price alert you set on its page (daily move, price level, % from your purchase).')}><Switch on={n.alert} onChange={v => put({ alert: v })} /></Row>
         <Row title={t('News')} desc={t('New stories tagged with the company. Several at once arrive as one summary.')}><Switch on={n.news} onChange={v => put({ news: v })} /></Row>
         <Row title={t('Calendar')} desc={t('Results, ex-dividend and dividend payout dates — the day before and on the day.')}><Switch on={n.event} onChange={v => put({ event: v })} /></Row>
         <Row title={t('Test notification')} desc={MAC ? t('If nothing appears, allow notifications for T212 Widget in System Settings → Notifications.') : t('If nothing appears, check Settings → System → Notifications and Focus / Do not disturb.')}>

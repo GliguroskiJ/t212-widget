@@ -42,6 +42,7 @@ const DEFAULTS = {
   appMaximized: false,
   autoUpdate: true,            // check GitHub Releases on start, after sleep and daily at 12:00 — always asks first
   skippedVersion: null,        // "Skip this version" → no automatic prompt for it
+  heatmapIndex: 'sp500',       // last map on the Heatmaps page: one of indices.HEATMAPS
   navOrder: [],                // sidebar order (tab keys); [] = default order
   navHidden: []                // sidebar tabs hidden from the menu (Overview can't be hidden)
 };

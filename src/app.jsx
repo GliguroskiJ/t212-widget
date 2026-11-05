@@ -625,7 +625,7 @@ function Instrument({ ticker, m }) {
             <span style={`font:300 30px/1 ${F};letter-spacing:-.03em;font-variant-numeric:tabular-nums`}>{last != null ? m.fmt(last, 2) : pos ? m.fmt(pos.price, 2) : '—'} <span style="font-size:13px;color:var(--color-neutral-500)">{pcur}</span></span>
             <span style="display:flex;gap:8px;align-items:center">
               {!pos && <WatchStar ticker={ticker} sym={sym} name={name} isin={(I && I.isin) || null} />}
-              <AlertBell ticker={ticker} sym={sym} name={name} isin={(I && I.isin) || (pos && pos.isin)} />
+              <AlertBell ticker={ticker} sym={sym} name={name} isin={(I && I.isin) || (pos && pos.isin)} price={last != null ? last : pos ? pos.price : null} cur={pcur} pos={pos} fmt={m.fmt} />
               <NewsToggle ticker={ticker} sym={sym} name={name} isin={(I && I.isin) || (pos && pos.isin) || null} held={!!pos} />
               {vals && <Chip color={up ? UP : DOWN} bg={tint(up ? UP : DOWN)}><i class={'ph ' + (up ? 'ph-trend-up' : 'ph-trend-down')}></i>{m.fmt.signed(first ? chg / first * 100 : 0, 2)}% · {m.fmt.signed(chg, 2)} · {range}</Chip>}
             </span>
@@ -1203,8 +1203,18 @@ const relTime = ts => {
   return dfmt(ts);
 };
 const NT = () => ({ news: [t('News'), 'ph-newspaper', CAT[5]], alert: [t('Price alert'), 'ph-lightning', CAT[2]], event: [t('Event'), 'ph-calendar-dots', CAT[0]] });
+const pdec = v => (Math.abs(v) < 1 ? 4 : 2);
 function notifText(x, fmt) {
   if (x.type === 'news') return { title: x.title, sub: [x.publisher, relTime(x.time)].filter(Boolean).join(' · ') };
+  if (x.type === 'alert' && x.rule && x.rule !== 'day') {
+    const px = v => fmt(v, pdec(v)) + (x.currency ? ' ' + x.currency : '');
+    if (x.rule === 'above' || x.rule === 'below')
+      return { title: t(x.rule === 'above' ? '{s} crossed above {v}' : '{s} fell below {v}', { s: x.sym, v: px(x.level) }),
+        sub: t('price {p}', { p: px(x.price) }) + ' · ' + relTime(x.time), up: x.rule === 'above' };
+    const gain = x.rule === 'gain';
+    return { title: t(gain ? '{s} is {p} % above your average price ({a})' : '{s} is {p} % below your average price ({a})', { s: x.sym, p: fmt(Math.abs(x.pct), 1), a: px(x.avg) }),
+      sub: t('your alert {a} % from average', { a: (gain ? '+' : '−') + fmt(x.threshold, 1) }) + ' · ' + t('price {p}', { p: px(x.price) }) + ' · ' + relTime(x.time), up: gain };
+  }
   if (x.type === 'alert') {
     const up = x.pct >= 0;
     return { title: t(up ? '{s} is up {p} % today' : '{s} is down {p} % today', { s: x.sym, p: fmt(Math.abs(x.pct), 2) }),
@@ -1359,26 +1369,32 @@ function NewsPage({ m, focus }) {
   );
 }
 
-// ── S&P 500 heatmap (finviz-style): size = market cap, colour = today's change, sector → industry ──
+// ── index heatmaps (finviz-style): size = market cap, colour = today's change, sector → industry ──
+// S&P 500, Nasdaq-100, Dow, DAX, EURO STOXX 50, FTSE 100 and the user's own portfolio (size = position value)
+const HEATMAPS = () => [['sp500', 'S&P 500'], ['ndx', 'Nasdaq-100'], ['dji', 'Dow Jones'], ['dax', 'DAX 40'], ['sx5e', 'EURO STOXX 50'], ['ftse', 'FTSE 100'], ['portfolio', t('My portfolio')]];
+const heatName = id => (HEATMAPS().find(h => h[0] === id) || HEATMAPS()[0])[1];
 const usSym = tk => { const r = /^(.+?)_US_EQ$/.exec(tk || ''); return r ? r[1].replace(/[._]/g, '-').toUpperCase() : null; };
 const capWeighted = list => { let c = 0, w = 0; for (const x of list) if (x.cap > 0 && x.chg != null) { c += x.cap * x.chg; w += x.cap; } return w ? c / w : null; };
 const pctTxt = (v, fmt) => (v == null ? '—' : fmt.signed(v, 2) + ' %');
+// Yahoo quotes London prices in pence ("GBp"), market caps in pounds
+const capCur = c => (c === 'GBp' || c === 'GBX' ? 'GBP' : c === 'ILA' ? 'ILS' : c || 'USD');
 
-function HeatTip({ hov, tree, held, fmt, box }) {
+function HeatTip({ hov, tree, held, fmt, box, mine, one, cur }) {
   const x = hov.item;
   const peers = (tree.byInd[x.sec + '|' + x.ind] || []).slice(0, 10);
   if (!peers.includes(x)) peers.push(x);
-  const h = held(x);
+  const h = !mine && held(x);
   const W = 300, H = 132 + (peers.length > 1 ? 26 + peers.length * 21 : 0) + (h ? 22 : 0);
   let left = hov.mx + 16, top = hov.my + 16;
   if (left + W > box[0] - 4) left = Math.max(4, hov.mx - W - 16);
   if (top + H > box[1] - 4) top = Math.max(4, box[1] - H - 4);
+  const n = (tree.byInd[x.sec + '|' + x.ind] || []).length;
   return (
     <div class="hm-tip" style={`left:${left}px;top:${top}px;width:${W}px`}>
-      <div class="hm-tip-h">{t(x.sec)}<i class="ph ph-caret-right"></i>{x.ind}</div>
+      <div class="hm-tip-h">{t(x.sec)}{!one && x.ind !== x.sec && <><i class="ph ph-caret-right"></i>{t(x.ind)}</>}</div>
       <div class="hm-tip-main" style={`--hc:${heatColor(x.chg)}`}>
         <span style="display:flex;flex-direction:column;gap:5px;min-width:0;flex:1">
-          <span class="hm-tip-sym">{x.s}</span>
+          <span class="hm-tip-sym">{x.s}{x.y && x.y !== x.s && x.y.replace(/-/g, '.') !== x.s && <span class="hm-tip-y">{x.y}</span>}</span>
           <span class="t2" style="white-space:normal;line-height:1.3">{x.n}</span>
         </span>
         <span style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
@@ -1387,12 +1403,12 @@ function HeatTip({ hov, tree, held, fmt, box }) {
         </span>
       </div>
       <div class="hm-tip-facts">
-        <span>{t('Market cap')}</span><b>{x.cap ? bigNum(x.cap, fmt) + ' ' + (x.cur || 'USD') : '—'}</b>
-        <span>{t('Index weight')}</span><b>{x.cap && tree.total ? fmt(x.cap / tree.total * 100, 2) + ' %' : '—'}</b>
+        <span>{mine ? t('Position value') : t('Market cap')}</span><b>{x.cap ? bigNum(x.cap, fmt) + ' ' + (mine ? cur || '' : capCur(x.cur)) : '—'}</b>
+        <span>{mine ? t('Portfolio weight') : t('Index weight')}</span><b>{x.cap && tree.total ? fmt(x.cap / tree.total * 100, 2) + ' %' : '—'}</b>
       </div>
       {h && <div class="hm-tip-held"><i class="ph ph-briefcase"></i>{t('In your portfolio')}</div>}
       {peers.length > 1 && <>
-        <div class="hm-tip-sub">{t('{ind} · {n} companies', { ind: x.ind, n: (tree.byInd[x.sec + '|' + x.ind] || []).length })}</div>
+        <div class="hm-tip-sub">{mine ? t('{ind} · {n} positions', { ind: t(x.ind), n }) : t('{ind} · {n} companies', { ind: t(x.ind), n })}</div>
         {peers.map(p => (
           <div class={'hm-peer' + (p === x ? ' on' : '')}>
             <span class="hm-peer-sym">{p.s}</span>
@@ -1405,8 +1421,24 @@ function HeatTip({ hov, tree, held, fmt, box }) {
   );
 }
 
-function HeatmapPage({ m }) {
-  const res = useLib('sp500', {}, [], ['sp500']);
+// the index picker on top of the page
+function HeatTabs({ index, pick }) {
+  return (
+    <div class="hm-tabs" role="tablist">
+      {HEATMAPS().map(([id, name]) => (
+        <button role="tab" aria-selected={id === index} class={'hm-tab' + (id === index ? ' on' : '') + (id === 'portfolio' ? ' mine' : '')} onClick={() => pick(id)}>
+          {id === 'portfolio' && <i class="ph ph-briefcase"></i>}{name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function HeatmapPage({ m, arg }) {
+  const { settings, set } = useApp();
+  const ids = HEATMAPS().map(h => h[0]);
+  const [index, setIndex] = useState(() => (ids.includes(arg) ? arg : ids.includes(settings.heatmapIndex) ? settings.heatmapIndex : 'sp500'));
+  const res = useLib('heatmap', { index }, [index], ['heatmap']);
   const [busy, setBusy] = useState(false);
   const [sector, setSector] = useState(null);
   const [showHeld, setShowHeld] = useState(true);
@@ -1414,13 +1446,18 @@ function HeatmapPage({ m }) {
   const [box, setBox] = useState([0, 0]);
   const ref = useRef(null);
   const fmt = m.fmt;
-  const d = res.data || null;
+  // the last answer can still be the previous index while the new one loads
+  const d = res.data && (res.data.index || 'sp500') === index ? res.data : null;
+  const mine = index === 'portfolio';
+  const name = heatName(index);
+  const one = !!(d && d.levels === 1);
+  const pick = id => { if (id === index) return; setIndex(id); setSector(null); setHov(null); set({ heatmapIndex: id }); };
 
   // refresh while the page is open (main serves cached quotes for a few minutes)
   useEffect(() => {
     const h = setInterval(() => { if (!document.hidden) res.reload(); }, 60e3);
     return () => clearInterval(h);
-  }, []);
+  }, [index]);
   useEffect(() => {
     const k = e => { if (e.key === 'Escape') setSector(null); };
     window.addEventListener('keydown', k);
@@ -1449,8 +1486,8 @@ function HeatmapPage({ m }) {
     for (const x of items) {
       const s = secs[x.sec] || (secs[x.sec] = { key: x.sec, name: x.sec, inds: {}, list: [] });
       s.list.push(x);
-      const i = s.inds[x.ind] || (s.inds[x.ind] = { key: x.sec + '|' + x.ind, name: x.ind, children: [] });
-      i.children.push({ key: x.y, value: x.cap, x });
+      const i = s.inds[x.ind] || (s.inds[x.ind] = { key: x.sec + '|' + x.ind, name: t(x.ind), children: [] });
+      i.children.push({ key: x.y + '|' + (x.tk || ''), value: x.cap, x });
       (byInd[x.sec + '|' + x.ind] || (byInd[x.sec + '|' + x.ind] = [])).push(x);
     }
     for (const k in byInd) byInd[k].sort((a, b) => b.cap - a.cap);
@@ -1459,10 +1496,12 @@ function HeatmapPage({ m }) {
     return { sectors, byInd, items, total: items.reduce((a, x) => a + x.cap, 0), missing: ((d && d.items) || []).length - items.length };
   }, [d]);
   const shown = sector ? tree.sectors.filter(s => s.key === sector) : tree.sectors;
-  const L = useMemo(() => layoutHeatmap(shown, box[0], box[1], sector ? { sectorHead: 0, industryHead: 16, industryGap: 3 } : {}), [tree, sector, box[0], box[1]]);
+  // one-level indices (Dow, DAX, EURO STOXX: the article only has a sector) draw no industry bars
+  const lopt = sector ? { sectorHead: 0, industryHead: one ? 0 : 16, industryGap: 3 } : one ? { industryHead: 0 } : {};
+  const L = useMemo(() => layoutHeatmap(shown, box[0], box[1], lopt), [tree, sector, one, box[0], box[1]]);
   const secInfo = Object.fromEntries(tree.sectors.map(s => [s.key, s]));
 
-  const refresh = async () => { setBusy(true); await api.lib('sp500Refresh'); setBusy(false); res.reload(); };
+  const refresh = async () => { setBusy(true); await api.lib('heatmapRefresh', { index }); setBusy(false); res.reload(); };
   const tileAt = e => { const el = e.target.closest && e.target.closest('[data-i]'); return el ? L.tiles[Number(el.dataset.i)] : null; };
   const onMove = e => {
     const tl = tileAt(e);
@@ -1475,32 +1514,41 @@ function HeatmapPage({ m }) {
 
   // tiles only re-render when the layout or holdings change (hover is an overlay)
   const tiles = useMemo(() => L.tiles.map((tl, i) => {
-    const x = tl.item.x, tx = tileText(tl.w, tl.h, x.s), mine = showHeld && held(x);
+    const x = tl.item.x, tx = tileText(tl.w, tl.h, x.s), out = !mine && showHeld && held(x);
     return (
-      <div class={'hm-t' + (mine ? ' held' : '')} data-i={i} style={`left:${tl.x}px;top:${tl.y}px;width:${tl.w}px;height:${tl.h}px;background:${heatColor(x.chg)}`}>
+      <div class={'hm-t' + (out ? ' held' : '')} data-i={i} style={`left:${tl.x}px;top:${tl.y}px;width:${tl.w}px;height:${tl.h}px;background:${heatColor(x.chg)}`}>
         {tx.ticker && <span class="hm-s" style={`font-size:${tx.fs}px`}>{x.s}</span>}
         {tx.pct && <span class="hm-p" style={`font-size:${tx.fs2}px`}>{pctTxt(x.chg, fmt)}</span>}
       </div>
     );
-  }), [L, showHeld, held, fmt]);
+  }), [L, showHeld, held, fmt, mine]);
 
   const all = tree.items;
   const up = all.filter(x => x.chg > 0).length, down = all.filter(x => x.chg < 0).length;
   const idx = capWeighted(sector ? (secInfo[sector] || { list: [] }).list : all);
-  const nHeld = all.filter(held).length;
+  const nHeld = mine ? 0 : all.filter(held).length;
   const err = d && d.problem;
   const closed = d && d.marketState && d.marketState !== 'REGULAR';
+  // non-US indices: caps are in the index's own currency
+  const curs = [...new Set(all.map(x => capCur(x.cur)))];
 
+  const head = <HeatTabs index={index} pick={pick} />;
   if (!d || !d.items.length) {
+    const loading = res.loading || busy || (d && d.refreshing) || (res.data && !d && !res.err);
     return (
-      <div class="grid">
-        <Card style="grid-column:1/-1">
-          {res.loading || busy || (d && d.refreshing)
-            ? <Empty icon="ph-grid-four" title={t('Loading the S&P 500…')} text={t('The first download of all 500 companies takes a few seconds.')}><Spinner size={18} /></Empty>
-            : <Empty icon="ph-warning-circle" title={t('The S&P 500 map could not be loaded')} text={(err && err.message) || (res.err && res.err.message) || t('Check your internet connection.')}>
-                <button class="btn btn-primary" style="font-size:12.5px;margin-top:6px" onClick={refresh}>{t('Retry')}</button>
-              </Empty>}
-        </Card>
+      <div class="hm-page">
+        <section class="card hm-card">
+          {head}
+          <div class="hm-empty">
+            {mine && d && !loading
+              ? <Empty icon="ph-briefcase" title={t('No positions yet')} text={t('Your holdings appear here once the account has some.')} />
+              : loading
+                ? <Empty icon="ph-grid-four" title={t('Loading {x}…', { x: name })} text={mine ? t('Looking up sectors of your holdings — the first time takes a few seconds.') : t('The first download of the whole index takes a few seconds.')}><Spinner size={18} /></Empty>
+                : <Empty icon="ph-warning-circle" title={t('The {x} map could not be loaded', { x: name })} text={(err && err.message) || (res.err && res.err.message) || t('Check your internet connection.')}>
+                    <button class="btn btn-primary" style="font-size:12.5px;margin-top:6px" onClick={refresh}>{t('Retry')}</button>
+                  </Empty>}
+          </div>
+        </section>
       </div>
     );
   }
@@ -1508,22 +1556,24 @@ function HeatmapPage({ m }) {
   return (
     <div class="hm-page">
       <section class="card hm-card">
+        {head}
         <div class="hm-bar">
           {sector
             ? <button class="btn btn-secondary hm-back" onClick={() => setSector(null)}><i class="ph ph-arrow-left"></i>{t('All sectors')}</button>
-            : <span class="hm-title">S&amp;P 500</span>}
+            : <span class="hm-title">{name}</span>}
           {sector && <span class="hm-title">{t(sector)}</span>}
-          <span class="hm-idx" style={`color:${idx == null ? 'var(--color-neutral-400)' : idx >= 0 ? UP : DOWN}`} title={t('Change weighted by market cap')}>{pctTxt(idx, fmt)}</span>
+          <span class="hm-idx" style={`color:${idx == null ? 'var(--color-neutral-400)' : idx >= 0 ? UP : DOWN}`}
+            title={mine ? t('Change weighted by position value') : t('{x} change weighted by market cap', { x: name })}>{pctTxt(idx, fmt)}</span>
           {!sector && <span class="muted hm-breadth"><span style={`color:${UP}`}>▲ {up}</span><span style={`color:${DOWN}`}>▼ {down}</span></span>}
           {closed && <span class="muted">{t('Market closed · last session')}</span>}
           <span style="flex:1"></span>
-          <select class="input hm-sel" value={sector || ''} onChange={e => setSector(e.currentTarget.value || null)}>
+          {tree.sectors.length > 1 && <select class="input hm-sel" value={sector || ''} onChange={e => setSector(e.currentTarget.value || null)}>
             <option value="">{t('All sectors')}</option>
             {tree.sectors.map(s => <option value={s.key}>{t(s.key)}</option>)}
-          </select>
-          <button class={'nchip hm-hold' + (showHeld ? ' on' : '')} title={t('Outline the stocks you hold')} onClick={() => setShowHeld(v => !v)}>
+          </select>}
+          {!mine && <button class={'nchip hm-hold' + (showHeld ? ' on' : '')} title={t('Outline the stocks you hold')} onClick={() => setShowHeld(v => !v)}>
             <i class="ph ph-briefcase"></i>{t('Your holdings')}{nHeld ? <span class="hm-n">{nHeld}</span> : null}
-          </button>
+          </button>}
           <span class="muted hm-upd" title={d.listAt ? t('Constituents from Wikipedia, {d}', { d: dtfmt(d.listAt) }) : ''}>{d.at ? t('updated {t}', { t: hhmm(d.at) }) : ''}</span>
           <button class="tb" title={t('Refresh now')} disabled={busy} onClick={refresh}>{busy || d.refreshing ? <Spinner size={12} /> : <i class="ph ph-arrow-clockwise"></i>}</button>
         </div>
@@ -1540,15 +1590,17 @@ function HeatmapPage({ m }) {
           {L.industries.map(i => i.head > 0 && <div class="hm-ind" style={`left:${i.x}px;top:${i.y}px;width:${i.w}px;height:${i.head}px`}>{i.name}</div>)}
           {tiles}
           {hov && <div class="hm-hover" style={`left:${hov.tile.x}px;top:${hov.tile.y}px;width:${hov.tile.w}px;height:${hov.tile.h}px`}></div>}
-          {hov && <HeatTip hov={hov} tree={tree} held={held} fmt={fmt} box={box} />}
+          {hov && <HeatTip hov={hov} tree={tree} held={held} fmt={fmt} box={box} mine={mine} one={one} cur={d.currency} />}
         </div>
         <div class="hm-foot">
           <span class="hm-legend">
             {HEAT_STEPS.map(v => <span style={`background:${heatColor(v)}`}>{v > 0 ? '+' : v < 0 ? '−' : ''}{Math.abs(v)} %</span>)}
           </span>
-          <span class="muted">{t('Size = market cap · colour = today’s change')}{tree.missing > 0 ? ' · ' + t('{n} without data', { n: tree.missing }) : ''}</span>
+          <span class="muted">{mine ? t('Size = position value · colour = today’s change') : t('Size = market cap · colour = today’s change')}
+            {!mine && curs.length === 1 && curs[0] !== 'USD' ? ' · ' + t('caps in {c}', { c: curs[0] }) : ''}
+            {tree.missing > 0 ? ' · ' + t('{n} without data', { n: tree.missing }) : ''}</span>
           <span style="flex:1"></span>
-          <span class="muted">{t('Sources: Wikipedia, Yahoo Finance')}</span>
+          <span class="muted">{mine ? t('Source: Yahoo Finance') : t('Sources: Wikipedia, Yahoo Finance')}</span>
         </div>
       </section>
     </div>
@@ -1576,18 +1628,20 @@ function NotificationsPage({ m }) {
           : <Empty icon="ph-bell" title={res.loading ? t('Loading…') : t('No notifications yet')} text={t('News about your companies, your price alerts and today’s results or dividend dates appear here.')} />}
       </Card>
       <Card style="grid-column:span 4" title={t('Price alerts')}>
-        <span class="t2" style="white-space:normal;line-height:1.5;margin-bottom:12px">{t('Get notified when an instrument moves more than the set % today (up or down). Checked every 5 minutes while the app runs.')}</span>
+        <span class="t2" style="white-space:normal;line-height:1.5;margin-bottom:12px">{t('Get notified when an instrument moves more than the set % today, crosses a price you choose, or moves away from your average buy price. Checked every 5 minutes while the app runs.')}</span>
         {alerts.map(([tk, a]) => (
-          <div class="lrow">
-            <SymCell sym={a.sym} name={a.name} ticker={tk} />
-            <span class="num" style="width:64px;text-align:right">± {m.fmt(a.pct, 1)} %</span>
-            <button class="tb" title={t('Remove')} onClick={() => api.lib('setAlert', { ticker: tk, pct: 0 }).then(() => res.reload())}><i class="ph ph-trash"></i></button>
+          <div class="arule">
+            <div class="lrow" style="border:0;padding-bottom:6px">
+              <span style="flex:1;min-width:0;display:flex"><SymCell sym={a.sym} name={a.name} ticker={tk} /></span>
+              <button class="tb" title={t('Remove all rules')} onClick={() => api.lib('setAlert', { ticker: tk, clear: true }).then(() => { res.reload(); toast(t('Alert removed'), 'ph-bell-slash'); })}><i class="ph ph-trash"></i></button>
+            </div>
+            <div class="achips">{alertRules(a, m.fmt).map(r => <RuleChip r={r} />)}</div>
           </div>
         ))}
         <div class="aadd">
           <select class="input" value={addTk} onChange={e => setAddTk(e.currentTarget.value)}>
             <option value="">{t('Choose a holding…')}</option>
-            {held.filter(p => !data.alerts[p.ticker]).map(p => <option value={p.ticker}>{p.sym} · {p.name}</option>)}
+            {held.filter(p => !(data.alerts[p.ticker] && data.alerts[p.ticker].rules && data.alerts[p.ticker].rules.day)).map(p => <option value={p.ticker}>{p.sym} · {p.name}</option>)}
           </select>
           <NumberInput value={addPct} onChange={setAddPct} min={0.5} max={50} step={0.5} suffix="%" />
           <button class="btn btn-primary" style="font-size:12px" disabled={!addTk || !(Number(addPct) > 0)} onClick={() => {
@@ -1595,38 +1649,111 @@ function NotificationsPage({ m }) {
             api.lib('setAlert', { ticker: addTk, pct: Number(addPct), sym: p.sym, name: p.name, isin: p.isin }).then(() => { setAddTk(''); res.reload(); toast(t('Alert set'), 'ph-bell'); });
           }}><i class="ph ph-plus"></i>{t('Add')}</button>
         </div>
-        <span class="t2" style="white-space:normal;margin-top:10px">{t('Any instrument can also be watched from its page (bell icon).')}</span>
+        <span class="t2" style="white-space:normal;line-height:1.5;margin-top:10px">{t('Adds a daily-move rule. Price levels and % from your purchase price are set on the instrument’s page (bell icon).')}</span>
       </Card>
     </div>
   );
 }
 
-// bell on an instrument page: set / change / remove the daily-move alert
-function AlertBell({ ticker, sym, name, isin }) {
+// the rules of one alert as short labels (chips on the notifications page, the bell's tooltip)
+function alertRules(a, fmt) {
+  const r = (a && a.rules) || (a && a.pct ? { day: a.pct } : {});
+  const st = (a && a.state) || {};
+  const cur = a && a.cur ? ' ' + a.cur : '';
+  const out = [];
+  const lv = (k, icon, up, text) => out.push({ k, icon, up, text, off: !!(st[k] && st[k].armed === false) });
+  if (r.day) out.push({ k: 'day', icon: 'ph-lightning', text: t('±{p} % today', { p: fmt(r.day, 1) }) });
+  if (r.above) lv('above', 'ph-arrow-line-up', true, t('above {v}', { v: fmt(r.above, pdec(r.above)) + cur }));
+  if (r.below) lv('below', 'ph-arrow-line-down', false, t('below {v}', { v: fmt(r.below, pdec(r.below)) + cur }));
+  if (r.gainPct) lv('gain', 'ph-trend-up', true, t('+{p} % from avg price', { p: fmt(r.gainPct, 1) }));
+  if (r.lossPct) lv('loss', 'ph-trend-down', false, t('−{p} % from avg price', { p: fmt(r.lossPct, 1) }));
+  return out;
+}
+const RuleChip = ({ r }) => (
+  <span class={'achip' + (r.off ? ' off' : '')} title={r.off ? t('Fired — waits until the price moves back past the level, then watches again') : ''}
+    style={r.up == null ? '' : `--c:${r.up ? UP : DOWN}`}><i class={'ph ' + r.icon}></i>{r.text}{r.off && <i class="ph ph-check" style="opacity:.7"></i>}</span>
+);
+
+// bell on an instrument page: a compact form with every rule type (day move, price above / below, % from the avg buy price)
+const ARULES = ['day', 'above', 'below', 'gainPct', 'lossPct'];
+const niceLevel = v => Number(Number(v).toPrecision(v >= 100 ? 3 : 2));
+const priceStep = v => (v >= 100 ? 1 : v >= 10 ? 0.1 : v >= 1 ? 0.01 : 0.0001);
+function AlertBell({ ticker, sym, name, isin, price, cur: qcur, pos, fmt }) {
   const res = useLib('notifications', { kind: 'alert' }, [ticker], ['notifications']);
   const cur = res.data && res.data.alerts && res.data.alerts[ticker];
+  const held = !!(pos && pos.avg > 0);
   const [open, setOpen] = useState(false);
-  const [pct, setPct] = useState('3');
+  const [f, setF] = useState({});
   const ref = useRef(null);
-  useEffect(() => { if (cur) setPct(String(cur.pct)); }, [cur && cur.pct]);
+  // (re)fill the form from the saved rules whenever the popover opens
+  const fill = () => {
+    const r = (cur && cur.rules) || {};
+    const def = { day: 3, above: price ? niceLevel(price * 1.1) : '', below: price ? niceLevel(price * 0.9) : '', gainPct: 20, lossPct: 10 };
+    setF(Object.fromEntries(ARULES.map(k => [k, { on: r[k] != null, v: String(r[k] != null ? r[k] : def[k]) }])));
+  };
   useEffect(() => {
     if (!open) return;
     const off = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     window.addEventListener('mousedown', off); return () => window.removeEventListener('mousedown', off);
   }, [open]);
-  const save = v => api.lib('setAlert', { ticker, pct: v, sym, name, isin }).then(() => { setOpen(false); res.reload(); toast(v ? t('Alert set') : t('Alert removed'), v ? 'ph-bell' : 'ph-bell-slash'); });
+  const set = (k, x) => setF(o => ({ ...o, [k]: { ...o[k], ...x } }));
+  const rows = held ? ARULES : ARULES.slice(0, 3);
+  const on = rows.filter(k => f[k] && f[k].on);
+  const bad = on.some(k => !(Number(f[k].v) > 0));
+  const save = clear => {
+    const rules = Object.fromEntries(ARULES.map(k => [k, !clear && f[k] && f[k].on && rows.includes(k) ? Number(f[k].v) : null]));
+    const none = clear || !ARULES.some(k => rules[k] != null);
+    api.lib('setAlert', none ? { ticker, clear: true } : { ticker, rules, sym, name, isin, cur: qcur })
+      .then(() => { setOpen(false); res.reload(); toast(none ? t('Alert removed') : t('Alert set'), none ? 'ph-bell-slash' : 'ph-bell'); });
+  };
+  const list = cur ? alertRules(cur, fmt) : [];
+  const px = v => fmt(v, pdec(v));
+  const avgTxt = held ? px(pos.avg) + ' ' + (pos.avgCur || '') : '';
+  const LABEL = { day: t('Daily move ±'), above: t('Price above'), below: t('Price below'), gainPct: t('Up from my avg price'), lossPct: t('Down from my avg price') };
+  const hint = k => {
+    const x = f[k]; const v = Number(x && x.v);
+    if (!x || !x.on || !(v > 0)) return null;
+    if (k === 'above' && price && price >= v) return [t('already above — fires at the next check'), 'warn'];
+    if (k === 'below' && price && price <= v) return [t('already below — fires at the next check'), 'warn'];
+    if (k === 'gainPct' && held) return ['→ ' + px(pos.avg * (1 + v / 100)) + ' ' + (pos.avgCur || '')];
+    if (k === 'lossPct' && held) return ['→ ' + px(pos.avg * (1 - v / 100)) + ' ' + (pos.avgCur || '')];
+    return null;
+  };
   return (
     <span class="bellw" ref={ref}>
-      <button class={'tb bell' + (cur ? ' on' : '')} title={cur ? t('Alert at ±{p} %', { p: cur.pct }) : t('Set a price alert')} onClick={() => setOpen(o => !o)}>
+      <button class={'tb bell' + (cur ? ' on' : '')} title={cur ? t('Price alert') + ': ' + list.map(r => r.text).join(' · ') : t('Set a price alert')}
+        onClick={() => { if (!open) fill(); setOpen(o => !o); }}>
         <i class={'ph ' + (cur ? 'ph-bell-ringing' : 'ph-bell')}></i></button>
       {open && (
         <div class="dpop r bellpop">
-          <span class="t1" style="margin-bottom:4px">{t('Price alert')}</span>
-          <span class="t2" style="white-space:normal;line-height:1.45;margin-bottom:10px">{t('Notify me when {s} moves more than this today:', { s: sym })}</span>
-          <div style="display:flex;gap:8px;align-items:center">
-            <NumberInput value={pct} onChange={setPct} min={0.5} max={50} step={0.5} suffix="%" />
-            <button class="btn btn-primary" style="font-size:12px" disabled={!(Number(pct) > 0)} onClick={() => save(Number(pct))}>{cur ? t('Save') : t('Set')}</button>
-            {cur && <button class="btn btn-ghost" style="font-size:12px" onClick={() => save(0)}>{t('Remove')}</button>}
+          <span class="t1">{t('Price alert')} · {sym}</span>
+          <span class="t2 ahead">
+            {price != null && <span>{t('Now')} <b>{px(price)} {qcur}</b></span>}
+            {held && <span>{t('Your avg')} <b>{avgTxt}</b></span>}
+          </span>
+          {rows.map(k => {
+            const x = f[k] || { on: false, v: '' };
+            const h = hint(k);
+            const pct = k === 'day' || k === 'gainPct' || k === 'lossPct';
+            return (
+              <div class={'arow' + (x.on ? ' on' : '')}>
+                <label class="acheck">
+                  <input type="checkbox" checked={x.on} onChange={e => set(k, { on: e.currentTarget.checked })} />
+                  <span style="display:flex;flex-direction:column;gap:3px;min-width:0">
+                    <span>{LABEL[k]}{!pct && qcur ? <span class="muted"> ({qcur})</span> : null}</span>
+                    {h && <span class={'ahint' + (h[1] ? ' ' + h[1] : '')}>{h[0]}</span>}
+                  </span>
+                </label>
+                <NumberInput value={x.v} onChange={v => set(k, { v, on: true })} min={pct ? 0.5 : 0} max={k === 'lossPct' ? 99 : k === 'day' ? 50 : Infinity}
+                  step={pct ? 0.5 : priceStep(Number(x.v) || price || 1)} suffix={pct ? '%' : undefined} />
+              </div>
+            );
+          })}
+          {!held && <span class="t2" style="white-space:normal;line-height:1.45;margin-top:2px">{t('Alerts relative to your purchase price are available for instruments you hold.')}</span>}
+          <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+            {cur && <button class="btn btn-ghost" style="font-size:12px" onClick={() => save(true)}><i class="ph ph-bell-slash"></i>{t('Remove all')}</button>}
+            <span style="flex:1"></span>
+            <button class="btn btn-primary" style="font-size:12px" disabled={bad || (!on.length && !cur)} onClick={() => save(false)}>{cur ? t('Save') : t('Set')}</button>
           </div>
         </div>
       )}
@@ -1920,7 +2047,7 @@ const NAV = () => [
   ['holdings', t('Holdings'), 'ph-chart-pie-slice'],
   ['watchlist', t('Watchlist'), 'ph-star'],
   ['news', t('News feed'), 'ph-newspaper'],
-  ['heatmap', t('S&P 500 heatmap'), 'ph-grid-four'],
+  ['heatmap', t('Heatmaps'), 'ph-grid-four'],
   ['activity', t('Activity'), 'ph-clock-counter-clockwise'],
   ['orders', t('Orders'), 'ph-list-checks'],
   ['pies', t('Pies'), 'ph-circle-half'],
@@ -2172,7 +2299,7 @@ function App({ init }) {
   else if (page === 'notifications') body = <NotificationsPage m={m} />;
   else if (page === 'watchlist') body = <WatchlistPage m={m} />;
   else if (page === 'news') body = <NewsPage m={m} focus={arg} />;
-  else if (page === 'heatmap') body = <HeatmapPage m={m} />;
+  else if (page === 'heatmap') body = <HeatmapPage m={m} arg={arg} />;
   else if (page === 'tax') body = <TaxPage m={m} />;
   else body = <Overview m={m} closed={closed} />;
 

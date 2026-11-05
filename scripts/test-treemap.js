@@ -80,6 +80,9 @@ const assert = require('assert'); const fs = require('fs'); const path = require
   assert.ok(L.sectors.some(s => s.head > 0) && L.industries.some(i => i.head > 0), 'big blocks get title bars');
   assert.deepStrictEqual(layoutHeatmap([], 100, 100), { sectors: [], industries: [], tiles: [] });
   assert.strictEqual(layoutHeatmap(sectors, 0, 500).tiles.length, 0);
+  // one-level indices (Dow, DAX, EURO STOXX): no industry bars, tiles fill the sector
+  const L1 = layoutHeatmap(sectors, W, H, { industryHead: 0 });
+  assert.ok(L1.industries.every(i => i.head === 0) && L1.sectors.some(s => s.head > 0));
 
   // ── colours ──
   assert.strictEqual(heatColor(-3), '#f63538'); assert.strictEqual(heatColor(-9), '#f63538');
