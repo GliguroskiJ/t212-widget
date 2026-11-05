@@ -237,6 +237,51 @@ assert.deepStrictEqual(portfolioGroup({}, { type: 'EQUITY', sector: 'Utilities' 
     const p3 = await pf2.get(pos, {});
     assert.strictEqual(p3.items.find(x => x.tk === 'NVDA_US_EQ').ind, 'Semiconductors');
   }
+  // ── Nasdaq-100: Wikipedia has no table any more → Nasdaq's list, sectors from the S&P 500 list + Yahoo profile ──
+  {
+    assert.strictEqual(I.cleanCompany('Apple Inc. Common Stock'), 'Apple Inc.');
+    assert.strictEqual(I.cleanCompany('Alphabet Inc. Class A Common Stock'), 'Alphabet Inc.');
+    assert.strictEqual(I.cleanCompany('ASML Holding N.V. New York Registry Shares'), 'ASML Holding N.V. New York Registry Shares');
+    assert.strictEqual(I.gicsFromYahoo('Technology'), 'Information Technology');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 't212-ndx-'));
+    const rows = [{ symbol: 'AAPL', companyName: 'Apple Inc. Common Stock' }, { symbol: 'ASML', companyName: 'ASML Holding N.V. New York Registry Shares' }, { symbol: 'BRK.B', companyName: 'x' }]
+      .concat(Array.from({ length: 98 }, (_, i) => ({ symbol: 'N' + i, companyName: 'Co ' + i + ' Common Stock' })));
+    const sp = fill(450, i => `|-\n| {{NasdaqSymbol|N${i}}} || [[Co ${i}]] || Industrials || Machinery\n`);
+    const calls = [], summ = [];
+    const fetchImpl = async (u, o) => {
+      calls.push(u);
+      if (u.includes('api.nasdaq.com')) { assert.ok(/Mozilla/.test(o.headers['User-Agent'])); return res(200, { data: { data: { rows } }, status: { rCode: 200 } }); }
+      if (u.includes('/w/api.php') && u.includes('S%26P')) return res(200, { parse: { wikitext: '{| class="wikitable sortable" id="constituents"\n! Symbol !! Security !! GICS Sector !! GICS Sub-Industry\n|-\n| {{NasdaqSymbol|AAPL}} || [[Apple Inc.]] || Information Technology || Technology Hardware\n' + sp + '|}' } });
+      if (u.includes('/v7/finance/quote')) return quoteAnswer(u);
+      throw new Error('unexpected ' + u);
+    };
+    const svc = new IndexMap({ index: 'ndx', fetchImpl, dir, crumb: async () => ({ crumb: 'C' }),
+      summary: async (sym, mods) => { summ.push(sym); assert.strictEqual(mods, 'assetProfile'); return sym === 'ASML' ? { assetProfile: { sector: 'Technology', industry: 'Semiconductor Equipment & Materials' } } : null; } });
+    const p = await svc.get({});
+    assert.strictEqual(p.problem, null); assert.strictEqual(p.items.length, 101); assert.strictEqual(p.levels, 2);
+    const by = Object.fromEntries(p.items.map(x => [x.s, x]));
+    assert.strictEqual(by.AAPL.sec, 'Information Technology'); assert.strictEqual(by.AAPL.n, 'Apple Inc.');
+    assert.strictEqual(by.N5.sec, 'Industrials', 'sector taken from the S&P 500 list');
+    assert.strictEqual(by.ASML.sec, 'Information Technology', 'Yahoo sector mapped to GICS');
+    assert.strictEqual(by['BRK.B'].y, 'BRK-B');
+    assert.ok(!calls.some(u => u.includes('page=Nasdaq-100')), 'Wikipedia not needed');
+    assert.ok(!summ.includes('AAPL') && summ.includes('ASML'), 'Yahoo profile only for the ones the S&P list lacks');
+    assert.ok(fs.existsSync(path.join(dir, 'sp500.json')), 'S&P 500 list cached for later');
+    // Nasdaq refuses → Slickcharts table
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 't212-ndx2-'));
+    const html = '<table class="table table-hover"><thead><tr><th>#</th><th>Company</th><th>Symbol</th><th>Weight</th></tr></thead><tbody>' +
+      Array.from({ length: 100 }, (_, i) => `<tr><td>${i + 1}</td><td><a href="/symbol/S${i}">Slick ${i}</a></td><td><a href="/symbol/S${i}">S${i}</a></td><td>1%</td></tr>`).join('') + '</tbody></table>';
+    const f2 = async u => {
+      if (u.includes('api.nasdaq.com')) return res(403, {});
+      if (u.includes('slickcharts')) return res(200, null, html);
+      if (u.includes('/w/api.php')) return res(500, {});
+      if (u.includes('/v7/finance/quote')) return quoteAnswer(u);
+      throw new Error('unexpected ' + u);
+    };
+    const p2 = await new IndexMap({ index: 'ndx', fetchImpl: f2, dir: dir2, crumb: async () => ({ crumb: 'C' }) }).get({});
+    assert.strictEqual(p2.items.length, 100); assert.strictEqual(p2.items[3].s, 'S3'); assert.strictEqual(p2.items[3].n, 'Slick 3');
+  }
+
   assert.deepStrictEqual(Object.keys(INDICES), HEATMAPS.slice(0, -1));
   console.log('indices ok');
 })().catch(e => { console.error(e); process.exit(1); });

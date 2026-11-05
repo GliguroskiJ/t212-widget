@@ -30,7 +30,8 @@ const UA = 'T212Widget/1.0 (desktop portfolio app; index heatmaps)';
 const INDICES = {
   sp500: { name: 'S&P 500', pages: ['List of S&P 500 companies'], file: 'sp500.json', min: 400, market: 'us', prefer: 'constituents',
     cols: { sym: ['symbol', 'ticker'], name: ['security', 'company'], sector: ['gics sector', 'sector'], industry: ['sub-industry', 'sub industry'] } },
-  ndx: { name: 'Nasdaq-100', pages: ['Nasdaq-100'], min: 90, market: 'us', prefer: 'constituents',
+  // Wikipedia dropped the Nasdaq-100 components table (2026) → Nasdaq's own list first, then Slickcharts, then Wikipedia
+  ndx: { name: 'Nasdaq-100', nasdaq: 'nasdaq100', html: ['https://www.slickcharts.com/nasdaq100'], pages: ['Nasdaq-100'], min: 90, market: 'us', prefer: 'constituents',
     cols: { sym: ['ticker', 'symbol'], name: ['company', 'security'], sector: ['gics sector', 'icb industry', 'sector', 'industry'], industry: ['sub-industry', 'subsector', 'sub-sector', 'sub industry'] } },
   dji: { name: 'Dow Jones', pages: ['List of Dow Jones Industrial Average companies', 'Dow Jones Industrial Average'], min: 28, market: 'us',
     cols: { sym: ['symbol', 'ticker'], name: ['company'], sector: ['industry', 'sector'] } },
@@ -42,6 +43,28 @@ const INDICES = {
     cols: { sym: ['ticker', 'epic', 'symbol'], name: ['company'], sector: ['industry classification', 'icb sector', 'sector', 'industry'] } }
 };
 const HEATMAPS = [...Object.keys(INDICES), 'portfolio'];
+
+// ── Nasdaq-100 without Wikipedia ─────────────────────────────────
+const NASDAQ_LIST = id => `https://api.nasdaq.com/api/quote/list-type/${id}`;
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+// "Apple Inc. Common Stock" → "Apple Inc."
+const cleanCompany = n => String(n || '').replace(/\s+(class [a-z] )?(common stock|ordinary shares|american depositary shares?|ads|capital stock|common shares|depositary shares).*$/i, '').replace(/\s+/g, ' ').trim();
+function parseNasdaqList(j) {
+  const rows = (j && j.data && ((j.data.data && j.data.data.rows) || j.data.rows)) || [];
+  const out = [], seen = new Set();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const sym = String((r && r.symbol) || '').trim().toUpperCase();
+    if (!/^[A-Z][A-Z0-9.\-]{0,9}$/.test(sym) || seen.has(sym)) continue;
+    seen.add(sym);
+    out.push({ sym, y: yahooSymbol(sym), name: cleanCompany(r.companyName) || sym, sector: 'Other', industry: 'Other' });
+  }
+  return out;
+}
+// Yahoo assetProfile sectors → GICS names used by the Wikipedia lists
+const YAHOO_GICS = { technology: 'Information Technology', healthcare: 'Health Care', 'financial services': 'Financials', 'consumer cyclical': 'Consumer Discretionary',
+  'consumer defensive': 'Consumer Staples', 'basic materials': 'Materials', 'communication services': 'Communication Services', industrials: 'Industrials',
+  energy: 'Energy', utilities: 'Utilities', 'real estate': 'Real Estate' };
+const gicsFromYahoo = s => YAHOO_GICS[String(s || '').toLowerCase()] || s || null;
 
 // ── Wikipedia parsing ────────────────────────────────────────────
 const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', '#39': "'" };
@@ -214,11 +237,11 @@ const parseWikitext = (text, index) => parseWikitextFull(text, index).items;
 
 const cleanHtml = s => decode(String(s || '').replace(/<sup[\s\S]*?<\/sup>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
 // rendered article (fallback when the API answer can't be read)
-function parseHtmlFull(html, index) {
+function parseHtmlFull(html, index, anyTable) {
   const cfg = cfgOf(index);
   const src = String(html || '');
   const cands = [];
-  const re = /<table[^>]*wikitable[^>]*>/gi;
+  const re = anyTable ? /<table[^>]*>/gi : /<table[^>]*wikitable[^>]*>/gi;
   let m;
   while ((m = re.exec(src))) {
     const end = src.indexOf('</table>', m.index);
@@ -332,7 +355,9 @@ function saveJson(dir, file, data) {
 // ── one index ────────────────────────────────────────────────────
 class IndexMap {
   // crumb(force) → { crumb, cookie } (Library.yahooCrumb); onChange() after a background refresh
-  constructor({ index = 'sp500', fetchImpl, dir, crumb, now, onChange }) {
+  constructor({ index = 'sp500', fetchImpl, dir, crumb, now, onChange, summary }) {
+    this.fetchImpl = fetchImpl;
+    this.summary = summary || null;
     this.id = typeof index === 'string' ? index : 'custom';
     this.cfg = cfgOf(index);
     this.q = new Quotes({ fetchImpl, crumb });
@@ -363,7 +388,22 @@ class IndexMap {
     if (!force && L.items.length && this.listFailAt && this.now() - this.listFailAt < 30 * 60e3) return L.items;
     let got = { items: [], levels: 1 }, err = null, page = null;
     const take = (res, p) => { if (res.items.length > got.items.length) { got = res; page = p; } };
-    for (const p of cfg.pages) {
+    if (cfg.nasdaq) {
+      try {
+        const r = await this.fetch(NASDAQ_LIST(cfg.nasdaq), { headers: { Accept: 'application/json, text/plain, */*', 'User-Agent': BROWSER_UA, 'Accept-Language': 'en-US,en;q=0.9', Origin: 'https://www.nasdaq.com', Referer: 'https://www.nasdaq.com/' } });
+        if (!r.ok) throw new Error('Nasdaq HTTP ' + r.status);
+        take({ items: parseNasdaqList(await r.json()), levels: 1 }, 'nasdaq.com');
+      } catch (e) { err = err || e; }
+    }
+    for (const u of (got.items.length < cfg.min && cfg.html) || []) {
+      try {
+        const r = await this.fetch(u, { headers: { Accept: 'text/html', 'User-Agent': BROWSER_UA } });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        take(parseHtmlFull(await r.text(), cfg, true), new URL(u).hostname);
+      } catch (e) { err = err || e; }
+      if (got.items.length >= cfg.min) break;
+    }
+    for (const p of got.items.length >= cfg.min ? [] : cfg.pages) {
       try {
         const r = await this.fetch(WIKI_API(p), { headers: { Accept: 'application/json', 'Api-User-Agent': UA } });
         if (!r.ok) throw new Error('Wikipedia HTTP ' + r.status);
@@ -381,13 +421,39 @@ class IndexMap {
       if (got.items.length >= cfg.min) break;
     }
     if (got.items.length >= cfg.min) {
-      this.data.list = { at: this.now(), items: got.items, source: 'wikipedia', page, levels: got.levels };
+      if (got.items.every(x => x.sector === 'Other')) got = { items: await this.addSectors(got.items), levels: 2 };
+      this.data.list = { at: this.now(), items: got.items, source: page === 'nasdaq.com' || /\./.test(page || '') ? page : 'wikipedia', page, levels: got.levels };
       this.listFailAt = 0;
       return got.items;
     }
     this.listFailAt = this.now();
     if (L.items.length) return L.items;               // keep the last good list
     throw new Error(err ? `Could not load the ${cfg.name} list: ` + (err.message || err) : `Could not read the ${cfg.name} list from Wikipedia`);
+  }
+
+  // a list without sectors (Nasdaq): GICS sector + sub-industry from the S&P 500 list, the rest from Yahoo's profile
+  async addSectors(items) {
+    const by = {};
+    try {
+      const sp = new IndexMap({ index: 'sp500', fetchImpl: this.fetchImpl, dir: this.dir, crumb: this.crumb, now: this.now });
+      const list = await sp.constituents(false);
+      sp.save();
+      for (const x of list) by[x.y] = x;
+    } catch {}
+    const old = Object.fromEntries((this.data.list.items || []).map(x => [x.y, x]));
+    const out = items.map(x => (by[x.y] ? { ...x, sector: by[x.y].sector, industry: by[x.y].industry }
+      : old[x.y] && old[x.y].sector !== 'Other' ? { ...x, sector: old[x.y].sector, industry: old[x.y].industry } : x));
+    if (this.summary) {
+      let n = 0;
+      for (const x of out) {
+        if (x.sector !== 'Other' || n++ >= 40) continue;
+        try {
+          const ap = ((await this.summary(x.y, 'assetProfile')) || {}).assetProfile || {};
+          if (ap.sector) { x.sector = gicsFromYahoo(ap.sector); x.industry = ap.industry || x.sector; }
+        } catch (e) { if (/session/.test(String(e && e.message))) break; }
+      }
+    }
+    return out;
   }
 
   async quotes(items, force) {
@@ -545,5 +611,5 @@ class PortfolioMap {
   }
 }
 
-module.exports = { INDICES, HEATMAPS, IndexMap, PortfolioMap, Quotes, parseWikitext, parseHtml, parseWikitextFull, parseHtmlFull, parseQuotes,
+module.exports = { parseNasdaqList, cleanCompany, gicsFromYahoo, INDICES, HEATMAPS, IndexMap, PortfolioMap, Quotes, parseWikitext, parseHtml, parseWikitextFull, parseHtmlFull, parseQuotes,
   yahooSymbol, toYahoo, icbIndustry, cleanWiki, t212Map, profileOf, portfolioGroup };

@@ -4,6 +4,12 @@ Each version: `## X.Y.Z`, then `### cs` and `### en` with one `- ` line per chan
 The release workflow publishes the section of the tagged version as the GitHub release notes,
 and the update window in the app shows these lines (in the app's language).
 
+## 1.11.1
+### cs
+- Heatmapa Nasdaq-100 se znovu načte: Wikipedie z článku odstranila tabulku firem, seznam se teď bere přímo z Nasdaq (záložně Slickcharts), sektory ze seznamu S&P 500 a Yahoo
+### en
+- The Nasdaq-100 heatmap loads again: Wikipedia removed the components table, the list now comes from Nasdaq (Slickcharts as a fallback), sectors from the S&P 500 list and Yahoo
+
 ## 1.11.0
 ### cs
 - Heatmapy: kromě S&P 500 i Nasdaq-100, Dow Jones, DAX 40, EURO STOXX 50, FTSE 100 a heatmapa vlastního portfolia

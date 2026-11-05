@@ -613,7 +613,7 @@ function heatSvc(id) {
   const common = { fetchImpl: (u, o) => net.fetch(u, o), dir: app.getPath('userData'), crumb: f => lib.yahooCrumb(f), onChange: () => lib.emitChange('heatmap') };
   heatSvcs[id] = id === 'portfolio'
     ? new PortfolioMap({ ...common, resolve: (tk, isin, px) => lib.resolveSymbol(tk, isin, px), summary: (sym, mods) => lib.quoteSummary(sym, mods) })
-    : new IndexMap({ ...common, index: id });
+    : new IndexMap({ ...common, index: id, summary: (sym, mods) => lib.quoteSummary(sym, mods) });
   return heatSvcs[id];
 }
 // held positions with their value in the account currency (+ the instrument type: ETFs group without Yahoo)
