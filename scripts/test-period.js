@@ -34,6 +34,16 @@ const m = p.period('1M', pl, value, 7);
 assert.equal(m.abs, 4600, 'month: history starts 20 days ago → measured from the oldest point');
 assert.equal(m.partial, true); assert.equal(m.from, now - 20 * DAY);
 
+const h6 = p.period('6M', pl, value, 7);
+assert.equal(h6.range, '6M'); assert.equal(h6.abs, 4600); assert.equal(h6.partial, true);
+const ytd = p.period('YTD', pl, value, 7);
+const y0 = new Date(new Date().getFullYear(), 0, 1).getTime();
+assert.equal(ytd.range, 'YTD');
+// base = last point before 1 January (or the oldest point when history starts later this year)
+const expBase = store.history.points.filter(q => q[0] <= y0).pop();
+assert.equal(ytd.abs, expBase ? pl - expBase[2] : 4600);
+assert.ok(p.series('YTD', 1).every(q => q[0] >= y0), 'YTD series starts on 1 January');
+
 const all = p.period('ALL', pl, value, 7.25);
 assert.equal(all.abs, 9600); assert.equal(all.pct, 7.25); assert.equal(all.basePl, 0);
 

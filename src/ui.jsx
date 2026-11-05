@@ -250,7 +250,7 @@ export function Chart({ values, values2, tipFor, rangeFor, w, h, pad, sw = 1.5, 
 }
 
 // ── period helpers ───────────────────────────────────────────
-export const PERIOD_WORD = { '1D': 'today', '1W': 'past week', '1M': 'past month', '1Y': 'past year', 'ALL': 'all time' };
+export const PERIOD_WORD = { '1D': 'today', '1W': 'past week', '1M': 'past month', '6M': 'past 6 months', 'YTD': 'this year', '1Y': 'past year', 'ALL': 'all time' };
 export const dm = ts => new Date(ts).toLocaleDateString(locale(), { day: 'numeric', month: 'numeric' });
 
 // "today" / "past week" … or "since 22. 9." while the history doesn't reach that far back yet
@@ -309,7 +309,7 @@ export function spanStr(series, range) {
   if (!series || series.length < 2) return '';
   const a = series[0][0], b = series[series.length - 1][0];
   const f = range === '1D' ? hhmm
-    : range === '1W' || range === '1M' ? dm
+    : range === '1W' || range === '1M' || range === '6M' || range === 'YTD' ? dm
       : ts => new Date(ts).toLocaleDateString(locale(), { month: 'numeric', year: '2-digit' });
   return `${f(a)} – ${f(b)}`;
 }
@@ -448,7 +448,7 @@ export function axisLabels(series, range) {
     const d = new Date(t);
     if (range === '1D') return hhmm(t);
     if (range === '1W') return d.toLocaleDateString(locale(), { weekday: 'short' });
-    if (range === '1M') return d.toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
+    if (range === '1M' || range === '6M' || range === 'YTD') return d.toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
     return d.toLocaleDateString(locale(), { month: 'short', year: '2-digit' });
   };
   return [f(t0), f(t0 + (t1 - t0) / 3), f(t0 + (2 * (t1 - t0)) / 3), t('now')];

@@ -117,7 +117,7 @@ function Medium({ m, st, now, closed, settings }) {
         <div style="display:flex;align-items:center;gap:6px;justify-content:flex-end">
           <span style={`display:flex;align-items:center;gap:5px;font:400 10px/1 ${F};color:var(--color-neutral-500);margin-right:auto`}>
             {closed ? <ClosedChip /> : <><Dot color={m.trend} />{t('live')} · {agoStr(st.lastSync, now)}</>}</span>
-          <RangeChips range={settings.range} onPick={setRange} list={['1D', '1W', '1M', '1Y']} />
+          <RangeChips range={settings.range} onPick={setRange} list={['1D', '1W', '1M', '6M', 'YTD', '1Y']} />
         </div>
         <FillChart values={m.values} tipFor={m.tipFor} pad={8} sw={1.7} color={m.trend} gid="gM" gop={.28} glowPx={7} marker
           draw={1.2} fade={1.3} fadeDelay={.35} closed={closed} animKey={settings.range} wrapStyle="margin-top:10px"
@@ -230,7 +230,7 @@ function Large({ m, st, now, closed, settings }) {
       {view === 'chart' && (
         <div key="chart" style="position:relative;display:flex;flex-direction:column;flex:1;min-height:0;animation:nfade .4s ease both">
           <div style="display:flex;gap:6px;justify-content:flex-end">
-            <RangeChips range={settings.range} onPick={r => api.setSettings({ range: r })} list={['1D', '1W', '1M', '1Y', 'ALL']} size={10.5} padX={8} />
+            <RangeChips range={settings.range} onPick={r => api.setSettings({ range: r })} list={['1D', '1W', '1M', '6M', 'YTD', '1Y', 'ALL']} size={10.5} padX={8} />
           </div>
           <FillChart values={m.values} tipFor={m.tipFor} pad={12} sw={1.9} color={m.trend} gid="gL" gop={.3} glowPx={8} marker mr={2.8} pr={5}
             draw={1.35} fade={1.3} fadeDelay={.35} closed={closed} animKey={settings.range} wrapStyle="margin-top:10px"

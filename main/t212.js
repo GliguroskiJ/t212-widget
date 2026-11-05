@@ -71,9 +71,11 @@ function localDate(ts) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 function startOfToday() { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); }
-const RANGE_MS = { '1W': 7 * 86400e3, '1M': 30 * 86400e3, '1Y': 365 * 86400e3 };
+const RANGE_MS = { '1W': 7 * 86400e3, '1M': 30 * 86400e3, '6M': 182 * 86400e3, '1Y': 365 * 86400e3 };
+const startOfYear = (now = Date.now()) => new Date(new Date(now).getFullYear(), 0, 1).getTime();
 function rangeStart(range, now = Date.now()) {
   if (range === 'ALL') return 0;
+  if (range === 'YTD') return startOfYear(now);
   return RANGE_MS[range] ? now - RANGE_MS[range] : startOfToday();
 }
 
@@ -434,12 +436,12 @@ class Poller extends EventEmitter {
     if (range === 'ALL') {
       return { range, abs: pl, pct: allTimePct, basePl: 0, from: pts.length ? pts[0][0] : null, partial: false };
     }
-    if (!RANGE_MS[range]) {
+    if (!RANGE_MS[range] && range !== 'YTD') {
       const db = h.dayBase || { pl };
       const abs = pl - db.pl;
       return { range: '1D', abs, pct: value - abs ? (abs / (value - abs)) * 100 : 0, basePl: db.pl, from: startOfToday(), partial: false };
     }
-    const from = Date.now() - RANGE_MS[range];
+    const from = rangeStart(range);
     let base = null;
     for (let i = pts.length - 1; i >= 0; i--) {
       if (pts[i][0] <= from && Number.isFinite(pts[i][2])) { base = pts[i]; break; }

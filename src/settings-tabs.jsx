@@ -185,7 +185,7 @@ export function WidgetTab({ s, set }) {
       </Section>
       <Section label={t('What it shows')}>
         <Row title={t('Chart range')} desc={t('Of the widget only — also sets the period of the change next to the value. The app has its own.')}>
-          <Seg value={s.range} onChange={v => set({ range: v })} options={[['1D', '1D'], ['1W', '1W'], ['1M', '1M'], ['1Y', '1Y'], ['ALL', 'ALL']]} size={11} /></Row>
+          <Seg value={s.range} onChange={v => set({ range: v })} options={[['1D', '1D'], ['1W', '1W'], ['1M', '1M'], ['6M', '6M'], ['YTD', 'YTD'], ['1Y', '1Y'], ['ALL', 'ALL']]} size={11} /></Row>
         <Row title={t('Large widget opens on')} desc={t('The view shown in the 2 × 2 widget.')}>
           <Seg value={s.largeView} onChange={v => set({ largeView: v })} options={[['chart', t('Chart')], ['positions', t('Positions')], ['alloc', t('Allocation')]]} /></Row>
         <Row title={t('Widget opacity')} desc={t('Lets the desktop show through the whole widget, text included.')}>
@@ -606,7 +606,7 @@ function OsNotify({ s, set }) {
   const [sent, setSent] = useState(false);
   return (
     <Section label={t('System notifications')}>
-      <Row title={MAC ? t('Notifications in macOS') : t('Notifications in Windows')} desc={t('For your holdings and everything on the watchlist. Not shown while the app window is in front — the app has its own banners.')}>
+      <Row title={MAC ? t('Notifications in macOS') : t('Notifications in Windows')} desc={t('Price alerts you set; news and calendar for holdings and instruments with news switched on. Not shown while the app window is in front — the app has its own banners.')}>
         <Switch on={n.enabled} onChange={v => put({ enabled: v })} /></Row>
       {n.enabled && <>
         <Row title={t('Price alerts')} desc={t('When an instrument moves more than the % you set on its page.')}><Switch on={n.alert} onChange={v => put({ alert: v })} /></Row>

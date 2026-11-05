@@ -4,6 +4,14 @@ Each version: `## X.Y.Z`, then `### cs` and `### en` with one `- ` line per chan
 The release workflow publishes the section of the tagged version as the GitHub release notes,
 and the update window in the app shows these lines (in the app's language).
 
+## 1.10.2
+### cs
+- Grafy mají i období 6M a YTD (portfolio v aplikaci i ve widgetu, grafy instrumentů)
+- Oznámení z kalendáře chodí jen pro pozice a instrumenty se zapnutými novinkami — samotný watchlist je tichý
+### en
+- Charts also offer 6M and YTD (portfolio in the app and the widget, instrument charts)
+- Calendar notifications only for holdings and instruments with news switched on — the watchlist alone stays quiet
+
 ## 1.10.1
 ### cs
 - Novinky se dají zapnout nebo vypnout u každého instrumentu ikonou novin (vedle hvězdičky a zvonečku, i ve watchlistu)

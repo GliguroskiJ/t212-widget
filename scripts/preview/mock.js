@@ -21,7 +21,7 @@
     positions: POS, series: S.map((v, i) => [now - (47 - i) * 9 * 60e3, v])
   };
   // range-aware series with P/L per point + the period change, like main/t212.js sends it
-  const SPAN = { '1D': 9 * 60e3, '1W': 3.5 * 3600e3, '1M': 15 * 3600e3, '1Y': 7.6 * 86400e3, 'ALL': 7.6 * 86400e3 };
+  const SPAN = { '6M': 4 * 86400e3, YTD: 7 * 86400e3,  '1D': 9 * 60e3, '1W': 3.5 * 3600e3, '1M': 15 * 3600e3, '1Y': 7.6 * 86400e3, 'ALL': 7.6 * 86400e3 };
   const rng = (cfg.settings && cfg.settings.range) || '1D';
   const PL0 = data.allTimePL - (data.value - S[0]);
   data.series = S.map((v, i) => [now - (47 - i) * SPAN[rng], v, PL0 + (v - S[0]), i < 6 && rng !== '1D' ? 1 : 0]);

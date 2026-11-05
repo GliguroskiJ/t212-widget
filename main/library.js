@@ -19,7 +19,7 @@ const KINDS = {
   dividends: { path: '/equity/history/dividends', limit: 'hDividends', scope: 'History – dividends' },
   transactions: { path: '/equity/history/transactions', limit: 'hTransactions', scope: 'History – transactions' }
 };
-const PRICE_RANGES = { '1D': ['1d', '5m'], '1W': ['5d', '30m'], '1M': ['1mo', '1d'], '3M': ['3mo', '1d'], '1Y': ['1y', '1d'], '5Y': ['5y', '1wk'], 'MAX': ['max', '1mo'] };
+const PRICE_RANGES = { '1D': ['1d', '5m'], '1W': ['5d', '30m'], '1M': ['1mo', '1d'], '3M': ['3mo', '1d'], '6M': ['6mo', '1d'], 'YTD': ['ytd', '1d'], '1Y': ['1y', '1d'], '5Y': ['5y', '1wk'], 'MAX': ['max', '1mo'] };
 const PRICE_TTL = { '1D': 120e3, '1W': 600e3 };
 const DAY = 86400e3;
 // evenly thin a series to at most n points (keeps the last one)

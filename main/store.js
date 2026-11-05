@@ -8,7 +8,7 @@ const DEFAULTS = {
   env: 'live',                 // 'live' | 'demo'
   size: 'medium',              // 'small' | 'medium' | 'large' | 'rail'
   largeView: 'chart',          // 'chart' | 'positions' | 'alloc'
-  range: '1D',                 // '1D' | '1W' | '1M' | '1Y' | 'ALL'
+  range: '1D',                 // '1D' | '1W' | '1M' | '6M' | 'YTD' | '1Y' | 'ALL'
   theme: 'acrylic',            // 'acrylic' | 'solid' | 'gradient' | 'blueprint' | 'carbon'
   bgColor: '#16171f',          // colour of the 'solid' background
   bgColors: ['#3b2f80', '#0f4b5c', '#5c1f45'],   // 2–3 colours of the 'gradient' background

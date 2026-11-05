@@ -596,7 +596,7 @@ function registerIpc() {
 }
 
 // ── app data (library) — the only methods the app window may call ──
-const RANGES = ['1D', '1W', '1M', '1Y', 'ALL'];
+const RANGES = ['1D', '1W', '1M', '6M', 'YTD', '1Y', 'ALL'];
 const str = (v, n = 64) => String(v == null ? '' : v).slice(0, n);
 const HIST = ['orders', 'dividends', 'transactions'];
 // S&P 500 heatmap (Wikipedia constituents + Yahoo quotes, cached in userData/sp500.json)
@@ -745,6 +745,11 @@ function newsPositions() {
   }
   return list;
 }
+// calendar notifications: holdings + instruments with news switched on (the watchlist alone stays quiet)
+function eventPositions() {
+  const held = heldPositions();
+  return held.concat(newsPositions().filter(p => !held.some(h => h.ticker === p.ticker)));
+}
 function watchedPositions() {
   const held = heldPositions();
   const extra = (store.get('watchlist') || []).filter(w => w && w.ticker && !held.some(h => h.ticker === w.ticker))
@@ -807,7 +812,7 @@ app.whenReady().then(() => {
   notifier.on('fresh', items => { try { osNotify(items); } catch {} });
   news = new News({ lib, dir: app.getPath('userData'), settings: () => store.all() });
   notifier.pruneNews(id => news.has(id));   // articles that failed the (stricter) relevance rules take their notifications along
-  lib.on('change', e => { if (e.what === 'calendar') notifier.checkEvents(lib.calendar(watchedPositions()).events); });
+  lib.on('change', e => { if (e.what === 'calendar') notifier.checkEvents(lib.calendar(eventPositions()).events); });
   poller.calendarPositions = () => watchedPositions();
   const notifTick = () => {
     const pos = watchedPositions();
@@ -817,7 +822,7 @@ app.whenReady().then(() => {
     if (pos.some(p => !cal.by[p.ticker])) lib.refreshCalendar(pos).catch(() => {});
     notifier.checkAlerts(pos).catch(() => {});
     newsTick().catch(() => {});
-    notifier.checkEvents(lib.calendar(pos).events);
+    notifier.checkEvents(lib.calendar(eventPositions()).events);
   };
   setTimeout(notifTick, 20e3);
   setInterval(notifTick, 5 * 60e3);

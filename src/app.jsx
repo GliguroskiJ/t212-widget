@@ -272,7 +272,7 @@ const SymCell = ({ sym, name, ticker, dot }) => (
 );
 
 // ── pages ────────────────────────────────────────────────────
-const APP_RANGES = ['1D', '1W', '1M', '1Y', 'ALL'];
+const APP_RANGES = ['1D', '1W', '1M', '6M', 'YTD', '1Y', 'ALL'];
 
 function Hero({ m, closed, range, setRange }) {
   const { d } = m;
@@ -554,7 +554,7 @@ function WeightBar({ positions, fmt, cur }) {
 }
 
 // ── instrument detail ────────────────────────────────────────
-const PRICE_RANGES = ['1D', '1W', '1M', '3M', '1Y', '5Y', 'MAX'];
+const PRICE_RANGES = ['1D', '1W', '1M', '3M', '6M', 'YTD', '1Y', '5Y', 'MAX'];
 function priceTipTime(ts, r) {
   if (r === '1D') return hhmm(ts);
   if (r === '1W') return new Date(ts).toLocaleDateString(locale(), { weekday: 'short', day: 'numeric', month: 'numeric' }) + ' ' + hhmm(ts);
