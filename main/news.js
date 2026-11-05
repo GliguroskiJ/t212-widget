@@ -289,8 +289,10 @@ class News {
     return this.running;
   }
 
-  list({ ticker, source, limit = 60, offset = 0, held = [] } = {}) {
+  list({ ticker, source, limit = 60, offset = 0, only = null } = {}) {
     let items = this.d.items.filter(x => this.enabled(x) && this.valid(x));
+    // only instruments the user follows news for
+    if (only) { const set = new Set(only); items = items.filter(x => x.tickers.some(t => set.has(t))); }
     if (ticker) items = items.filter(x => x.tickers.includes(ticker));
     if (source) items = items.filter(x => x.pub === source);
     items = items.sort((a, b) => b.time - a.time);

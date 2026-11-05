@@ -245,8 +245,23 @@ function applySettings(patch) {
   for (const k of ['navOrder', 'navHidden']) {
     if (k in patch) patch[k] = Array.isArray(patch[k]) ? patch[k].filter(x => typeof x === 'string').map(x => x.slice(0, 32)).slice(0, 40) : [];
   }
+  if ('newsSubs' in patch) {
+    const out = {};
+    const src = patch.newsSubs && typeof patch.newsSubs === 'object' ? patch.newsSubs : {};
+    for (const [tk, v] of Object.entries(src).slice(0, 300)) {
+      if (typeof tk !== 'string' || tk.length > 40 || !v || typeof v !== 'object') continue;
+      out[tk] = { on: !!v.on, sym: String(v.sym || tk).slice(0, 24), name: String(v.name || '').slice(0, 120), isin: v.isin ? String(v.isin).slice(0, 20) : null };
+    }
+    patch.newsSubs = out;
+  }
   const prev = store.all();
   const next = store.set(patch);
+  // a newly followed instrument gets its news right away
+  if ('newsSubs' in patch && news) {
+    const added = Object.entries(patch.newsSubs).some(([tk, v]) => v.on && !(prev.newsSubs && prev.newsSubs[tk] && prev.newsSubs[tk].on));
+    if (added) { clearTimeout(applySettings.newsT); applySettings.newsT = setTimeout(() => newsTick(true).catch(() => {}), 1500); }
+    else lib.emitChange('news');
+  }
   if ('startWithWindows' in patch) applyAutostart(next.startWithWindows);
   if (widget && !widget.isDestroyed()) {
     if ('alwaysOnTop' in patch) widget.setAlwaysOnTop(!!next.alwaysOnTop, 'floating');
@@ -626,7 +641,7 @@ const LIB = {
   testNote: () => showNote(tr('T212 Widget is working'), tr('This is how alerts, news and events will look.'), 'notifications'),
   checkNow: async () => { const pos = watchedPositions(); await newsTick(true); await notifier.checkAlerts(pos); return notifier.list({}); },
   openNews: a => { const u = news.link(str(a.id, 60)); if (u) shell.openExternal(u); return !!u; },
-  news: a => news.list({ ticker: a.ticker ? str(a.ticker) : null, source: a.source ? str(a.source, 60) : null, limit: Number(a.limit) || 60, offset: Number(a.offset) || 0 }),
+  news: a => news.list({ only: newsPositions().map(p => p.ticker), ticker: a.ticker ? str(a.ticker) : null, source: a.source ? str(a.source, 60) : null, limit: Number(a.limit) || 60, offset: Number(a.offset) || 0 }),
   newsSources: () => news.sources(),
   newsMeta: a => news.meta(str(a.id, 60)),
   newsRefresh: async () => { await newsTick(true); return news.list({}); },
@@ -713,12 +728,22 @@ function osNotify(items) {
 
 // news of holdings + watchlist → news page; new articles from enabled sources → notifications
 async function newsTick(force) {
-  const pos = watchedPositions();
+  const pos = newsPositions();
   if (!pos.length) return 0;
   const fresh = await news.refresh(pos, force);
   notifier.pruneNews(id => news.has(id));
   lib.emitChange('news');
   return notifier.addNews(fresh.filter(x => news.enabled(x)), pos);
+}
+// instruments whose news the user follows: holdings unless switched off, watchlist / others only when switched on
+function newsSubs() { const s = store.get('newsSubs'); return s && typeof s === 'object' ? s : {}; }
+function newsPositions() {
+  const subs = newsSubs();
+  const list = watchedPositions().filter(p => (subs[p.ticker] ? subs[p.ticker].on : !!p.held));
+  for (const [tk, v] of Object.entries(subs)) {
+    if (v && v.on && !list.some(p => p.ticker === tk)) list.push({ ticker: tk, isin: v.isin || null, price: null, sym: v.sym || tk, name: v.name || '' });
+  }
+  return list;
 }
 function watchedPositions() {
   const held = heldPositions();
@@ -729,7 +754,7 @@ function watchedPositions() {
 function heldPositions() {
   const { shortTicker } = require('./t212');
   return ((poller && poller.raw && poller.raw.positions) || []).map(p => ({ ticker: p.instrument && p.instrument.ticker, isin: p.instrument && p.instrument.isin,
-    price: p.currentPrice, sym: shortTicker(p.instrument && p.instrument.ticker), name: (p.instrument && p.instrument.name) || '' })).filter(p => p.ticker);
+    price: p.currentPrice, sym: shortTicker(p.instrument && p.instrument.ticker), name: (p.instrument && p.instrument.name) || '', held: true })).filter(p => p.ticker);
 }
 
 const isoDay = ts => new Date(ts).toISOString().slice(0, 10);

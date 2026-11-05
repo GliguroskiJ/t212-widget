@@ -626,6 +626,7 @@ function Instrument({ ticker, m }) {
             <span style="display:flex;gap:8px;align-items:center">
               {!pos && <WatchStar ticker={ticker} sym={sym} name={name} isin={(I && I.isin) || null} />}
               <AlertBell ticker={ticker} sym={sym} name={name} isin={(I && I.isin) || (pos && pos.isin)} />
+              <NewsToggle ticker={ticker} sym={sym} name={name} isin={(I && I.isin) || (pos && pos.isin) || null} held={!!pos} />
               {vals && <Chip color={up ? UP : DOWN} bg={tint(up ? UP : DOWN)}><i class={'ph ' + (up ? 'ph-trend-up' : 'ph-trend-down')}></i>{m.fmt.signed(first ? chg / first * 100 : 0, 2)}% · {m.fmt.signed(chg, 2)} · {range}</Chip>}
             </span>
           </div>
@@ -1320,11 +1321,14 @@ function NewsPage({ m, focus }) {
   const [limit, setLimit] = useState(48);
   const [showSrc, setShowSrc] = useState(false);
   const [busy, setBusy] = useState(false);
-  const res = useLib('news', { ticker, source: source && source.key, limit }, [ticker, source && source.key, limit, JSON.stringify(settings.newsSources || {})], ['news']);
+  const res = useLib('news', { ticker, source: source && source.key, limit }, [ticker, source && source.key, limit, JSON.stringify(settings.newsSources || {}), JSON.stringify(settings.newsSubs || {})], ['news']);
   const held = (m.d && m.d.positions) || [];
   const watch = (Array.isArray(settings.watchlist) ? settings.watchlist : []).filter(w => !held.some(h => h.ticker === w.ticker));
-  const all = held.map(p => ({ ticker: p.ticker, sym: p.sym })).concat(watch.map(w => ({ ticker: w.ticker, sym: w.sym || w.ticker })));
-  const syms = Object.fromEntries(all.map(p => [p.ticker, p.sym]));
+  const subs = settings.newsSubs && typeof settings.newsSubs === 'object' ? settings.newsSubs : {};
+  const known = held.map(p => ({ ticker: p.ticker, sym: p.sym, held: true })).concat(watch.map(w => ({ ticker: w.ticker, sym: w.sym || w.ticker })))
+    .concat(Object.entries(subs).filter(([tk]) => !held.some(h => h.ticker === tk) && !watch.some(w => w.ticker === tk)).map(([tk, v]) => ({ ticker: tk, sym: v.sym || tk })));
+  const all = known.filter(p => (subs[p.ticker] ? subs[p.ticker].on : !!p.held));
+  const syms = Object.fromEntries(known.map(p => [p.ticker, p.sym]));
   const d = res.data || { items: [], total: 0 };
   const refresh = async () => { setBusy(true); await api.lib('newsRefresh'); res.reload(); setBusy(false); };
   return (
@@ -1333,7 +1337,7 @@ function NewsPage({ m, focus }) {
         <span class="muted">{d.lastRun ? t('updated {t}', { t: relTime(d.lastRun) }) : ''}</span>
         <button class="tb" title={t('Check now')} disabled={busy || d.running} onClick={refresh}>{busy || d.running ? <Spinner size={12} /> : <i class="ph ph-arrow-clockwise"></i>}</button>
         <button class={'btn ' + (showSrc ? 'btn-primary' : 'btn-secondary')} style="font-size:12px" onClick={() => setShowSrc(v => !v)}><i class="ph ph-sliders-horizontal"></i>{t('Sources')}</button></>}>
-        <span class="t2" style="white-space:normal;line-height:1.5">{t('From your holdings and watchlist, newest first. New articles from the sources you keep on also arrive as notifications.')}</span>
+        <span class="t2" style="white-space:normal;line-height:1.5">{t('For instruments you follow — holdings by default, others via the newspaper icon on their page or in the watchlist. Newest first; new articles from the sources you keep on also arrive as notifications.')}</span>
         <div class="nchips">
           <button class={'nchip' + (!ticker ? ' on' : '')} onClick={() => setTicker('')}>{t('All')}</button>
           {all.map(p => <button class={'nchip' + (ticker === p.ticker ? ' on' : '')} onClick={() => setTicker(ticker === p.ticker ? '' : p.ticker)}>{p.sym}</button>)}
@@ -1696,6 +1700,27 @@ function useWatchlist() {
   return { list, has, add, remove };
 }
 
+// news per instrument: holdings follow news by default, watchlist and other instruments only when switched on
+function useNewsSub() {
+  const { settings, set } = useApp();
+  const subs = settings.newsSubs && typeof settings.newsSubs === 'object' ? settings.newsSubs : {};
+  const isOn = (tk, held) => (subs[tk] ? !!subs[tk].on : !!held);
+  const toggle = (r, held) => {
+    const on = !isOn(r.ticker, held);
+    set({ newsSubs: { ...subs, [r.ticker]: { on, sym: r.sym || r.ticker, name: r.name || '', isin: r.isin || null } } });
+    toast(on ? t('News on for {s}', { s: r.sym }) : t('News off for {s}', { s: r.sym }), on ? 'ph-newspaper' : 'ph-newspaper-clipping');
+  };
+  return { isOn, toggle, subs };
+}
+
+function NewsToggle({ ticker, sym, name, isin, held, small }) {
+  const n = useNewsSub();
+  const on = n.isOn(ticker, held);
+  return <button class={'tb bell' + (on ? ' on' : '')} title={on ? t('Following news — click to stop') : t('Follow news (feed + notifications)')}
+    onClick={e => { e.stopPropagation(); n.toggle({ ticker, sym, name, isin }, held); }} style={small ? 'width:28px;height:26px;font-size:14px' : ''}>
+    <i class={on ? 'ph-fill ph-newspaper' : 'ph ph-newspaper'}></i></button>;
+}
+
 function WatchStar({ ticker, sym, name, isin }) {
   const w = useWatchlist();
   const on = w.has(ticker);
@@ -1717,6 +1742,7 @@ function WatchRow({ r, q, fmt, onRemove }) {
       <span class="num" style="width:120px;text-align:right">{q ? fmt(q.last, 2) + ' ' + (q.currency || '') : pr.data && pr.data.last ? fmt(pr.data.last, 2) : '—'}</span>
       <span style="width:84px;display:flex;justify-content:flex-end">{day == null ? <span class="muted">—</span> : <Chip color={day >= 0 ? UP : DOWN} bg={tint(day >= 0 ? UP : DOWN)}>{fmt.signed(day, 2)}%</Chip>}</span>
       <span class="num" style={`width:74px;text-align:right;color:${m1 == null ? 'var(--color-neutral-600)' : m1 >= 0 ? UP : DOWN}`}>{m1 == null ? '—' : fmt.signed(m1, 1) + '%'}</span>
+      <span style="width:34px;display:flex;justify-content:flex-end"><NewsToggle ticker={r.ticker} sym={r.sym} name={r.name} isin={r.isin} held={r.held} small /></span>
       <span style="width:34px;display:flex;justify-content:flex-end">{onRemove && <button class="tb" title={t('Remove from watchlist')} onClick={e => { e.stopPropagation(); onRemove(); }}><i class="ph ph-x"></i></button>}</span>
     </div>
   );
@@ -1739,7 +1765,7 @@ function WatchlistPage({ m }) {
   }, [q]);
   const head = (
     <div class="lhead"><span class="sc">{t('Instrument')}</span><span style="width:84px"></span><span style="width:90px;text-align:center">1M</span>
-      <span style="width:120px;text-align:right">{t('Price')}</span><span style="width:84px;text-align:right">{t('Today')}</span><span style="width:74px;text-align:right">1M %</span><span style="width:34px"></span></div>
+      <span style="width:120px;text-align:right">{t('Price')}</span><span style="width:84px;text-align:right">{t('Today')}</span><span style="width:74px;text-align:right">1M %</span><span style="width:34px;text-align:right">{t('News')}</span><span style="width:34px"></span></div>
   );
   const own = rows.filter(r => !r.held);
   return (
@@ -1761,7 +1787,7 @@ function WatchlistPage({ m }) {
           })}
         </div>}
       </Card>
-      <Card style="grid-column:1/-1" title={t('Watching')} right={<span class="muted">{t('News and price alerts cover everything here.')}</span>}>
+      <Card style="grid-column:1/-1" title={t('Watching')} right={<span class="muted">{t('Turn news on per instrument with the newspaper icon.')}</span>}>
         {own.length > 0 ? <>{head}{own.map(r => <WatchRow r={r} q={qq[r.ticker]} fmt={m.fmt} onRemove={() => w.remove(r.ticker)} />)}</>
           : <Empty icon="ph-star" title={t('Nothing added yet')} text={t('Search above, or use the star on any instrument page.')} />}
       </Card>

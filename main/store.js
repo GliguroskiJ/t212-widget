@@ -33,6 +33,7 @@ const DEFAULTS = {
   menuBarText: 'value',        // macOS menu-bar title: 'value' | 'change' | 'none'
   firstLaunchDone: false,
   osNotify: { enabled: true, alert: true, news: true, event: true },  // system (Windows / macOS) notifications
+  newsSubs: {},                // news per instrument: { ticker: { on, sym, name, isin } } — holdings on by default, others off
   newsSources: {},             // news publishers switched off: { key: false }
   newsFeeds: { yahoo: true, google: true, googleCz: true },
   watchlist: [],               // extra instruments to follow: [{ ticker, sym, name, isin }]

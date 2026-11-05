@@ -4,6 +4,14 @@ Each version: `## X.Y.Z`, then `### cs` and `### en` with one `- ` line per chan
 The release workflow publishes the section of the tagged version as the GitHub release notes,
 and the update window in the app shows these lines (in the app's language).
 
+## 1.10.1
+### cs
+- Novinky se dají zapnout nebo vypnout u každého instrumentu ikonou novin (vedle hvězdičky a zvonečku, i ve watchlistu)
+- Pozice mají novinky zapnuté automaticky, akcie z watchlistu jen když si je zapneš
+### en
+- News can be switched on or off per instrument with the newspaper icon (next to the star and bell, also in the watchlist)
+- Holdings follow news by default, watchlist instruments only when you switch it on
+
 ## 1.10.0
 ### cs
 - Nová záložka Heatmapa S&P 500: aktuální složení indexu podle tržní kapitalizace, rozdělené podle sektorů a odvětví, s proklikem na akcie
